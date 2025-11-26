@@ -1,0 +1,6 @@
+{
+    "markdown-pdf.styles": [
+        ".vscode/markdown-pdf.css"
+    ],
+    "python.defaultInterpreterPath": "${workspaceFolder}/saeed_venv/Scripts/python.exe"
+}

@@ -1,0 +1,34 @@
+# ===========================================
+# Project Dependencies for novartis_datathon_2025
+# ===========================================
+# 
+# Usage:
+#   Install:  pip install -r requirements.txt
+#   Update:   pip install -r requirements.txt --upgrade
+#   Freeze:   pip freeze > requirements.txt
+#
+# ===========================================
+
+# Data Science & Analysis
+pandas
+numpy
+scipy
+
+# Data Visualization
+matplotlib
+seaborn
+plotly
+
+# Machine Learning
+scikit-learn
+xgboost
+lightgbm
+
+# Jupyter Notebooks
+jupyter
+notebook
+ipykernel
+
+# Utilities
+tqdm
+python-dotenv

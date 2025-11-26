@@ -1,0 +1,81 @@
+/* Custom styles for Markdown PDF export */
+
+/* Inline code styling - dark blue instead of bright color */
+code {
+    color: #1e3a5f !important;
+    background-color: #f0f4f8 !important;
+    padding: 2px 6px !important;
+    border-radius: 3px !important;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+}
+
+/* Code blocks styling */
+pre code {
+    color: #1e3a5f !important;
+    background-color: #f5f7fa !important;
+    display: block;
+    padding: 12px !important;
+    border-radius: 5px !important;
+    overflow-x: auto;
+}
+
+pre {
+    background-color: #f5f7fa !important;
+    border-radius: 5px !important;
+    border: 1px solid #d0d7de !important;
+}
+
+/* ========================================
+   Syntax Highlighting (highlight.js) Overrides
+   ======================================== */
+
+/* Comments */
+.hljs-comment,
+.hljs-quote {
+    color: #025200 !important;
+}
+
+/* Strings */
+.hljs-string,
+.hljs-doctag,
+.hljs-regexp {
+    color: #C24402 !important;
+}
+
+/* Keywords (if, else, for, etc.) */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-type {
+    color: #7c3aed !important;
+}
+
+/* Function names */
+.hljs-title,
+.hljs-function {
+    color: #1e40af !important;
+}
+
+/* Numbers */
+.hljs-number,
+.hljs-literal {
+    color: #CC0000 !important;
+}
+
+/* Variables and built-ins */
+.hljs-variable,
+.hljs-built_in,
+.hljs-builtin-name {
+    color: #610034 !important;
+}
+
+/* Attributes */
+.hljs-attr,
+.hljs-attribute {
+    color: #0369a1 !important;
+}
+
+/* Shell/Bash specific */
+.hljs-meta,
+.hljs-meta-string {
+    color: #6b7280 !important;
+}
