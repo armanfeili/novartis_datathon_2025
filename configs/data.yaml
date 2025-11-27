@@ -4,10 +4,10 @@
 # Google Drive paths (used in Colab)
 drive:
   base_path: "/content/drive/MyDrive/novartis-datathon-2025"
-  data_dir: "${drive.base_path}/data"
-  raw_dir: "${drive.base_path}/data/raw"
-  interim_dir: "${drive.base_path}/data/interim"
-  processed_dir: "${drive.base_path}/data/processed"
+  data_dir: "/content/drive/MyDrive/novartis-datathon-2025/data"
+  raw_dir: "/content/drive/MyDrive/novartis-datathon-2025/data/raw"
+  interim_dir: "/content/drive/MyDrive/novartis-datathon-2025/data/interim"
+  processed_dir: "/content/drive/MyDrive/novartis-datathon-2025/data/processed"
 
 # Local paths (for local development)
 local:

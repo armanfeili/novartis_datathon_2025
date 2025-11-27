@@ -1,8 +1,36 @@
+# Core ML/DL frameworks
 torch
 torchvision
+
+# Data processing
 numpy
 pandas
+
+# Visualization
 matplotlib
+seaborn
+plotly
+
+# Gradient boosting models
+lightgbm
+xgboost
+catboost
+
+# Machine learning utilities
+scikit-learn
+joblib
+
+# Deep learning utilities
 tqdm
+
+# Jupyter/Colab
 ipykernel
+ipywidgets
+
+# Configuration
 pyyaml
+omegaconf
+
+# Experiment tracking (optional)
+# wandb
+# mlflow
