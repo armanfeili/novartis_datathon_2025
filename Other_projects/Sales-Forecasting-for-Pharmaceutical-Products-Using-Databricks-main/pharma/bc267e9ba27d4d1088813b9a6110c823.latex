@@ -1,0 +1,410 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[
+]{article}
+\usepackage{amsmath,amssymb}
+\usepackage{lmodern}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math}
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{xcolor}
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}}
+% Add ',fontsize=\small' for more characters per line
+\newenvironment{Shaded}{}{}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{1.00,0.00,0.00}{\textbf{#1}}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.49,0.56,0.16}{#1}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\BuiltInTok}[1]{\textcolor[rgb]{0.00,0.50,0.00}{#1}}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textit{#1}}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.53,0.00,0.00}{#1}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{\textbf{#1}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.56,0.13,0.00}{#1}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.73,0.13,0.13}{\textit{#1}}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{1.00,0.00,0.00}{\textbf{#1}}}
+\newcommand{\ExtensionTok}[1]{#1}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.02,0.16,0.49}{#1}}
+\newcommand{\ImportTok}[1]{\textcolor[rgb]{0.00,0.50,0.00}{\textbf{#1}}}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{\textbf{#1}}}
+\newcommand{\NormalTok}[1]{#1}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.40,0.40,0.40}{#1}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{#1}}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.74,0.48,0.00}{#1}}
+\newcommand{\RegionMarkerTok}[1]{#1}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.73,0.40,0.53}{#1}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.10,0.09,0.49}{#1}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\usepackage{graphicx}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+% Scale images if necessary, so that they will not overflow the page
+% margins by default, and it is still possible to overwrite the defaults
+% using explicit options in \includegraphics[width, height, ...]{}
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+% Set default figure placement to htbp
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\ifLuaTeX
+  \usepackage{selnolig}  % disable illegal ligatures
+\fi
+\IfFileExists{bookmark.sty}{\usepackage{bookmark}}{\usepackage{hyperref}}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same} % disable monospaced font for URLs
+\hypersetup{
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+
+\author{}
+\date{}
+
+\begin{document}
+
+\hypertarget{overview}{%
+\subsection{Overview}\label{overview}}
+
+This notebook will show you how to create and query a table or DataFrame
+that you uploaded to DBFS.
+\href{https://docs.databricks.com/user-guide/dbfs-databricks-file-system.html}{DBFS}
+is a Databricks File System that allows you to store data for querying
+inside of Databricks. This notebook assumes that you have a file already
+inside of DBFS that you would like to read from.
+
+This notebook is written in \textbf{Python} so the default cell type is
+Python. However, you can use different languages by using the
+\texttt{\%LANGUAGE} syntax. Python, Scala, SQL, and R are all supported.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{\# Define file locations}
+\NormalTok{file\_location\_daily }\OperatorTok{=} \StringTok{"/FileStore/tables/salesdaily.csv"}
+\NormalTok{file\_location\_hourly }\OperatorTok{=} \StringTok{"/FileStore/tables/saleshourly.csv"}
+\NormalTok{file\_location\_weekly }\OperatorTok{=} \StringTok{"/FileStore/tables/salesweekly.csv"}
+\NormalTok{file\_location\_monthly }\OperatorTok{=} \StringTok{"/FileStore/tables/salesmonthly.csv"}
+
+\NormalTok{file\_type }\OperatorTok{=} \StringTok{"csv"}
+
+\CommentTok{\# CSV options}
+\NormalTok{infer\_schema }\OperatorTok{=} \StringTok{"true"}
+\NormalTok{first\_row\_is\_header }\OperatorTok{=} \StringTok{"true"}
+\NormalTok{delimiter }\OperatorTok{=} \StringTok{","}
+
+\CommentTok{\# Load each dataset into a separate DataFrame}
+\NormalTok{df\_daily }\OperatorTok{=}\NormalTok{ spark.read.}\BuiltInTok{format}\NormalTok{(file\_type) }\OperatorTok{\textbackslash{}}
+\NormalTok{    .option(}\StringTok{"inferSchema"}\NormalTok{, infer\_schema) }\OperatorTok{\textbackslash{}}
+\NormalTok{    .option(}\StringTok{"header"}\NormalTok{, first\_row\_is\_header) }\OperatorTok{\textbackslash{}}
+\NormalTok{    .option(}\StringTok{"sep"}\NormalTok{, delimiter) }\OperatorTok{\textbackslash{}}
+\NormalTok{    .load(file\_location\_daily)}
+
+\NormalTok{df\_hourly }\OperatorTok{=}\NormalTok{ spark.read.}\BuiltInTok{format}\NormalTok{(file\_type) }\OperatorTok{\textbackslash{}}
+\NormalTok{    .option(}\StringTok{"inferSchema"}\NormalTok{, infer\_schema) }\OperatorTok{\textbackslash{}}
+\NormalTok{    .option(}\StringTok{"header"}\NormalTok{, first\_row\_is\_header) }\OperatorTok{\textbackslash{}}
+\NormalTok{    .option(}\StringTok{"sep"}\NormalTok{, delimiter) }\OperatorTok{\textbackslash{}}
+\NormalTok{    .load(file\_location\_hourly)}
+
+\NormalTok{df\_weekly }\OperatorTok{=}\NormalTok{ spark.read.}\BuiltInTok{format}\NormalTok{(file\_type) }\OperatorTok{\textbackslash{}}
+\NormalTok{    .option(}\StringTok{"inferSchema"}\NormalTok{, infer\_schema) }\OperatorTok{\textbackslash{}}
+\NormalTok{    .option(}\StringTok{"header"}\NormalTok{, first\_row\_is\_header) }\OperatorTok{\textbackslash{}}
+\NormalTok{    .option(}\StringTok{"sep"}\NormalTok{, delimiter) }\OperatorTok{\textbackslash{}}
+\NormalTok{    .load(file\_location\_weekly)}
+
+\NormalTok{df\_monthly }\OperatorTok{=}\NormalTok{ spark.read.}\BuiltInTok{format}\NormalTok{(file\_type) }\OperatorTok{\textbackslash{}}
+\NormalTok{    .option(}\StringTok{"inferSchema"}\NormalTok{, infer\_schema) }\OperatorTok{\textbackslash{}}
+\NormalTok{    .option(}\StringTok{"header"}\NormalTok{, first\_row\_is\_header) }\OperatorTok{\textbackslash{}}
+\NormalTok{    .option(}\StringTok{"sep"}\NormalTok{, delimiter) }\OperatorTok{\textbackslash{}}
+\NormalTok{    .load(file\_location\_monthly)}
+
+\CommentTok{\# Display a sample of each dataset}
+\NormalTok{display(df\_daily)}
+\NormalTok{display(df\_hourly)}
+\NormalTok{display(df\_weekly)}
+\NormalTok{display(df\_monthly)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{\# Print schemas to understand the structure}
+\NormalTok{df\_daily.printSchema()}
+\NormalTok{df\_hourly.printSchema()}
+\NormalTok{df\_weekly.printSchema()}
+\NormalTok{df\_monthly.printSchema()}
+
+\CommentTok{\# Show basic statistics}
+\NormalTok{df\_daily.describe().show()}
+\NormalTok{df\_hourly.describe().show()}
+\NormalTok{df\_weekly.describe().show()}
+\NormalTok{df\_monthly.describe().show()}
+
+\CommentTok{\# Check for missing values}
+\ImportTok{from}\NormalTok{ pyspark.sql.functions }\ImportTok{import}\NormalTok{ col, }\BuiltInTok{sum}
+
+\CommentTok{\# Example for daily sales data}
+\NormalTok{df\_daily.select([}\BuiltInTok{sum}\NormalTok{(col(c).isNull().cast(}\StringTok{"int"}\NormalTok{)).alias(c) }\ControlFlowTok{for}\NormalTok{ c }\KeywordTok{in}\NormalTok{ df\_daily.columns]).show()}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+root
+ |-- datum: date (nullable = true)
+ |-- M01AB: double (nullable = true)
+ |-- M01AE: double (nullable = true)
+ |-- N02BA: double (nullable = true)
+ |-- N02BE: double (nullable = true)
+ |-- N05B: double (nullable = true)
+ |-- N05C: double (nullable = true)
+ |-- R03: double (nullable = true)
+ |-- R06: double (nullable = true)
+ |-- Year: integer (nullable = true)
+ |-- Month: integer (nullable = true)
+ |-- Hour: integer (nullable = true)
+ |-- Weekday Name: string (nullable = true)
+
+root
+ |-- datum: string (nullable = true)
+ |-- M01AB: double (nullable = true)
+ |-- M01AE: double (nullable = true)
+ |-- N02BA: double (nullable = true)
+ |-- N02BE: double (nullable = true)
+ |-- N05B: double (nullable = true)
+ |-- N05C: double (nullable = true)
+ |-- R03: double (nullable = true)
+ |-- R06: double (nullable = true)
+ |-- Year: integer (nullable = true)
+ |-- Month: integer (nullable = true)
+ |-- Hour: integer (nullable = true)
+ |-- Weekday Name: string (nullable = true)
+
+root
+ |-- datum: date (nullable = true)
+ |-- M01AB: double (nullable = true)
+ |-- M01AE: double (nullable = true)
+ |-- N02BA: double (nullable = true)
+ |-- N02BE: double (nullable = true)
+ |-- N05B: double (nullable = true)
+ |-- N05C: double (nullable = true)
+ |-- R03: double (nullable = true)
+ |-- R06: double (nullable = true)
+
+root
+ |-- datum: date (nullable = true)
+ |-- M01AB: double (nullable = true)
+ |-- M01AE: double (nullable = true)
+ |-- N02BA: double (nullable = true)
+ |-- N02BE: double (nullable = true)
+ |-- N05B: double (nullable = true)
+ |-- N05C: double (nullable = true)
+ |-- R03: double (nullable = true)
+ |-- R06: double (nullable = true)
+
++-------+-----------------+------------------+------------------+------------------+-----------------+------------------+-----------------+------------------+------------------+-----------------+------------------+------------+
+|summary|            M01AB|             M01AE|             N02BA|             N02BE|             N05B|              N05C|              R03|               R06|              Year|            Month|              Hour|Weekday Name|
++-------+-----------------+------------------+------------------+------------------+-----------------+------------------+-----------------+------------------+------------------+-----------------+------------------+------------+
+|  count|             2106|              2106|              2106|              2106|             2106|              2106|             2106|              2106|              2106|             2106|              2106|        2106|
+|   mean|5.033683325419752| 3.895830316160029|3.8804411206082676|29.917095303105373| 8.85362654319611|0.5935224754667617| 5.51226159386135|2.9001982431149083|2016.4012345679012|6.344254510921178|275.94586894586894|        null|
+| stddev|2.737578507424412|2.1333365992423245|2.3840102366211324|15.590965539762397|5.605604746929916|1.0929883200525332|6.428736372389848|2.4158159046504153|1.6650603678435227|3.386953835651899|1.9705466716604123|        null|
+|    min|              0.0|               0.0|               0.0|               0.0|              0.0|               0.0|              0.0|               0.0|              2014|                1|               190|      Friday|
+|    max|            17.34|            14.463|              16.0|             161.0|      54.83333333|               9.0|             45.0|              15.0|              2019|               12|               276|   Wednesday|
++-------+-----------------+------------------+------------------+------------------+-----------------+------------------+-----------------+------------------+------------------+-----------------+------------------+------------+
+
++-------+-------------+-------------------+-------------------+-------------------+------------------+-------------------+-------------------+-------------------+-------------------+------------------+-----------------+------------------+------------+
+|summary|        datum|              M01AB|              M01AE|              N02BA|             N02BE|               N05B|               N05C|                R03|                R06|              Year|            Month|              Hour|Weekday Name|
++-------+-------------+-------------------+-------------------+-------------------+------------------+-------------------+-------------------+-------------------+-------------------+------------------+-----------------+------------------+------------+
+|  count|        50532|              50532|              50532|              50532|             50532|              50532|              50532|              50532|              50532|             50532|            50532|             50532|       50532|
+|   mean|         null|0.20978661211426386|  0.162364811324844|0.16172344257140048|1.2468416589160307|0.36898871012455564|0.02473597588334124|0.22973210869676644|0.12087029011374939|2016.4014090081532|6.344811208739017|11.500474946568511|        null|
+| stddev|         null| 0.5560026652182646|0.41610874069440673|0.45321122380532103|2.3873916844461154| 0.9309337244775395|0.21787064801445225| 1.2405127649551182| 0.3919993906592702|1.6644443550164936|3.385761229604851| 6.921706105317404|        null|
+|    min|1/1/2015 0:00|                0.0|                0.0|                0.0|               0.0|                0.0|                0.0|                0.0|                0.0|              2014|                1|                 0|      Friday|
+|    max|9/9/2019 9:00|                7.0|                6.0|                6.5|              29.0|               15.0|                6.0|               25.0|                5.0|              2019|               12|                23|   Wednesday|
++-------+-------------+-------------------+-------------------+-------------------+------------------+-------------------+-------------------+-------------------+-------------------+------------------+-----------------+------------------+------------+
+
++-------+------------------+------------------+-----------------+------------------+------------------+------------------+------------------+------------------+
+|summary|             M01AB|             M01AE|            N02BA|             N02BE|              N05B|              N05C|               R03|               R06|
++-------+------------------+------------------+-----------------+------------------+------------------+------------------+------------------+------------------+
+|  count|               302|               302|              302|               302|               302|               302|               302|               302|
+|   mean|35.102440673278174|27.167611410066222|27.06029470198675|208.62716128609253| 61.74085264877485|4.1389348785860935| 38.43981098238411|20.224561258245025|
+| stddev| 8.617106216402073|7.0434911201017485|8.086458417593548| 76.06922114429098|22.436969645571224|3.1292645522027094|22.900872676300924|11.381464397131417|
+|    min|              7.67|             6.237|              3.5|             86.25|              18.0|               0.0|               2.0|               1.0|
+|    max|             65.33|            53.571|           60.125|           546.899|             154.0|              17.0|             131.0|              65.0|
++-------+------------------+------------------+-----------------+------------------+------------------+------------------+------------------+------------------+
+
++-------+------------------+------------------+------------------+------------------+------------------+-----------------+-----------------+------------------+
+|summary|             M01AB|             M01AE|             N02BA|             N02BE|              N05B|             N05C|              R03|               R06|
++-------+------------------+------------------+------------------+------------------+------------------+-----------------+-----------------+------------------+
+|  count|                70|                70|                70|                70|                70|               70|               70|                70|
+|   mean|149.99200000000005|116.51428571428576| 115.0208428571428| 892.5420714285715|262.11857142857144|17.84285714285714|          167.675| 86.66257142857144|
+| stddev|31.485325341880444|27.889336387230223|31.245898650578052|338.84390820494855| 85.06093006790228|8.481242242696293|81.76797934186814|45.859335518098064|
+|    min|               0.0|               0.0|               0.0|               0.0|               1.0|              0.0|              0.0|               0.0|
+|    max|211.13000000000017|222.35100000000017|191.59999999999997|1856.8149999999994|             492.0|             50.0|            386.0|213.04000000000002|
++-------+------------------+------------------+------------------+------------------+------------------+-----------------+-----------------+------------------+
+
++-----+-----+-----+-----+-----+----+----+---+---+----+-----+----+------------+
+|datum|M01AB|M01AE|N02BA|N02BE|N05B|N05C|R03|R06|Year|Month|Hour|Weekday Name|
++-----+-----+-----+-----+-----+----+----+---+---+----+-----+----+------------+
+|    0|    0|    0|    0|    0|   0|   0|  0|  0|   0|    0|   0|           0|
++-----+-----+-----+-----+-----+----+----+---+---+----+-----+----+------------+
+
+\end{verbatim}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ImportTok{from}\NormalTok{ pyspark.sql.functions }\ImportTok{import}\NormalTok{ to\_date}
+
+\CommentTok{\# Convert \textquotesingle{}datum\textquotesingle{} column to date type for daily dataset (repeat for other datasets)}
+\NormalTok{df\_daily }\OperatorTok{=}\NormalTok{ df\_daily.withColumn(}\StringTok{"datum"}\NormalTok{, to\_date(df\_daily[}\StringTok{"datum"}\NormalTok{], }\StringTok{"yyyy{-}MM{-}dd"}\NormalTok{))}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{\# Fill missing values with 0}
+\NormalTok{df\_daily }\OperatorTok{=}\NormalTok{ df\_daily.fillna(}\DecValTok{0}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{\# Monthly total sales for each drug category in the daily dataset}
+\NormalTok{monthly\_sales }\OperatorTok{=}\NormalTok{ df\_daily.groupBy(}\StringTok{"Year"}\NormalTok{, }\StringTok{"Month"}\NormalTok{) }\OperatorTok{\textbackslash{}}
+\NormalTok{    .}\BuiltInTok{sum}\NormalTok{(}\StringTok{"M01AB"}\NormalTok{, }\StringTok{"M01AE"}\NormalTok{, }\StringTok{"N02BA"}\NormalTok{, }\StringTok{"N02BE"}\NormalTok{, }\StringTok{"N05B"}\NormalTok{, }\StringTok{"N05C"}\NormalTok{, }\StringTok{"R03"}\NormalTok{, }\StringTok{"R06"}\NormalTok{) }\OperatorTok{\textbackslash{}}
+\NormalTok{    .orderBy(}\StringTok{"Year"}\NormalTok{, }\StringTok{"Month"}\NormalTok{)}
+\NormalTok{display(monthly\_sales)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{\# Weekly trend analysis}
+\NormalTok{weekly\_sales\_trends }\OperatorTok{=}\NormalTok{ df\_weekly.groupBy(}\StringTok{"datum"}\NormalTok{).}\BuiltInTok{sum}\NormalTok{(}\StringTok{"M01AB"}\NormalTok{, }\StringTok{"M01AE"}\NormalTok{, }\StringTok{"N02BA"}\NormalTok{, }\StringTok{"N02BE"}\NormalTok{, }\StringTok{"N05B"}\NormalTok{, }\StringTok{"N05C"}\NormalTok{, }\StringTok{"R03"}\NormalTok{, }\StringTok{"R06"}\NormalTok{)}
+\NormalTok{display(weekly\_sales\_trends)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ImportTok{from}\NormalTok{ statsmodels.tsa.arima.model }\ImportTok{import}\NormalTok{ ARIMA}
+\ImportTok{import}\NormalTok{ pandas }\ImportTok{as}\NormalTok{ pd}
+
+\CommentTok{\# Convert to pandas DataFrame}
+\NormalTok{category\_df }\OperatorTok{=}\NormalTok{ df\_daily.select(}\StringTok{"datum"}\NormalTok{, }\StringTok{"M01AB"}\NormalTok{).toPandas()}
+\NormalTok{category\_df.set\_index(}\StringTok{\textquotesingle{}datum\textquotesingle{}}\NormalTok{, inplace}\OperatorTok{=}\VariableTok{True}\NormalTok{)}
+
+\CommentTok{\# Fit ARIMA model}
+\NormalTok{model }\OperatorTok{=}\NormalTok{ ARIMA(category\_df[}\StringTok{\textquotesingle{}M01AB\textquotesingle{}}\NormalTok{], order}\OperatorTok{=}\NormalTok{(}\DecValTok{1}\NormalTok{, }\DecValTok{1}\NormalTok{, }\DecValTok{1}\NormalTok{))  }\CommentTok{\# You may need to adjust the order}
+\NormalTok{model\_fit }\OperatorTok{=}\NormalTok{ model.fit()}
+
+\CommentTok{\# Forecast}
+\NormalTok{forecast }\OperatorTok{=}\NormalTok{ model\_fit.forecast(steps}\OperatorTok{=}\DecValTok{30}\NormalTok{)}
+\BuiltInTok{print}\NormalTok{(forecast)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+/databricks/python/lib/python3.9/site-packages/statsmodels/tsa/base/tsa_model.py:471: ValueWarning: No frequency information was provided, so inferred frequency D will be used.
+  self._init_dates(dates, freq)
+/databricks/python/lib/python3.9/site-packages/statsmodels/tsa/base/tsa_model.py:471: ValueWarning: No frequency information was provided, so inferred frequency D will be used.
+  self._init_dates(dates, freq)
+/databricks/python/lib/python3.9/site-packages/statsmodels/tsa/base/tsa_model.py:471: ValueWarning: No frequency information was provided, so inferred frequency D will be used.
+  self._init_dates(dates, freq)
+\end{verbatim}
+
+\begin{verbatim}
+2019-10-09    5.485714
+2019-10-10    5.501847
+2019-10-11    5.501897
+2019-10-12    5.501898
+2019-10-13    5.501898
+2019-10-14    5.501898
+2019-10-15    5.501898
+2019-10-16    5.501898
+2019-10-17    5.501898
+2019-10-18    5.501898
+2019-10-19    5.501898
+2019-10-20    5.501898
+2019-10-21    5.501898
+2019-10-22    5.501898
+2019-10-23    5.501898
+2019-10-24    5.501898
+2019-10-25    5.501898
+2019-10-26    5.501898
+2019-10-27    5.501898
+2019-10-28    5.501898
+2019-10-29    5.501898
+2019-10-30    5.501898
+2019-10-31    5.501898
+2019-11-01    5.501898
+2019-11-02    5.501898
+2019-11-03    5.501898
+2019-11-04    5.501898
+2019-11-05    5.501898
+2019-11-06    5.501898
+2019-11-07    5.501898
+Freq: D, Name: predicted_mean, dtype: float64
+\end{verbatim}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ImportTok{import}\NormalTok{ matplotlib.pyplot }\ImportTok{as}\NormalTok{ plt}
+
+\CommentTok{\# Plot the historical data}
+\NormalTok{plt.figure(figsize}\OperatorTok{=}\NormalTok{(}\DecValTok{12}\NormalTok{, }\DecValTok{6}\NormalTok{))}
+\NormalTok{plt.plot(category\_df[}\StringTok{\textquotesingle{}M01AB\textquotesingle{}}\NormalTok{], label}\OperatorTok{=}\StringTok{"Historical Data"}\NormalTok{)}
+
+\CommentTok{\# Plot the forecast}
+\NormalTok{forecast\_dates }\OperatorTok{=}\NormalTok{ pd.date\_range(start}\OperatorTok{=}\NormalTok{category\_df.index[}\OperatorTok{{-}}\DecValTok{1}\NormalTok{], periods}\OperatorTok{=}\DecValTok{30}\NormalTok{, freq}\OperatorTok{=}\StringTok{\textquotesingle{}D\textquotesingle{}}\NormalTok{)}
+\NormalTok{plt.plot(forecast\_dates, forecast, label}\OperatorTok{=}\StringTok{"Forecast"}\NormalTok{, color}\OperatorTok{=}\StringTok{\textquotesingle{}red\textquotesingle{}}\NormalTok{)}
+
+\CommentTok{\# Add labels and title}
+\NormalTok{plt.xlabel(}\StringTok{"Date"}\NormalTok{)}
+\NormalTok{plt.ylabel(}\StringTok{"M01AB Sales Volume"}\NormalTok{)}
+\NormalTok{plt.title(}\StringTok{"M01AB Sales Forecast"}\NormalTok{)}
+\NormalTok{plt.legend()}
+\NormalTok{plt.show()}
+\end{Highlighting}
+\end{Shaded}
+
+\includegraphics{vertopal_bc267e9ba27d4d1088813b9a6110c823/fe321d762410ec536418d6d66dfe98bcd5a4b6ad.png}
+
+\end{document}
