@@ -2,7 +2,7 @@
 * 4-day online datathon structure
 * A team of **Arman (engineering + DS)** and **Saeed (statistics + DS)**
 
-I’ll structure it as:
+Structure:
 
 1. Phase 1 – Understand & Design
 2. Phase 2 – Core Implementation & “Guaranteed Good” Solution
