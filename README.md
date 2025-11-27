@@ -4,7 +4,7 @@
 
 novartis_datathon_2025
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/armanfeili/novartis_datathon_2025/blob/main/notebooks/colab/01_colab_setup.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/armanfeili/novartis_datathon_2025/blob/Arman/notebooks/colab/02_colab_experiments.ipynb)
 
 **This project combines the power of GitHub Copilot in VS Code with GPU training in Google Colab for the Novartis Datathon 2025.**
 
@@ -57,15 +57,14 @@ novartis_datathon_2025
 ### 1. Open in Colab
 Click the badge above or go to:
 ```
-https://colab.research.google.com/github/armanfeili/novartis_datathon_2025/blob/main/notebooks/colab/01_colab_setup.ipynb
+https://colab.research.google.com/github/armanfeili/novartis_datathon_2025/blob/main/notebooks/colab/02_colab_experiments.ipynb
 ```
 
 ### 2. Enable GPU
 - **Runtime** → **Change runtime type** → **GPU** (T4 or A100) → **Save**
 
-### 3. Run Setup
-- Run `notebooks/colab/01_colab_setup.ipynb` to mount Drive and install dependencies.
-- Run `notebooks/colab/02_colab_experiments.ipynb` to start training.
+### 3. Run All Cells
+- Run all cells in order: the notebook will mount Drive, install dependencies, and then run the models.
 
 ---
 
@@ -186,5 +185,5 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 
 ## See Also
 
-- [notebooks/colab/01_colab_setup.ipynb](notebooks/colab/01_colab_setup.ipynb) — Colab setup
+- [notebooks/colab/02_colab_experiments.ipynb](notebooks/colab/02_colab_experiments.ipynb) — Main training notebook
 - [src/train.py](src/train.py) — Main training script
