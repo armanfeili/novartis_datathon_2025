@@ -56,8 +56,7 @@ Jupyter notebooks for exploration and prototyping.
 
 Notebooks specifically designed for the Google Colab environment.
 
-- **`01_colab_setup.ipynb`**: Handles the initial setup in Colab: mounting Google Drive, installing dependencies from `env/`, and verifying GPU availability.
-- **`02_colab_experiments.ipynb`**: The entry point for running training experiments in Colab. It calls `src/train.py` with specific configurations.
+- **`main.ipynb`**: The single entry point for the Colab workflow. It handles environment setup (Drive mount, dependency installation) and runs training experiments by calling `src/train.py`.
 
 ## `data/`
 
