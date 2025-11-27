@@ -108,31 +108,83 @@ Set up a code base that allows fast iteration but stays clean:
 1. **Repo structure** (you already have a version, but for datathon):
 
    ```text
-   /data
-     /raw
-     /processed
-   /src
-     data_loading.py
-     preprocessing.py
-     features.py
-     models.py
-     validation.py
-     submission.py
-     config.py
-   /notebooks
-     00_eda_overview.ipynb
-     01_eda_time_series.ipynb
-     02_feature_engineering.ipynb
-     03_models_baseline.ipynb
-     04_models_advanced.ipynb
-   /results
-     /submissions
-     /figures
-   /docs
-     problem.md
-     data_schema.md
-     validation.md
-     experiments_log.md
+   novartis-datathon-2025/
+   ├─ data/
+   │  ├─ raw/             # Original files from organizers (read-only)
+   │  ├─ interim/         # Lightly cleaned/merged tables
+   │  └─ processed/       # Final feature tables ready for modeling
+   │
+   ├─ configs/
+   │  ├─ data.yaml        # paths, columns, keys, date configs
+   │  ├─ features.yaml    # which features/lag windows to use
+   │  ├─ model_lgbm.yaml  # hyperparams for LightGBM
+   │  ├─ model_xgb.yaml   # hyperparams for XGBoost
+   │  ├─ model_cat.yaml   # hyperparams for CatBoost
+   │  ├─ model_linear.yaml# linear/tree models configs
+   │  ├─ model_nn.yaml    # NN architecture & training params (epochs, lr, etc.)
+   │  └─ run_defaults.yaml# default run-level settings (seeds, cv scheme, etc.)
+   │
+   ├─ src/
+   │  ├─ data.py          # load_raw_data(), make_interim(), make_processed()
+   │  ├─ features.py      # build_features(df), add_lags(), rolling stats, etc.
+   │  ├─ validation.py    # time-based splits, rolling CV, adversarial validation
+   │  ├─ models/
+   │  │  ├─ base.py       # BaseModel interface (fit, predict, save, load)
+   │  │  ├─ lgbm_model.py # LightGBM wrapper
+   │  │  ├─ xgb_model.py  # XGBoost wrapper
+   │  │  ├─ cat_model.py  # CatBoost wrapper
+   │  │  ├─ linear.py     # Ridge/Lasso/etc.
+   │  │  └─ nn.py         # PyTorch/Keras tabular NN with checkpointing
+   │  ├─ train.py         # main train loop; orchestrates data→features→model
+   │  ├─ evaluate.py      # metrics, plotting, error analysis
+   │  ├─ inference.py     # load best model + generate predictions on test
+   │  └─ utils.py         # logging, timers, seed setting, path helpers
+   │
+   ├─ notebooks/
+   │  ├─ 00_eda.ipynb           # EDA & understanding
+   │  ├─ 01_feature_prototype.ipynb
+   │  ├─ 02_model_sanity.ipynb
+   │  └─ colab/
+   │     ├─ 01_colab_setup.ipynb    # mount Drive, pip install, set paths
+   │     └─ 02_colab_experiments.ipynb
+   │
+   ├─ artifacts/
+   │  └─ runs/
+   │     ├─ 2025-11-27_lgbm_v1/          # RUN_ID (timestamp + short name)
+   │     │  ├─ config_used.yaml          # merged config snapshot for this run
+   │     │  ├─ model/                    # final frozen model(s)
+   │     │  │  └─ best_model.bin
+   │     │  ├─ checkpoints/              # periodic checkpoints (NN and others)
+   │     │  │  ├─ epoch_001.pt
+   │     │  │  ├─ epoch_010.pt
+   │     │  │  └─ best.pt
+   │     │  ├─ metrics.json              # train/val metric history, final scores
+   │     │  ├─ logs.txt                  # training logs (per epoch, warnings, etc.)
+   │     │  ├─ preds/                    # predictions for val/test
+   │     │  │  ├─ oof_train.csv          # out-of-fold predictions
+   │     │  │  └─ test_predictions.csv   # raw test predictions
+   │     │  └─ figures/                  # plots for this run (errors, importances)
+   │     │
+   │     ├─ 2025-11-27_catboost_v2/
+   │     └─ 2025-11-28_nn_ensemble_v1/
+   │
+   ├─ submissions/
+   │  ├─ baseline_naive.csv
+   │  ├─ 2025-11-29_lgbm_v1.csv
+   │  └─ 2025-11-30_ensemble_final.csv
+   │
+   ├─ env/
+   │  ├─ requirements.txt        # for local (pip)
+   │  ├─ environment.yml         # optional, for conda
+   │  └─ colab_requirements.txt  # minimal pip install list for Colab
+   │
+   ├─ docs/
+   │  ├─ problem.md              # problem statement & business framing
+   │  ├─ data_schema.md          # tables, keys, column descriptions
+   │  ├─ validation.md           # split strategy, rationale
+   │  └─ experiments_log.md      # short log of runs (ID, model, metric)
+   │
+   └─ README.md                  # how to run on local & Colab
    ```
 
 2. **Config**:
