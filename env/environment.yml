@@ -1,0 +1,22 @@
+name: novartis-datathon
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.10
+  - numpy
+  - pandas
+  - scikit-learn
+  - matplotlib
+  - seaborn
+  - pyyaml
+  - tqdm
+  - lightgbm
+  - xgboost
+  - catboost
+  - pytorch
+  - torchvision
+  - joblib
+  - pip
+  - pip:
+    - ipykernel

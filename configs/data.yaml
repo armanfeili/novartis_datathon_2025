@@ -1,0 +1,48 @@
+# Data configuration for Novartis Datathon 2025
+# Paths, columns, keys, date configs
+
+# Google Drive paths (used in Colab)
+drive:
+  base_path: "/content/drive/MyDrive/novartis-datathon-2025"
+  data_dir: "${drive.base_path}/data"
+  raw_dir: "${drive.base_path}/data/raw"
+  interim_dir: "${drive.base_path}/data/interim"
+  processed_dir: "${drive.base_path}/data/processed"
+
+# Local paths (for local development)
+local:
+  base_path: "."
+  data_dir: "./data"
+  raw_dir: "./data/raw"
+  interim_dir: "./data/interim"
+  processed_dir: "./data/processed"
+
+# Data files
+files:
+  # Add your raw data files here
+  # train: "train.csv"
+  # test: "test.csv"
+  # supplementary: "supplementary.csv"
+
+# Key columns
+keys:
+  primary_key: null  # e.g., "id"
+  time_key: null     # e.g., "date"
+  group_key: null    # e.g., "patient_id"
+
+# Date configuration
+dates:
+  format: "%Y-%m-%d"
+  date_columns: []   # List of date columns to parse
+
+# Column types
+columns:
+  categorical: []
+  numerical: []
+  target: null       # Target column name
+  
+# Data validation
+validation:
+  check_nulls: true
+  check_duplicates: true
+  expected_rows: null

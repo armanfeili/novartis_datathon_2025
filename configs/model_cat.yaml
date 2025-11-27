@@ -1,0 +1,61 @@
+# CatBoost model configuration for Novartis Datathon 2025
+
+model:
+  name: "catboost"
+  task: "regression"  # regression, binary, multiclass
+
+# CatBoost hyperparameters
+params:
+  # Core parameters
+  loss_function: "RMSE"       # RMSE, MAE, Logloss, MultiClass
+  eval_metric: "RMSE"
+  
+  # Tree parameters
+  depth: 6
+  min_data_in_leaf: 1
+  max_leaves: 31
+  
+  # Learning parameters
+  learning_rate: 0.05
+  iterations: 1000
+  
+  # Regularization
+  l2_leaf_reg: 3.0
+  random_strength: 1.0
+  bagging_temperature: 1.0
+  subsample: 0.8              # Only for Bayesian bootstrap
+  
+  # Categorical features
+  cat_features: []            # List of categorical column indices/names
+  one_hot_max_size: 10
+  
+  # Early stopping
+  early_stopping_rounds: 50
+  
+  # Other
+  verbose: 100
+  thread_count: -1
+  random_seed: 42
+  
+  # GPU (uncomment for GPU training)
+  # task_type: "GPU"
+  # devices: "0"
+
+# Training settings
+training:
+  use_early_stopping: true
+  eval_metric: "RMSE"
+  plot: false
+
+# Hyperparameter tuning (Optuna)
+tuning:
+  enabled: false
+  n_trials: 100
+  timeout: 3600
+  search_space:
+    depth: [4, 10]
+    learning_rate: [0.01, 0.3]
+    l2_leaf_reg: [1.0, 10.0]
+    subsample: [0.5, 1.0]
+    random_strength: [0.0, 10.0]
+    bagging_temperature: [0.0, 10.0]
