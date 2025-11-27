@@ -145,8 +145,7 @@ Set up a code base that allows fast iteration but stays clean:
    │  ├─ 01_feature_prototype.ipynb
    │  ├─ 02_model_sanity.ipynb
    │  └─ colab/
-   │     ├─ 01_colab_setup.ipynb    # mount Drive, pip install, set paths
-   │     └─ 02_colab_experiments.ipynb
+   │     └─ main.ipynb              # Single entry point for Colab
    │
    ├─ artifacts/
    │  └─ runs/

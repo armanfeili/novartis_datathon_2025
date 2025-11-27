@@ -136,7 +136,7 @@ novartis-datathon-2025/
 All settings are in `configs/`. Modify `model_*.yaml` to change hyperparameters or `features.yaml` to change feature engineering.
 
 ### B. Training
-Run `src/train.py` (via `notebooks/colab/02_colab_experiments.ipynb` in Colab) to start a training run.
+Run `src/train.py` (via `notebooks/colab/main.ipynb` in Colab) to start a training run.
 This will:
 1. Load data from Drive
 2. Generate features
@@ -185,5 +185,5 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 
 ## See Also
 
-- [notebooks/colab/02_colab_experiments.ipynb](notebooks/colab/02_colab_experiments.ipynb) — Main training notebook
+- [notebooks/colab/main.ipynb](notebooks/colab/main.ipynb) — Main training notebook
 - [src/train.py](src/train.py) — Main training script
