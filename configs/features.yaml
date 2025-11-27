@@ -1,0 +1,66 @@
+# Feature engineering configuration for Novartis Datathon 2025
+# Which features/lag windows to use
+
+# Feature groups to include
+feature_groups:
+  basic: true           # Basic transformations
+  lags: true            # Lag features
+  rolling: true         # Rolling statistics
+  diff: true            # Difference features
+  interactions: true    # Feature interactions
+  time_based: true      # Time-based features
+
+# Lag configuration
+lags:
+  windows: [1, 7, 14, 30]  # Lag windows in time units
+  columns: []              # Columns to create lags for
+
+# Rolling statistics
+rolling:
+  windows: [7, 14, 30]     # Rolling window sizes
+  functions:               # Aggregation functions
+    - mean
+    - std
+    - min
+    - max
+    - median
+  columns: []              # Columns to compute rolling stats for
+
+# Difference features
+diff:
+  periods: [1, 7]          # Difference periods
+  columns: []
+
+# Date/time features
+time_features:
+  extract:
+    - day_of_week
+    - day_of_month
+    - week_of_year
+    - month
+    - quarter
+    - year
+    - is_weekend
+    - is_month_start
+    - is_month_end
+  cyclical_encoding: true  # Use sin/cos encoding for cyclical features
+
+# Feature interactions
+interactions:
+  pairs: []                # List of column pairs for interactions
+  methods:
+    - multiply
+    - divide
+    - subtract
+
+# Feature selection
+selection:
+  drop_low_variance: true
+  variance_threshold: 0.01
+  drop_high_correlation: true
+  correlation_threshold: 0.95
+  
+# Encoding
+encoding:
+  categorical_method: "label"  # label, onehot, target
+  handle_unknown: "value"      # value, error

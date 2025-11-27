@@ -1,0 +1,75 @@
+# Default run-level settings for Novartis Datathon 2025
+# Seeds, CV scheme, experiment tracking
+
+# Experiment identification
+experiment:
+  name: "novartis-datathon-2025"
+  description: "Novartis Datathon 2025 Competition"
+  
+# Run naming
+run:
+  name_format: "{timestamp}_{model}_{version}"
+  timestamp_format: "%Y-%m-%d_%H-%M"
+
+# Reproducibility
+reproducibility:
+  seed: 42
+  deterministic: true
+
+# Cross-validation scheme
+cv:
+  strategy: "time_series"      # kfold, stratified_kfold, time_series, grouped
+  n_splits: 5
+  shuffle: false               # Usually false for time series
+  
+  # Time series specific
+  time_series:
+    gap: 0                     # Gap between train and validation
+    max_train_size: null       # Maximum training set size (null = no limit)
+    test_size: null            # Validation set size (null = auto)
+  
+  # Grouped CV (e.g., by patient)
+  grouped:
+    group_column: null
+
+# Paths (relative to project root or Drive)
+paths:
+  artifacts_dir: "artifacts/runs"
+  submissions_dir: "submissions"
+  logs_dir: "artifacts/runs/{run_id}/logs"
+
+# Output settings
+output:
+  save_oof_predictions: true
+  save_test_predictions: true
+  save_feature_importance: true
+  save_training_curves: true
+  save_config_snapshot: true
+
+# Metrics to track
+metrics:
+  primary: "rmse"              # Primary metric for model selection
+  secondary:
+    - mae
+    - mape
+    - r2
+
+# Logging
+logging:
+  level: "INFO"
+  console: true
+  file: true
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Google Drive integration
+drive:
+  folder_id: "1iP8ffP5MfJ6hqig1-lQpVwzfrl9uuU03"
+  mount_path: "/content/drive"
+  base_path: "/content/drive/MyDrive/novartis-datathon-2025"
+  sync_artifacts: true
+
+# Hardware
+hardware:
+  use_gpu: true
+  mixed_precision: true
+  num_workers: 4
