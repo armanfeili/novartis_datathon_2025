@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from datetime import datetime
+import yaml
 
 from .utils import setup_logging, load_config, set_seed, timer
 from .data import DataManager
@@ -24,19 +25,20 @@ def get_model_class(model_name):
     if model_name == 'neural_network': return NNModel
     raise ValueError(f"Unknown model: {model_name}")
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='configs/run_defaults.yaml')
-    parser.add_argument('--model-config', type=str, required=True)
-    args = parser.parse_args()
-
+def run_experiment(model_name: str, model_config_path: str, run_name: str = None, config_path: str = 'configs/run_defaults.yaml'):
+    """
+    Run a full experiment: load data, train model, evaluate, and save artifacts.
+    """
     # Load configs
-    run_config = load_config(args.config)
-    model_config = load_config(args.model_config)
+    run_config = load_config(config_path)
+    model_config = load_config(model_config_path)
     
-    # Setup
+    # Setup Run ID
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    run_id = f"{timestamp}_{model_config['model']['name']}"
+    if run_name:
+        run_id = f"{timestamp}_{run_name}"
+    else:
+        run_id = f"{timestamp}_{model_config['model']['name']}"
     
     # Setup paths
     artifacts_dir = Path(run_config['paths']['artifacts_dir']) / run_id
@@ -47,6 +49,10 @@ def main():
     
     logging.info(f"Starting run: {run_id}")
     
+    # Save config snapshot
+    with open(artifacts_dir / "config_used.yaml", "w") as f:
+        yaml.dump({"run_config": run_config, "model_config": model_config}, f)
+
     # Data Pipeline
     data_mgr = DataManager(load_config('configs/data.yaml'))
     raw_data = data_mgr.load_raw_data()
@@ -63,7 +69,6 @@ def main():
     
     # Training Loop
     oof_preds = np.zeros(len(processed_df))
-    scores = []
     
     ModelClass = get_model_class(model_config['model']['name'])
     
@@ -89,8 +94,31 @@ def main():
     metrics = evaluator.calculate_metrics(processed_df[target_col], oof_preds)
     logging.info(f"CV Metrics: {metrics}")
     
+    # Save metrics
+    with open(artifacts_dir / "metrics.json", "w") as f:
+        import json
+        json.dump(metrics, f, indent=4)
+
     # Save results
     pd.DataFrame({'actual': processed_df[target_col], 'pred': oof_preds}).to_csv(artifacts_dir / "oof_preds.csv", index=False)
+    
+    return run_id, metrics
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model', type=str, help="Model name (optional override)")
+    parser.add_argument('--model-config', type=str, required=True, help="Path to model config yaml")
+    parser.add_argument('--config', type=str, default='configs/run_defaults.yaml', help="Path to run defaults yaml")
+    parser.add_argument('--run-name', type=str, help="Custom run name")
+    
+    args = parser.parse_args()
+
+    run_experiment(
+        model_name=args.model,
+        model_config_path=args.model_config,
+        run_name=args.run_name,
+        config_path=args.config
+    )
 
 if __name__ == "__main__":
     main()
