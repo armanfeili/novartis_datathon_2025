@@ -4,7 +4,7 @@
 
 novartis_datathon_2025
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/armanfeili/novartis_datathon_2025/blob/Arman/notebooks/colab/02_colab_experiments.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/armanfeili/novartis_datathon_2025/blob/Arman/notebooks/colab/main.ipynb)
 
 **This project combines the power of GitHub Copilot in VS Code with GPU training in Google Colab for the Novartis Datathon 2025.**
 
@@ -57,7 +57,7 @@ novartis_datathon_2025
 ### 1. Open in Colab
 Click the badge above or go to:
 ```
-https://colab.research.google.com/github/armanfeili/novartis_datathon_2025/blob/main/notebooks/colab/02_colab_experiments.ipynb
+https://colab.research.google.com/github/armanfeili/novartis_datathon_2025/blob/Arman/notebooks/colab/main.ipynb
 ```
 
 ### 2. Enable GPU
