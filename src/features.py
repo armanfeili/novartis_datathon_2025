@@ -77,6 +77,7 @@ def _load_feature_config(config: Optional[dict]) -> dict:
             'compute_max': True,
             'compute_min': True,
             'log_transform': True,
+            'compute_seasonal': True,  # NEW: seasonal pattern detection
         },
         'time': {
             'include_months_postgx': True,
@@ -95,6 +96,7 @@ def _load_feature_config(config: Optional[dict]) -> dict:
             'include_cummax': True,
             'include_first_month': True,
             'include_entry_speed': True,
+            'include_future_n_gxs': True,  # NEW: future n_gxs (exogenous)
         },
         'drug': {
             'categoricals': ['ther_area', 'main_package'],
@@ -116,6 +118,17 @@ def _load_feature_config(config: Optional[dict]) -> dict:
         'interactions': {
             'enabled': False,
             'pairs': [],
+        },
+        'target_encoding': {
+            'enabled': False,  # Disabled by default; set True to enable
+            'features': ['ther_area', 'country'],  # Columns to target encode
+            'n_folds': 5,  # K-fold for leakage prevention
+            'smoothing': 10,  # Smoothing factor for regularization
+        },
+        'feature_selection': {
+            'analyze_correlations': False,
+            'correlation_threshold': 0.95,
+            'compute_importance': False,
         },
     }
     
@@ -199,7 +212,16 @@ def make_features(
         if feat_config.get('interactions', {}).get('enabled', False):
             df = add_interaction_features(df, feat_config.get('interactions', {}))
         
-        # 7. Create y_norm for training (ONLY if mode="train")
+        # 7. Target encoding features (if enabled and mode="train")
+        # Must be done before creating y_norm, uses K-fold to prevent leakage
+        target_enc_config = feat_config.get('target_encoding', {})
+        if target_enc_config.get('enabled', False) and mode == "train":
+            # Create y_norm first for target encoding
+            if 'y_norm' not in df.columns:
+                df['y_norm'] = df['volume'] / df['avg_vol_12m']
+            df = add_target_encoding_features(df, target_enc_config, scenario)
+        
+        # 8. Create y_norm for training (ONLY if mode="train")
         if mode == "train":
             if 'y_norm' not in df.columns:
                 df['y_norm'] = df['volume'] / df['avg_vol_12m']
@@ -348,6 +370,144 @@ def add_pre_entry_features(df: pd.DataFrame, config: Optional[dict] = None) -> p
     df['vol_ratio_3m_12m'] = df['avg_vol_3m'] / (df['avg_vol_12m'] + 1e-6)
     df['vol_ratio_3m_6m'] = df['avg_vol_3m'] / (df['avg_vol_6m'] + 1e-6)
     
+    # Seasonal pattern detection from pre-entry months
+    if config.get('compute_seasonal', True) and 'month' in df.columns:
+        df = _add_seasonal_features(df, series_keys)
+    
+    return df
+
+
+def _add_seasonal_features(df: pd.DataFrame, series_keys: List[str]) -> pd.DataFrame:
+    """
+    Add seasonal pattern features from pre-entry months.
+    
+    Features:
+    - seasonal_amplitude: Max deviation from mean by month-of-year (normalized)
+    - seasonal_peak_month: Month with highest volume
+    - seasonal_trough_month: Month with lowest volume  
+    - seasonal_ratio: Peak-to-trough ratio
+    - seasonal_q1_effect, seasonal_q2_effect, etc.: Quarter-wise deviations
+    
+    These features capture pre-LOE seasonality patterns that may persist post-entry.
+    
+    Args:
+        df: Panel data with volume, months_postgx, month
+        series_keys: ['country', 'brand_name']
+        
+    Returns:
+        DataFrame with seasonal features added
+    """
+    # Month map for parsing
+    month_map = {
+        'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
+        'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
+    }
+    
+    # Get pre-entry data only
+    pre_entry = df[df['months_postgx'] < 0].copy()
+    if len(pre_entry) == 0:
+        logger.warning("No pre-entry data for seasonal features, skipping")
+        return df
+    
+    # Parse month to month_of_year if not already present
+    if 'month_of_year' not in pre_entry.columns:
+        pre_entry['month_of_year'] = pre_entry['month'].map(month_map)
+        # Fallback for any unmapped
+        if pre_entry['month_of_year'].isna().any():
+            try:
+                mask = pre_entry['month_of_year'].isna()
+                pre_entry.loc[mask, 'month_of_year'] = pd.to_datetime(
+                    pre_entry.loc[mask, 'month'], format='%b'
+                ).dt.month
+            except Exception:
+                pre_entry['month_of_year'] = pre_entry['month_of_year'].fillna(1)
+    
+    # Compute series-level seasonal statistics
+    def compute_seasonal_stats(group):
+        """Compute seasonal stats for a single series."""
+        if len(group) < 6:
+            # Not enough data for reliable seasonality
+            return pd.Series({
+                'seasonal_amplitude': 0.0,
+                'seasonal_peak_month': 6,
+                'seasonal_trough_month': 1,
+                'seasonal_ratio': 1.0,
+                'seasonal_q1_effect': 0.0,
+                'seasonal_q2_effect': 0.0,
+                'seasonal_q3_effect': 0.0,
+                'seasonal_q4_effect': 0.0,
+            })
+        
+        # Mean volume per month-of-year
+        monthly_avg = group.groupby('month_of_year', observed=True)['volume'].mean()
+        overall_mean = group['volume'].mean()
+        
+        if overall_mean <= 0 or len(monthly_avg) == 0:
+            return pd.Series({
+                'seasonal_amplitude': 0.0,
+                'seasonal_peak_month': 6,
+                'seasonal_trough_month': 1,
+                'seasonal_ratio': 1.0,
+                'seasonal_q1_effect': 0.0,
+                'seasonal_q2_effect': 0.0,
+                'seasonal_q3_effect': 0.0,
+                'seasonal_q4_effect': 0.0,
+            })
+        
+        # Normalized monthly ratios (deviation from mean)
+        monthly_ratios = monthly_avg / overall_mean
+        
+        # Amplitude: max deviation from 1.0
+        seasonal_amplitude = monthly_ratios.max() - monthly_ratios.min()
+        
+        # Peak and trough months
+        peak_month = monthly_ratios.idxmax() if len(monthly_ratios) > 0 else 6
+        trough_month = monthly_ratios.idxmin() if len(monthly_ratios) > 0 else 1
+        
+        # Peak-to-trough ratio
+        peak_val = monthly_ratios.max()
+        trough_val = monthly_ratios.min()
+        seasonal_ratio = peak_val / (trough_val + 1e-6) if trough_val > 0 else 1.0
+        seasonal_ratio = min(seasonal_ratio, 5.0)  # Cap extreme values
+        
+        # Quarter effects (average deviation for each quarter)
+        q1_months = [1, 2, 3]
+        q2_months = [4, 5, 6]
+        q3_months = [7, 8, 9]
+        q4_months = [10, 11, 12]
+        
+        def quarter_effect(months):
+            vals = [monthly_ratios.get(m, 1.0) for m in months if m in monthly_ratios.index]
+            return np.mean(vals) - 1.0 if vals else 0.0
+        
+        return pd.Series({
+            'seasonal_amplitude': seasonal_amplitude,
+            'seasonal_peak_month': peak_month,
+            'seasonal_trough_month': trough_month,
+            'seasonal_ratio': seasonal_ratio,
+            'seasonal_q1_effect': quarter_effect(q1_months),
+            'seasonal_q2_effect': quarter_effect(q2_months),
+            'seasonal_q3_effect': quarter_effect(q3_months),
+            'seasonal_q4_effect': quarter_effect(q4_months),
+        })
+    
+    # Apply to each series
+    seasonal_stats = pre_entry.groupby(series_keys, group_keys=False, observed=False).apply(
+        compute_seasonal_stats, include_groups=False
+    ).reset_index()
+    
+    # Merge back to main DataFrame
+    df = df.merge(seasonal_stats, on=series_keys, how='left')
+    
+    # Fill NaN with neutral values
+    df['seasonal_amplitude'] = df['seasonal_amplitude'].fillna(0.0)
+    df['seasonal_peak_month'] = df['seasonal_peak_month'].fillna(6).astype(int)
+    df['seasonal_trough_month'] = df['seasonal_trough_month'].fillna(1).astype(int)
+    df['seasonal_ratio'] = df['seasonal_ratio'].fillna(1.0)
+    for q in ['q1', 'q2', 'q3', 'q4']:
+        df[f'seasonal_{q}_effect'] = df[f'seasonal_{q}_effect'].fillna(0.0)
+    
+    logger.debug("Added seasonal pattern features")
     return df
 
 
@@ -564,6 +724,89 @@ def add_generics_features(df: pd.DataFrame, cutoff_month: int = 0, config: Optio
         labels=['none', 'one', 'few', 'several', 'many']
     )
     
+    # Future n_gxs features (EXOGENOUS: n_gxs is provided for all forecast months in test data)
+    # This is not leakage because n_gxs is an external forecast, not derived from volume
+    if config.get('include_future_n_gxs', True):
+        df = _add_future_generics_features(df, series_keys, cutoff_month)
+    
+    return df
+
+
+def _add_future_generics_features(df: pd.DataFrame, series_keys: List[str], cutoff_month: int) -> pd.DataFrame:
+    """
+    Add expected future generics features (exogenous).
+    
+    n_gxs for future months is available in both train and test data as an
+    external forecast. This is NOT leakage because:
+    1. n_gxs does not depend on volume (it's from competitive intelligence)
+    2. n_gxs is provided for all forecast months in the test data
+    
+    Features:
+    - n_gxs_at_month_12: Expected n_gxs at month 12
+    - n_gxs_at_month_23: Expected n_gxs at end of forecast horizon
+    - n_gxs_change_to_12: Change in n_gxs from cutoff to month 12
+    - n_gxs_change_to_23: Change in n_gxs from cutoff to month 23
+    - n_gxs_max_forecast: Maximum n_gxs over forecast horizon
+    - expected_new_generics: Number of new generics expected in forecast
+    
+    Args:
+        df: Panel data with n_gxs
+        series_keys: ['country', 'brand_name']
+        cutoff_month: Feature cutoff (0 for S1, 6 for S2)
+        
+    Returns:
+        DataFrame with future generics features
+    """
+    # n_gxs at specific future months
+    for target_month in [12, 23]:
+        month_data = df[df['months_postgx'] == target_month][series_keys + ['n_gxs']].copy()
+        if len(month_data) > 0:
+            month_data.columns = series_keys + [f'n_gxs_at_month_{target_month}']
+            df = df.merge(month_data, on=series_keys, how='left')
+            df[f'n_gxs_at_month_{target_month}'] = df[f'n_gxs_at_month_{target_month}'].fillna(df['n_gxs'])
+    
+    # n_gxs at cutoff (baseline for change calculation)
+    cutoff_ref = max(cutoff_month - 1, 0)  # Use month just before cutoff
+    cutoff_data = df[df['months_postgx'] == cutoff_ref][series_keys + ['n_gxs']].copy()
+    if len(cutoff_data) > 0:
+        cutoff_data.columns = series_keys + ['n_gxs_at_cutoff']
+        df = df.merge(cutoff_data, on=series_keys, how='left')
+        df['n_gxs_at_cutoff'] = df['n_gxs_at_cutoff'].fillna(0)
+        
+        # Change features
+        if 'n_gxs_at_month_12' in df.columns:
+            df['n_gxs_change_to_12'] = df['n_gxs_at_month_12'] - df['n_gxs_at_cutoff']
+        if 'n_gxs_at_month_23' in df.columns:
+            df['n_gxs_change_to_23'] = df['n_gxs_at_month_23'] - df['n_gxs_at_cutoff']
+        
+        # Clean up intermediate column
+        df = df.drop(columns=['n_gxs_at_cutoff'], errors='ignore')
+    
+    # Maximum n_gxs over forecast horizon
+    forecast_start = max(cutoff_month, 0)
+    forecast_data = df[(df['months_postgx'] >= forecast_start) & (df['months_postgx'] <= 23)]
+    if len(forecast_data) > 0:
+        max_n_gxs = forecast_data.groupby(series_keys, observed=False)['n_gxs'].max().reset_index()
+        max_n_gxs.columns = series_keys + ['n_gxs_max_forecast']
+        df = df.merge(max_n_gxs, on=series_keys, how='left')
+        df['n_gxs_max_forecast'] = df['n_gxs_max_forecast'].fillna(df['n_gxs'])
+        
+        # Expected new generics in forecast period
+        min_n_gxs = forecast_data.groupby(series_keys, observed=False)['n_gxs'].min().reset_index()
+        min_n_gxs.columns = series_keys + ['n_gxs_min_forecast']
+        df = df.merge(min_n_gxs, on=series_keys, how='left')
+        df['expected_new_generics'] = df['n_gxs_max_forecast'] - df['n_gxs_min_forecast']
+        df['expected_new_generics'] = df['expected_new_generics'].fillna(0).clip(lower=0)
+        
+        # Clean up
+        df = df.drop(columns=['n_gxs_min_forecast'], errors='ignore')
+    
+    # Log transform
+    for col in ['n_gxs_at_month_12', 'n_gxs_at_month_23', 'n_gxs_max_forecast']:
+        if col in df.columns:
+            df[f'log_{col}'] = np.log1p(df[col])
+    
+    logger.debug("Added future generics features (exogenous)")
     return df
 
 
@@ -858,6 +1101,144 @@ def add_interaction_features(df: pd.DataFrame, config: Optional[dict] = None) ->
         except Exception as e:
             logger.warning(f"Failed to create interaction {interaction_name}: {e}")
     
+    return df
+
+
+def add_target_encoding_features(
+    df: pd.DataFrame,
+    config: Optional[dict] = None,
+    scenario: int = 1
+) -> pd.DataFrame:
+    """
+    Add target encoding features with K-fold to prevent leakage.
+    
+    Features:
+    - ther_area_erosion_prior: Historical average erosion by therapeutic area
+    - country_effect: Country-level erosion patterns
+    - ther_area_encoded_target: Target encoding for therapeutic area
+    
+    CRITICAL: Uses K-fold cross-validation to prevent target leakage.
+    Each series gets an encoding computed only from OTHER series.
+    
+    Args:
+        df: Panel data with y_norm and categorical columns
+        config: Target encoding config
+        scenario: 1 or 2
+        
+    Returns:
+        DataFrame with target encoding features
+    """
+    if config is None:
+        config = {}
+    
+    if not config.get('enabled', False):
+        return df
+    
+    if 'y_norm' not in df.columns:
+        logger.warning("y_norm not available for target encoding, skipping")
+        return df
+    
+    series_keys = ['country', 'brand_name']
+    features_to_encode = config.get('features', ['ther_area', 'country'])
+    n_folds = config.get('n_folds', 5)
+    smoothing = config.get('smoothing', 10)
+    
+    scenario = _normalize_scenario(scenario)
+    scenario_cfg = SCENARIO_CONFIG[scenario]
+    target_start = scenario_cfg['target_start']
+    target_end = scenario_cfg['target_end']
+    
+    # Filter to target rows only for computing encodings
+    target_mask = (df['months_postgx'] >= target_start) & (df['months_postgx'] <= target_end)
+    target_df = df[target_mask].copy()
+    
+    if len(target_df) == 0:
+        logger.warning("No target rows for target encoding, skipping")
+        return df
+    
+    # Get unique series
+    series_df = target_df[series_keys].drop_duplicates()
+    n_series = len(series_df)
+    
+    if n_series < n_folds:
+        logger.warning(f"Not enough series ({n_series}) for {n_folds}-fold target encoding")
+        return df
+    
+    # Assign fold indices to series (series-level split)
+    np.random.seed(42)  # Reproducibility
+    series_df = series_df.sample(frac=1).reset_index(drop=True)
+    series_df['_fold'] = np.arange(len(series_df)) % n_folds
+    
+    # Merge fold indices to data
+    target_df = target_df.merge(series_df, on=series_keys, how='left')
+    
+    # Global mean for smoothing
+    global_mean = target_df['y_norm'].mean()
+    
+    for col in features_to_encode:
+        if col not in df.columns:
+            logger.warning(f"Column {col} not found for target encoding, skipping")
+            continue
+        
+        encoded_col = f'{col}_erosion_prior'
+        
+        # Initialize with global mean
+        df[encoded_col] = global_mean
+        
+        # K-fold target encoding
+        for fold in range(n_folds):
+            # Train on all folds except current
+            train_mask = target_df['_fold'] != fold
+            val_mask = target_df['_fold'] == fold
+            
+            train_data = target_df[train_mask]
+            val_series = target_df[val_mask][series_keys].drop_duplicates()
+            
+            if len(train_data) == 0:
+                continue
+            
+            # Compute mean per category from training folds
+            category_means = train_data.groupby(col, observed=False)['y_norm'].agg(['mean', 'count']).reset_index()
+            category_means.columns = [col, 'cat_mean', 'cat_count']
+            
+            # Smoothed mean: (count * cat_mean + smoothing * global_mean) / (count + smoothing)
+            category_means['smoothed_mean'] = (
+                (category_means['cat_count'] * category_means['cat_mean'] + smoothing * global_mean)
+                / (category_means['cat_count'] + smoothing)
+            )
+            
+            # Map to validation series
+            cat_to_mean = dict(zip(category_means[col], category_means['smoothed_mean']))
+            
+            # Get indices for validation series in original df
+            val_series_set = set(zip(val_series['country'], val_series['brand_name']))
+            val_idx = df.apply(
+                lambda row: (row['country'], row['brand_name']) in val_series_set,
+                axis=1
+            )
+            
+            # Assign encoded values
+            df.loc[val_idx, encoded_col] = df.loc[val_idx, col].map(cat_to_mean).fillna(global_mean)
+        
+        # Fill any remaining NaN with global mean
+        df[encoded_col] = df[encoded_col].fillna(global_mean)
+        
+        logger.debug(f"Created target encoding feature: {encoded_col}")
+    
+    # Add ther_area × erosion interaction if both exist
+    if 'ther_area_erosion_prior' in df.columns:
+        if 'erosion_0_5' in df.columns:
+            # S2 only: interaction with early erosion
+            df['ther_area_x_early_erosion'] = (
+                df['ther_area_erosion_prior'] * df['erosion_0_5']
+            )
+        
+        # Interaction with time
+        df['ther_area_erosion_x_time'] = (
+            df['ther_area_erosion_prior'] * df['months_postgx']
+        )
+    
+    logger.info(f"Added target encoding features for: {features_to_encode}")
     return df
 
 
@@ -1314,3 +1695,237 @@ def clear_feature_cache(data_config: dict, split: Optional[str] = None, scenario
                     if cache_path.exists():
                         cache_path.unlink()
                         logger.info(f"Cleared cache: {cache_path}")
+
+
+# =============================================================================
+# Feature Selection Utilities
+# =============================================================================
+
+def analyze_feature_correlations(
+    X: pd.DataFrame,
+    threshold: float = 0.95,
+    method: str = 'pearson'
+) -> Tuple[pd.DataFrame, List[str]]:
+    """
+    Analyze feature correlations and identify redundant features.
+    
+    Args:
+        X: Feature DataFrame (numeric columns only)
+        threshold: Correlation threshold for redundancy (default 0.95)
+        method: Correlation method ('pearson', 'spearman', 'kendall')
+        
+    Returns:
+        Tuple of (correlation_matrix, list of features to potentially remove)
+    """
+    # Select only numeric columns
+    numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+    X_numeric = X[numeric_cols]
+    
+    # Compute correlation matrix
+    corr_matrix = X_numeric.corr(method=method)
+    
+    # Find highly correlated pairs
+    redundant_features = set()
+    n_features = len(numeric_cols)
+    
+    for i in range(n_features):
+        for j in range(i + 1, n_features):
+            if abs(corr_matrix.iloc[i, j]) >= threshold:
+                col_i = numeric_cols[i]
+                col_j = numeric_cols[j]
+                # Keep the feature that appears first, mark the other as redundant
+                redundant_features.add(col_j)
+                logger.debug(
+                    f"High correlation ({corr_matrix.iloc[i, j]:.3f}): "
+                    f"{col_i} vs {col_j} - marking {col_j} for removal"
+                )
+    
+    redundant_list = list(redundant_features)
+    logger.info(
+        f"Found {len(redundant_list)} potentially redundant features "
+        f"(correlation >= {threshold})"
+    )
+    
+    return corr_matrix, redundant_list
+
+
+def compute_feature_importance_permutation(
+    model,
+    X: pd.DataFrame,
+    y: pd.Series,
+    n_repeats: int = 5,
+    random_state: int = 42
+) -> pd.DataFrame:
+    """
+    Compute permutation feature importance.
+    
+    Args:
+        model: Trained model with predict method
+        X: Feature DataFrame
+        y: Target Series
+        n_repeats: Number of permutation repeats
+        random_state: Random seed
+        
+    Returns:
+        DataFrame with feature importance scores (mean and std)
+    """
+    from sklearn.metrics import mean_squared_error
+    
+    np.random.seed(random_state)
+    
+    # Baseline prediction error
+    y_pred_baseline = model.predict(X)
+    baseline_mse = mean_squared_error(y, y_pred_baseline)
+    
+    importances = []
+    
+    for col in X.columns:
+        col_importances = []
+        
+        for _ in range(n_repeats):
+            # Permute column
+            X_permuted = X.copy()
+            X_permuted[col] = np.random.permutation(X_permuted[col].values)
+            
+            # Compute prediction error with permuted column
+            y_pred_permuted = model.predict(X_permuted)
+            permuted_mse = mean_squared_error(y, y_pred_permuted)
+            
+            # Importance = increase in error
+            importance = permuted_mse - baseline_mse
+            col_importances.append(importance)
+        
+        importances.append({
+            'feature': col,
+            'importance_mean': np.mean(col_importances),
+            'importance_std': np.std(col_importances),
+        })
+    
+    importance_df = pd.DataFrame(importances)
+    importance_df = importance_df.sort_values('importance_mean', ascending=False)
+    
+    logger.info(f"Computed permutation importance for {len(X.columns)} features")
+    return importance_df
+
+
+def select_features_by_importance(
+    importance_df: pd.DataFrame,
+    top_k: Optional[int] = None,
+    threshold: Optional[float] = None
+) -> List[str]:
+    """
+    Select top features by importance.
+    
+    Args:
+        importance_df: DataFrame from compute_feature_importance_permutation
+        top_k: Select top K features (if provided)
+        threshold: Select features with importance > threshold (if provided)
+        
+    Returns:
+        List of selected feature names
+    """
+    if top_k is not None:
+        selected = importance_df.head(top_k)['feature'].tolist()
+        logger.info(f"Selected top {top_k} features by importance")
+        return selected
+    
+    if threshold is not None:
+        selected = importance_df[
+            importance_df['importance_mean'] > threshold
+        ]['feature'].tolist()
+        logger.info(f"Selected {len(selected)} features with importance > {threshold}")
+        return selected
+    
+    # Default: return all features sorted by importance
+    return importance_df['feature'].tolist()
+
+
+def get_feature_summary(X: pd.DataFrame) -> pd.DataFrame:
+    """
+    Generate summary statistics for all features.
+    
+    Args:
+        X: Feature DataFrame
+        
+    Returns:
+        DataFrame with summary stats for each feature
+    """
+    summary_data = []
+    
+    for col in X.columns:
+        col_data = X[col]
+        
+        stats = {
+            'feature': col,
+            'dtype': str(col_data.dtype),
+            'n_unique': col_data.nunique(),
+            'n_missing': col_data.isna().sum(),
+            'missing_pct': col_data.isna().mean() * 100,
+        }
+        
+        if pd.api.types.is_numeric_dtype(col_data):
+            stats.update({
+                'mean': col_data.mean(),
+                'std': col_data.std(),
+                'min': col_data.min(),
+                'max': col_data.max(),
+                'median': col_data.median(),
+            })
+        else:
+            stats.update({
+                'mean': np.nan,
+                'std': np.nan,
+                'min': np.nan,
+                'max': np.nan,
+                'median': np.nan,
+            })
+        
+        summary_data.append(stats)
+    
+    summary_df = pd.DataFrame(summary_data)
+    logger.info(f"Generated feature summary for {len(X.columns)} features")
+    return summary_df
+
+
+def remove_redundant_features(
+    X: pd.DataFrame,
+    correlation_threshold: float = 0.95,
+    variance_threshold: float = 0.0
+) -> Tuple[pd.DataFrame, List[str]]:
+    """
+    Remove redundant features based on correlation and variance.
+    
+    Args:
+        X: Feature DataFrame
+        correlation_threshold: Remove features with correlation >= threshold
+        variance_threshold: Remove features with variance <= threshold
+        
+    Returns:
+        Tuple of (filtered DataFrame, list of removed features)
+    """
+    removed_features = []
+    
+    # Select numeric columns
+    numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+    X_filtered = X.copy()
+    
+    # Remove zero/low variance features
+    if variance_threshold > 0:
+        variances = X_filtered[numeric_cols].var()
+        low_var_cols = variances[variances <= variance_threshold].index.tolist()
+        X_filtered = X_filtered.drop(columns=low_var_cols)
+        removed_features.extend(low_var_cols)
+        logger.info(f"Removed {len(low_var_cols)} low-variance features")
+    
+    # Remove highly correlated features
+    if correlation_threshold < 1.0:
+        _, redundant_cols = analyze_feature_correlations(
+            X_filtered, threshold=correlation_threshold
+        )
+        redundant_cols = [c for c in redundant_cols if c in X_filtered.columns]
+        X_filtered = X_filtered.drop(columns=redundant_cols)
+        removed_features.extend(redundant_cols)
+        logger.info(f"Removed {len(redundant_cols)} highly correlated features")
+    
+    logger.info(f"Final feature set: {len(X_filtered.columns)} features")
+    return X_filtered, removed_features

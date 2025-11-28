@@ -2515,6 +2515,315 @@ def test_compute_pre_entry_stats_loads_threshold_from_run_config():
     assert result_config['bucket'].iloc[0] == 1
 
 
+# =============================================================================
+# Section 3 - Feature Engineering Tests
+# =============================================================================
+
+class TestSeasonalFeatures:
+    """Tests for seasonal pattern detection from pre-entry months (Section 3.1)."""
+    
+    def test_seasonal_features_created(self):
+        """Test that seasonal pattern features are created."""
+        from src.features import make_features
+        
+        # Create synthetic panel with seasonal pattern
+        panel_data = []
+        for brand in ['BRAND_A']:
+            for m in range(-24, 24):
+                # Seasonal pattern: higher in summer (months 6-8)
+                month_of_year = ((m + 24) % 12) + 1
+                seasonal_factor = 1.2 if 6 <= month_of_year <= 8 else 0.9
+                volume = 1000 * seasonal_factor
+                
+                panel_data.append({
+                    'country': 'COUNTRY_1',
+                    'brand_name': brand,
+                    'months_postgx': m,
+                    'volume': volume,
+                    'month': ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                              'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][month_of_year - 1],
+                    'n_gxs': 1 if m >= 0 else 0,
+                    'ther_area': 'AREA_1',
+                    'main_package': 'Tablet',
+                    'hospital_rate': 50,
+                    'biological': False,
+                    'small_molecule': True,
+                })
+        
+        panel = pd.DataFrame(panel_data)
+        panel['avg_vol_12m'] = 1000.0  # Mock pre-entry average
+        
+        # Build features with seasonal enabled
+        config = {'pre_entry': {'compute_seasonal': True}}
+        features_df = make_features(panel, scenario=1, mode='train', config=config)
+        
+        # Check seasonal features exist
+        assert 'seasonal_amplitude' in features_df.columns
+        assert 'seasonal_peak_month' in features_df.columns
+        assert 'seasonal_trough_month' in features_df.columns
+        assert 'seasonal_ratio' in features_df.columns
+        assert 'seasonal_q1_effect' in features_df.columns
+        assert 'seasonal_q2_effect' in features_df.columns
+        assert 'seasonal_q3_effect' in features_df.columns
+        assert 'seasonal_q4_effect' in features_df.columns
+    
+    def test_seasonal_amplitude_captures_pattern(self):
+        """Test that seasonal amplitude captures actual seasonality."""
+        from src.features import _add_seasonal_features
+        
+        # Create panel with strong seasonality
+        panel_data = []
+        for m in range(-24, 0):
+            month_of_year = ((m + 24) % 12) + 1
+            # Strong seasonal: double in summer
+            volume = 2000 if month_of_year in [6, 7, 8] else 1000
+            panel_data.append({
+                'country': 'COUNTRY_1',
+                'brand_name': 'BRAND_A',
+                'months_postgx': m,
+                'volume': volume,
+                'month': ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][month_of_year - 1],
+            })
+        
+        panel = pd.DataFrame(panel_data)
+        result = _add_seasonal_features(panel, ['country', 'brand_name'])
+        
+        # Should detect seasonality
+        assert result['seasonal_amplitude'].iloc[0] > 0.3  # Significant amplitude
+        # Q3 (Jul-Sep) should have positive effect
+        assert result['seasonal_q3_effect'].iloc[0] > 0
+
+
+class TestFutureGenericsFeatures:
+    """Tests for expected future generics features (Section 3.3)."""
+    
+    def test_future_generics_features_created(self):
+        """Test that future n_gxs features are created."""
+        from src.features import add_generics_features
+        
+        # Create panel with n_gxs increasing over time
+        panel_data = []
+        for m in range(-6, 24):
+            n_gxs = max(0, (m // 6) + 1)  # Increases every 6 months
+            panel_data.append({
+                'country': 'COUNTRY_1',
+                'brand_name': 'BRAND_A',
+                'months_postgx': m,
+                'n_gxs': n_gxs,
+            })
+        
+        panel = pd.DataFrame(panel_data)
+        
+        # Build generics features with future n_gxs enabled
+        config = {'include_future_n_gxs': True}
+        result = add_generics_features(panel, cutoff_month=0, config=config)
+        
+        # Check future generics features exist
+        assert 'n_gxs_at_month_12' in result.columns
+        assert 'n_gxs_at_month_23' in result.columns
+        assert 'n_gxs_max_forecast' in result.columns
+        assert 'expected_new_generics' in result.columns
+    
+    def test_future_generics_values_correct(self):
+        """Test that future generics features have correct values."""
+        from src.features import _add_future_generics_features
+        
+        # Create panel with known n_gxs values
+        panel_data = []
+        for m in range(-6, 24):
+            # n_gxs: 0 at entry, 2 at month 12, 4 at month 23
+            if m < 0:
+                n_gxs = 0
+            elif m <= 6:
+                n_gxs = 1
+            elif m <= 12:
+                n_gxs = 2
+            else:
+                n_gxs = 4
+            
+            panel_data.append({
+                'country': 'COUNTRY_1',
+                'brand_name': 'BRAND_A',
+                'months_postgx': m,
+                'n_gxs': n_gxs,
+            })
+        
+        panel = pd.DataFrame(panel_data)
+        result = _add_future_generics_features(panel, ['country', 'brand_name'], cutoff_month=0)
+        
+        # Check values
+        assert result['n_gxs_at_month_12'].iloc[0] == 2
+        assert result['n_gxs_at_month_23'].iloc[0] == 4
+        assert result['n_gxs_max_forecast'].iloc[0] == 4
+        assert result['expected_new_generics'].iloc[0] >= 3  # 4 - 1 = 3
+
+
+class TestTargetEncodingFeatures:
+    """Tests for target encoding features (Section 3.4)."""
+    
+    def test_target_encoding_function_exists(self):
+        """Test that target encoding function exists."""
+        from src.features import add_target_encoding_features
+        assert callable(add_target_encoding_features)
+    
+    def test_target_encoding_creates_features(self):
+        """Test that target encoding creates expected features."""
+        from src.features import add_target_encoding_features
+        
+        # Create panel with multiple therapeutic areas
+        panel_data = []
+        for i, brand in enumerate(['BRAND_A', 'BRAND_B', 'BRAND_C', 'BRAND_D', 'BRAND_E']):
+            ther_area = 'AREA_1' if i < 3 else 'AREA_2'
+            for m in range(24):
+                # Different erosion by therapeutic area
+                y_norm = 0.5 if ther_area == 'AREA_1' else 0.8
+                panel_data.append({
+                    'country': 'COUNTRY_1',
+                    'brand_name': brand,
+                    'months_postgx': m,
+                    'volume': 1000 * y_norm,
+                    'y_norm': y_norm,
+                    'ther_area': ther_area,
+                })
+        
+        panel = pd.DataFrame(panel_data)
+        
+        config = {
+            'enabled': True,
+            'features': ['ther_area'],
+            'n_folds': 2,
+            'smoothing': 5,
+        }
+        
+        result = add_target_encoding_features(panel.copy(), config, scenario=1)
+        
+        # Check that erosion prior feature was created
+        assert 'ther_area_erosion_prior' in result.columns
+        # Values should be close to actual means (0.5 and 0.8)
+        area1_prior = result[result['ther_area'] == 'AREA_1']['ther_area_erosion_prior'].mean()
+        area2_prior = result[result['ther_area'] == 'AREA_2']['ther_area_erosion_prior'].mean()
+        
+        # They shouldn't be exactly equal due to K-fold, but should be in range
+        assert 0.4 < area1_prior < 0.7
+        assert 0.6 < area2_prior < 0.9
+
+
+class TestFeatureSelection:
+    """Tests for feature selection utilities (Section 3.8)."""
+    
+    def test_correlation_analysis_function_exists(self):
+        """Test that correlation analysis function exists."""
+        from src.features import analyze_feature_correlations
+        assert callable(analyze_feature_correlations)
+    
+    def test_correlation_analysis_returns_correct_format(self):
+        """Test correlation analysis returns expected format."""
+        from src.features import analyze_feature_correlations
+        
+        # Create features with known correlations
+        np.random.seed(42)
+        n = 100
+        X = pd.DataFrame({
+            'feature_a': np.random.randn(n),
+            'feature_b': np.random.randn(n),
+            'feature_c_correlated': None,  # Will be correlated with a
+        })
+        X['feature_c_correlated'] = X['feature_a'] * 0.99 + np.random.randn(n) * 0.01
+        
+        corr_matrix, redundant = analyze_feature_correlations(X, threshold=0.95)
+        
+        # Check format
+        assert isinstance(corr_matrix, pd.DataFrame)
+        assert isinstance(redundant, list)
+        
+        # feature_c should be marked as redundant (highly correlated with feature_a)
+        assert 'feature_c_correlated' in redundant
+    
+    def test_feature_importance_function_exists(self):
+        """Test that permutation importance function exists."""
+        from src.features import compute_feature_importance_permutation
+        assert callable(compute_feature_importance_permutation)
+    
+    def test_feature_summary_function(self):
+        """Test feature summary generation."""
+        from src.features import get_feature_summary
+        
+        X = pd.DataFrame({
+            'numeric_feature': [1.0, 2.0, np.nan, 4.0],
+            'categorical_feature': ['a', 'b', 'a', 'c'],
+        })
+        
+        summary = get_feature_summary(X)
+        
+        assert len(summary) == 2
+        assert 'feature' in summary.columns
+        assert 'n_missing' in summary.columns
+        assert 'missing_pct' in summary.columns
+        
+        # numeric_feature has 1 missing value
+        numeric_row = summary[summary['feature'] == 'numeric_feature'].iloc[0]
+        assert numeric_row['n_missing'] == 1
+        assert numeric_row['missing_pct'] == 25.0
+    
+    def test_remove_redundant_features(self):
+        """Test redundant feature removal."""
+        from src.features import remove_redundant_features
+        
+        # Create features with high correlation
+        np.random.seed(42)
+        n = 100
+        X = pd.DataFrame({
+            'feature_a': np.random.randn(n),
+            'feature_b': np.random.randn(n),
+            'feature_a_copy': None,
+        })
+        X['feature_a_copy'] = X['feature_a'] + np.random.randn(n) * 0.001
+        
+        X_filtered, removed = remove_redundant_features(X, correlation_threshold=0.99)
+        
+        # One of the correlated features should be removed
+        assert len(removed) >= 1
+        assert len(X_filtered.columns) < len(X.columns)
+
+
+class TestInteractionFeatures:
+    """Tests for interaction features including ther_area × erosion (Section 3.7)."""
+    
+    def test_ther_area_erosion_interaction_created(self):
+        """Test ther_area × early_erosion interaction is created with target encoding."""
+        from src.features import add_target_encoding_features
+        
+        # Create panel with early erosion features
+        panel_data = []
+        for i, brand in enumerate(['BRAND_A', 'BRAND_B', 'BRAND_C', 'BRAND_D', 'BRAND_E']):
+            ther_area = 'AREA_1' if i < 3 else 'AREA_2'
+            for m in range(24):
+                panel_data.append({
+                    'country': 'COUNTRY_1',
+                    'brand_name': brand,
+                    'months_postgx': m,
+                    'y_norm': 0.5,
+                    'ther_area': ther_area,
+                    'erosion_0_5': 0.6,  # S2 early erosion feature
+                })
+        
+        panel = pd.DataFrame(panel_data)
+        
+        config = {
+            'enabled': True,
+            'features': ['ther_area'],
+            'n_folds': 2,
+            'smoothing': 5,
+        }
+        
+        result = add_target_encoding_features(panel.copy(), config, scenario=2)
+        
+        # Check interaction feature exists
+        assert 'ther_area_x_early_erosion' in result.columns
+        assert 'ther_area_erosion_x_time' in result.columns
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
 

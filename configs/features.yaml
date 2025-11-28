@@ -8,7 +8,9 @@ pre_entry:
   compute_trend: true           # Linear slope over pre-entry period
   compute_volatility: true      # std(volume_pre) / avg_vol_12m
   compute_max: true             # Maximum volume in pre-entry period
+  compute_min: true             # Minimum volume in pre-entry period
   log_transform: true           # log1p(avg_vol_12m) for scale normalization
+  compute_seasonal: true        # Seasonal pattern detection (NEW Section 3.1)
 
 # Time features
 time:
@@ -17,6 +19,9 @@ time:
   include_is_post_entry: true         # Binary (months_postgx >= 0)
   include_time_bucket: true           # Categorical (pre, 0-5, 6-11, 12-23)
   include_month_of_year: true         # Seasonality from calendar month
+  include_quarters: true              # Q1-Q4 for seasonality
+  include_decay: true                 # Time decay features
+  decay_alpha: 0.1                    # Decay rate for exp(-alpha * months)
   
   # Time bucket definitions
   time_buckets:
@@ -32,10 +37,13 @@ generics:
   include_multiple_generics: true     # Binary (n_gxs >= 2)
   include_cummax: true                # Maximum n_gxs up to current month
   include_first_month: true           # Month when n_gxs first > 0
+  include_entry_speed: true           # Rate of generic entry
+  include_future_n_gxs: true          # Expected future n_gxs (exogenous, NEW Section 3.3)
   
   # Cutoff behavior: features derived from n_gxs must respect scenario cutoff
   # Scenario 1: only use n_gxs for months_postgx < 0
   # Scenario 2: can use n_gxs for months_postgx < 6
+  # NOTE: Future n_gxs is EXOGENOUS (provided in test data) and NOT leakage
 
 # Drug characteristics (static features from medicine_info)
 drug:
@@ -71,9 +79,19 @@ interactions:
   pairs:
     - ["n_gxs", "biological"]         # n_gxs_x_biological
     - ["hospital_rate", "months_postgx"]  # hospital_rate_x_time
-    - ["ther_area", "n_gxs"]          # ther_area_x_n_gxs (requires encoding first)
+    - ["ther_area_encoded", "n_gxs"]  # ther_area_x_n_gxs
 
-# Feature selection / filtering
+# Target encoding features (Section 3.4)
+# Uses K-fold cross-validation to prevent leakage
+target_encoding:
+  enabled: false                      # Set to true to enable (requires mode="train")
+  features:                           # Columns to target encode
+    - "ther_area"                     # ther_area_erosion_prior
+    - "country"                       # country_erosion_prior
+  n_folds: 5                          # Number of folds for cross-fitting
+  smoothing: 10                       # Smoothing factor for regularization
+
+# Feature selection / filtering (Section 3.8)
 selection:
   drop_low_variance: false            # Not recommended for this problem
   variance_threshold: 0.01
