@@ -1542,6 +1542,191 @@ def test_run_experiment_function_exists():
     assert 'run_name' in params
 
 
+def test_compute_config_hash_returns_consistent_hash():
+    """Test that config hash is consistent for same configs."""
+    from src.train import compute_config_hash
+    
+    # Create config dictionaries
+    configs = {
+        'run_config': {'param1': 'value1', 'param2': 123},
+        'model_config': {'model_type': 'catboost'}
+    }
+    
+    # Compute hash twice
+    hash1 = compute_config_hash(configs)
+    hash2 = compute_config_hash(configs)
+    
+    # Should be consistent
+    assert hash1 == hash2
+    
+    # Should be valid SHA256 hex digest (8 chars for short hash)
+    assert len(hash1) == 8
+    assert all(c in '0123456789abcdef' for c in hash1)
+
+
+def test_compute_config_hash_changes_with_content():
+    """Test that config hash changes when config content changes."""
+    from src.train import compute_config_hash
+    
+    configs1 = {'param': 'original'}
+    configs2 = {'param': 'modified'}
+    
+    hash1 = compute_config_hash(configs1)
+    hash2 = compute_config_hash(configs2)
+    
+    # Hashes should differ
+    assert hash1 != hash2
+
+
+def test_compute_config_hash_handles_empty_config():
+    """Test that config hash handles empty configs."""
+    from src.train import compute_config_hash
+    
+    # Empty config
+    hash_result = compute_config_hash({})
+    
+    # Should return a valid hash
+    assert isinstance(hash_result, str)
+    assert len(hash_result) == 8
+
+
+def test_compute_metric_aligned_weights_scenario1():
+    """Test metric-aligned weights for Scenario 1."""
+    from src.train import compute_metric_aligned_weights
+    
+    # Create test data: 2 series across 24 months
+    rows = []
+    for series_id, (country, brand, bucket) in enumerate([('US', 'A', 1), ('DE', 'B', 2)]):
+        for month in range(24):
+            rows.append({
+                'country': country,
+                'brand_name': brand,
+                'months_postgx': month,
+                'bucket': bucket,
+                'avg_vol_12m': 1000.0
+            })
+    
+    meta_df = pd.DataFrame(rows)
+    
+    weights = compute_metric_aligned_weights(
+        meta_df=meta_df,
+        scenario=1,
+        avg_vol_col='avg_vol_12m'
+    )
+    
+    # Check basic properties
+    assert len(weights) == 48  # 2 series * 24 months
+    assert all(weights > 0)
+    
+    # Months 0-5 should have higher weight than 12-23 (as per metric formula)
+    month0_idx = meta_df[(meta_df['bucket'] == 1) & (meta_df['months_postgx'] == 0)].index[0]
+    month12_idx = meta_df[(meta_df['bucket'] == 1) & (meta_df['months_postgx'] == 12)].index[0]
+    
+    # Month 0-5 weight should be > month 12-23 weight
+    assert weights.iloc[month0_idx] > weights.iloc[month12_idx]
+
+
+def test_compute_metric_aligned_weights_scenario2():
+    """Test metric-aligned weights for Scenario 2."""
+    from src.train import compute_metric_aligned_weights
+    
+    # Create test data: 1 series, months 6-23 only (S2 relevant range)
+    rows = []
+    for month in range(6, 24):
+        rows.append({
+            'country': 'US',
+            'brand_name': 'A',
+            'months_postgx': month,
+            'bucket': 1,
+            'avg_vol_12m': 1000.0
+        })
+    
+    meta_df = pd.DataFrame(rows)
+    
+    weights = compute_metric_aligned_weights(
+        meta_df=meta_df,
+        scenario=2,
+        avg_vol_col='avg_vol_12m'
+    )
+    
+    # Check basic properties
+    assert len(weights) == 18  # months 6-23
+    assert all(weights > 0)
+    
+    # Months 6-11 should have higher weight than 12-23 (0.5/6 vs 0.3/12)
+    month6_idx = meta_df[meta_df['months_postgx'] == 6].index[0]
+    month12_idx = meta_df[meta_df['months_postgx'] == 12].index[0]
+    
+    # Weight at month 6 should be > weight at month 12
+    assert weights.iloc[month6_idx] > weights.iloc[month12_idx]
+
+
+def test_compute_sample_weights_with_metric_aligned():
+    """Test compute_sample_weights with use_metric_aligned=True."""
+    from src.train import compute_sample_weights
+    
+    # Create test data
+    meta_df = pd.DataFrame({
+        'country': ['US'] * 24,
+        'brand_name': ['A'] * 24,
+        'months_postgx': list(range(24)),
+        'bucket': [1] * 24,
+        'avg_vol_12m': [1000.0] * 24
+    })
+    
+    # Test with metric-aligned weights
+    weights = compute_sample_weights(
+        meta_df=meta_df,
+        scenario=1,
+        config=None,
+        use_metric_aligned=True
+    )
+    
+    assert len(weights) == 24
+    assert all(weights > 0)
+
+
+def test_save_config_snapshot():
+    """Test that save_config_snapshot saves config files and returns hash."""
+    from src.train import save_config_snapshot
+    import tempfile
+    import os
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        artifacts_dir = Path(tmpdir) / 'artifacts'
+        artifacts_dir.mkdir(parents=True)
+        
+        # Create a test config file
+        config_path = Path(tmpdir) / 'test_config.yaml'
+        with open(config_path, 'w') as f:
+            f.write('param1: value1\nparam2: 123\n')
+        
+        # Call save_config_snapshot
+        config_hash = save_config_snapshot(
+            artifacts_dir=artifacts_dir,
+            run_config_path=str(config_path)
+        )
+        
+        # Check hash is returned
+        assert isinstance(config_hash, str)
+        assert len(config_hash) == 8
+        
+        # Check configs directory was created
+        config_dir = artifacts_dir / 'configs'
+        assert config_dir.exists()
+        
+        # Check config file was copied
+        copied_config = config_dir / 'test_config.yaml'
+        assert copied_config.exists()
+        
+        # Check hash file was created
+        hash_file = config_dir / 'config_hash.txt'
+        assert hash_file.exists()
+        with open(hash_file, 'r') as f:
+            content = f.read()
+            assert config_hash in content
+
+
 # =============================================================================
 # SECTION 2 TESTS: DATA PIPELINE (NEW ADDITIONS)
 # =============================================================================
@@ -3374,6 +3559,514 @@ class TestAdversarialValidationUnifiedLogging:
         assert len(records_df) >= 2  # auc_mean and auc_std
         assert records_df['run_id'].iloc[0] == 'adv_test_run'
         assert 'auc' in records_df['metric'].iloc[0].lower()
+
+
+# ==============================================================================
+# SECTION 5 TESTS: TRAINING PIPELINE (NEW ADDITIONS)
+# ==============================================================================
+
+
+class TestExperimentTracker:
+    """Tests for experiment tracking functionality (Section 5.1)."""
+    
+    def test_experiment_tracker_class_exists(self):
+        """Test that ExperimentTracker class exists."""
+        from src.train import ExperimentTracker
+        assert ExperimentTracker is not None
+    
+    def test_experiment_tracker_init_disabled(self):
+        """Test ExperimentTracker initialization with tracking disabled."""
+        from src.train import ExperimentTracker
+        
+        tracker = ExperimentTracker(backend=None, enabled=False)
+        assert tracker.enabled == False
+        
+        # Should not raise when methods are called while disabled
+        tracker.start_run(run_name='test')
+        tracker.log_params({'param': 'value'})
+        tracker.log_metrics({'metric': 0.5})
+        tracker.end_run()
+    
+    def test_experiment_tracker_context_manager(self):
+        """Test ExperimentTracker as context manager."""
+        from src.train import ExperimentTracker
+        
+        with ExperimentTracker(backend=None, enabled=False) as tracker:
+            tracker.log_params({'param': 1})
+        # Should not raise
+    
+    def test_setup_experiment_tracking_disabled(self):
+        """Test setup_experiment_tracking with disabled config."""
+        from src.train import setup_experiment_tracking
+        
+        run_config = {
+            'experiment_tracking': {
+                'enabled': False
+            }
+        }
+        
+        tracker = setup_experiment_tracking(run_config, 'test_run')
+        assert tracker is None
+    
+    def test_tracking_constants_defined(self):
+        """Test that tracking availability constants are defined."""
+        from src.train import MLFLOW_AVAILABLE, WANDB_AVAILABLE, OPTUNA_AVAILABLE
+        
+        # These should be boolean
+        assert isinstance(MLFLOW_AVAILABLE, bool)
+        assert isinstance(WANDB_AVAILABLE, bool)
+        assert isinstance(OPTUNA_AVAILABLE, bool)
+
+
+class TestTrainingCheckpoint:
+    """Tests for checkpoint saving functionality (Section 5.1)."""
+    
+    def test_training_checkpoint_class_exists(self):
+        """Test that TrainingCheckpoint class exists."""
+        from src.train import TrainingCheckpoint
+        assert TrainingCheckpoint is not None
+    
+    def test_training_checkpoint_init(self, tmp_path):
+        """Test TrainingCheckpoint initialization."""
+        from src.train import TrainingCheckpoint
+        
+        checkpoint_dir = tmp_path / 'checkpoints'
+        checkpoint = TrainingCheckpoint(
+            checkpoint_dir=checkpoint_dir,
+            keep_best_n=3,
+            metric_name='official_metric',
+            minimize=True
+        )
+        
+        assert checkpoint.checkpoint_dir.exists()
+        assert checkpoint.keep_best_n == 3
+        assert checkpoint.metric_name == 'official_metric'
+        assert checkpoint.minimize == True
+    
+    def test_training_checkpoint_save_and_load(self, tmp_path):
+        """Test saving and loading checkpoints."""
+        from src.train import TrainingCheckpoint
+        from src.models.linear import FlatBaseline
+        
+        checkpoint_dir = tmp_path / 'checkpoints'
+        checkpoint = TrainingCheckpoint(checkpoint_dir=checkpoint_dir)
+        
+        # Create a simple model
+        model = FlatBaseline({})
+        model.fit(
+            pd.DataFrame({'feature1': [1, 2, 3]}),
+            pd.Series([0.9, 0.8, 0.7]),
+            pd.DataFrame({'feature1': [4]}),
+            pd.Series([0.6]),
+            pd.Series([1.0, 1.0, 1.0])
+        )
+        
+        # Save checkpoint
+        checkpoint_path = checkpoint.save(
+            model=model,
+            epoch=5,
+            step=100,
+            metrics={'official_metric': 0.15, 'rmse': 0.08},
+            config={'model_type': 'flat_baseline'},
+            is_best=True
+        )
+        
+        assert checkpoint_path.exists()
+        assert (checkpoint_path / 'model.bin').exists()
+        assert (checkpoint_path / 'training_state.json').exists()
+        
+        # Load checkpoint
+        state = checkpoint.load(checkpoint_path, model_class=FlatBaseline, model_config={})
+        
+        assert state['epoch'] == 5
+        assert state['step'] == 100
+        assert state['metrics']['official_metric'] == 0.15
+        assert 'model' in state
+    
+    def test_training_checkpoint_load_best(self, tmp_path):
+        """Test loading best checkpoint."""
+        from src.train import TrainingCheckpoint
+        from src.models.linear import FlatBaseline
+        
+        checkpoint_dir = tmp_path / 'checkpoints'
+        checkpoint = TrainingCheckpoint(checkpoint_dir=checkpoint_dir)
+        
+        model = FlatBaseline({})
+        model.fit(
+            pd.DataFrame({'f': [1]}), pd.Series([0.9]),
+            pd.DataFrame({'f': [2]}), pd.Series([0.8]),
+            pd.Series([1.0])
+        )
+        
+        # Save as best
+        checkpoint.save(model=model, epoch=10, metrics={'official_metric': 0.12}, is_best=True)
+        
+        # Load best
+        state = checkpoint.load_best(model_class=FlatBaseline, model_config={})
+        
+        assert state is not None
+        assert state['epoch'] == 10
+    
+    def test_training_checkpoint_load_latest(self, tmp_path):
+        """Test loading latest checkpoint."""
+        from src.train import TrainingCheckpoint
+        from src.models.linear import FlatBaseline
+        import time
+        
+        checkpoint_dir = tmp_path / 'checkpoints'
+        checkpoint = TrainingCheckpoint(checkpoint_dir=checkpoint_dir, keep_best_n=5)
+        
+        model = FlatBaseline({})
+        model.fit(
+            pd.DataFrame({'f': [1]}), pd.Series([0.9]),
+            pd.DataFrame({'f': [2]}), pd.Series([0.8]),
+            pd.Series([1.0])
+        )
+        
+        # Save multiple checkpoints
+        checkpoint.save(model=model, epoch=1, metrics={'official_metric': 0.20})
+        time.sleep(0.1)  # Ensure different timestamps
+        checkpoint.save(model=model, epoch=5, metrics={'official_metric': 0.15})
+        time.sleep(0.1)
+        checkpoint.save(model=model, epoch=10, metrics={'official_metric': 0.12})
+        
+        # Load latest
+        state = checkpoint.load_latest(model_class=FlatBaseline, model_config={})
+        
+        assert state is not None
+        assert state['epoch'] == 10
+
+
+class TestWeightTransformations:
+    """Tests for sample weight transformations (Section 5.4)."""
+    
+    def test_transform_weights_identity(self):
+        """Test identity weight transformation."""
+        from src.train import transform_weights
+        
+        weights = pd.Series([1.0, 2.0, 3.0, 4.0, 5.0])
+        transformed = transform_weights(weights, transformation='identity')
+        
+        assert len(transformed) == len(weights)
+        # Identity should normalize to sum to len(weights)
+        assert abs(transformed.sum() - len(weights)) < 0.01
+    
+    def test_transform_weights_sqrt(self):
+        """Test sqrt weight transformation."""
+        from src.train import transform_weights
+        
+        weights = pd.Series([1.0, 4.0, 9.0, 16.0, 25.0])
+        transformed = transform_weights(weights, transformation='sqrt')
+        
+        assert len(transformed) == len(weights)
+        # Sqrt should reduce variance
+        assert transformed.std() < weights.std()
+    
+    def test_transform_weights_log(self):
+        """Test log weight transformation."""
+        from src.train import transform_weights
+        
+        weights = pd.Series([1.0, 10.0, 100.0, 1000.0])
+        transformed = transform_weights(weights, transformation='log')
+        
+        assert len(transformed) == len(weights)
+        # Log should significantly reduce range
+        original_range = weights.max() - weights.min()
+        transformed_range = transformed.max() - transformed.min()
+        assert transformed_range < original_range
+    
+    def test_transform_weights_rank(self):
+        """Test rank weight transformation."""
+        from src.train import transform_weights
+        
+        weights = pd.Series([100.0, 1.0, 50.0, 10.0])
+        transformed = transform_weights(weights, transformation='rank')
+        
+        assert len(transformed) == len(weights)
+        # Rank should create more uniform distribution
+    
+    def test_transform_weights_invalid(self):
+        """Test invalid transformation raises error."""
+        from src.train import transform_weights
+        
+        weights = pd.Series([1.0, 2.0, 3.0])
+        
+        with pytest.raises(ValueError, match="Unknown weight transformation"):
+            transform_weights(weights, transformation='invalid')
+    
+    def test_compute_sample_weights_with_transform(self):
+        """Test compute_sample_weights with weight_transform parameter."""
+        from src.train import compute_sample_weights
+        
+        meta = pd.DataFrame({
+            'months_postgx': [0, 3, 6, 12, 18],
+            'bucket': [1, 1, 2, 2, 2]
+        })
+        
+        # Test with identity (default)
+        weights_identity = compute_sample_weights(
+            meta, scenario=1, weight_transform='identity'
+        )
+        
+        # Test with sqrt
+        weights_sqrt = compute_sample_weights(
+            meta, scenario=1, weight_transform='sqrt'
+        )
+        
+        # Both should have same length
+        assert len(weights_identity) == len(weights_sqrt)
+        
+        # Sqrt should reduce variance
+        assert weights_sqrt.std() <= weights_identity.std() + 0.5  # Small tolerance
+
+
+class TestValidateWeightsCorrelation:
+    """Tests for weight validation (Section 5.4)."""
+    
+    def test_validate_weights_correlation_exists(self):
+        """Test validate_weights_correlation function exists."""
+        from src.train import validate_weights_correlation
+        assert callable(validate_weights_correlation)
+    
+    def test_validate_weights_correlation_basic(self):
+        """Test basic weight validation."""
+        from src.train import validate_weights_correlation
+        
+        np.random.seed(42)
+        n = 100
+        
+        # Create test data
+        weights = pd.Series(np.random.rand(n) + 0.5)
+        y_true = pd.Series(np.random.rand(n) * 0.5 + 0.5)
+        y_pred = y_true + np.random.randn(n) * 0.1  # Predictions with some noise
+        
+        meta_df = pd.DataFrame({
+            'bucket': [1 if i < 50 else 2 for i in range(n)],
+            'months_postgx': list(range(24)) * 4 + list(range(4))
+        })
+        
+        results = validate_weights_correlation(
+            weights, y_true, y_pred, meta_df, scenario=1
+        )
+        
+        assert 'weighted_rmse' in results
+        assert 'unweighted_rmse' in results
+        assert 'rmse_ratio' in results
+        assert 'weight_error_correlation' in results
+        assert 'interpretation' in results
+
+
+class TestHyperparameterOptimization:
+    """Tests for HPO functionality (Section 5.5)."""
+    
+    def test_optuna_availability_constant_exists(self):
+        """Test OPTUNA_AVAILABLE constant exists."""
+        from src.train import OPTUNA_AVAILABLE
+        assert isinstance(OPTUNA_AVAILABLE, bool)
+    
+    def test_create_optuna_objective_exists(self):
+        """Test create_optuna_objective function exists."""
+        from src.train import create_optuna_objective
+        assert callable(create_optuna_objective)
+    
+    def test_run_hyperparameter_optimization_exists(self):
+        """Test run_hyperparameter_optimization function exists."""
+        from src.train import run_hyperparameter_optimization
+        assert callable(run_hyperparameter_optimization)
+    
+    @pytest.mark.skipif(
+        not (Path(__file__).parent.parent / 'data' / 'raw' / 'TRAIN').exists(),
+        reason="Training data not available"
+    )
+    def test_run_hyperparameter_optimization_requires_optuna(self):
+        """Test that HPO raises ImportError when Optuna not available."""
+        from src.train import OPTUNA_AVAILABLE
+        
+        if not OPTUNA_AVAILABLE:
+            from src.train import run_hyperparameter_optimization
+            
+            # Should raise ImportError
+            with pytest.raises(ImportError, match="Optuna"):
+                run_hyperparameter_optimization(
+                    pd.DataFrame(), pd.Series(dtype=float), pd.DataFrame(),
+                    pd.DataFrame(), pd.Series(dtype=float), pd.DataFrame(),
+                    scenario=1
+                )
+
+
+class TestMemoryProfiler:
+    """Tests for memory profiling functionality (Section 5.7)."""
+    
+    def test_memory_profiler_class_exists(self):
+        """Test MemoryProfiler class exists."""
+        from src.train import MemoryProfiler
+        assert MemoryProfiler is not None
+    
+    def test_memory_profiler_disabled(self):
+        """Test MemoryProfiler when disabled."""
+        from src.train import MemoryProfiler
+        
+        profiler = MemoryProfiler(enabled=False)
+        
+        # Should not raise when methods are called
+        profiler.start()
+        profiler.snapshot('test')
+        profiler.log_current()
+        profiler.stop()
+        
+        report = profiler.get_report()
+        assert report['enabled'] == False
+    
+    def test_memory_profiler_enabled(self):
+        """Test MemoryProfiler when enabled."""
+        from src.train import MemoryProfiler
+        
+        profiler = MemoryProfiler(enabled=True)
+        
+        profiler.start()
+        profiler.snapshot('after_start')
+        
+        # Allocate some memory
+        data = [np.zeros(1000) for _ in range(100)]
+        
+        profiler.snapshot('after_allocation')
+        profiler.stop()
+        
+        report = profiler.get_report()
+        assert report['enabled'] == True
+        # Should have peak memory
+        assert 'peak_memory_mb' in report
+
+
+class TestParallelTraining:
+    """Tests for parallel training functionality (Section 5.7)."""
+    
+    def test_train_scenario_parallel_exists(self):
+        """Test train_scenario_parallel function exists."""
+        from src.train import train_scenario_parallel
+        assert callable(train_scenario_parallel)
+    
+    def test_run_full_training_pipeline_exists(self):
+        """Test run_full_training_pipeline function exists."""
+        from src.train import run_full_training_pipeline
+        assert callable(run_full_training_pipeline)
+    
+    def test_run_full_training_pipeline_signature(self):
+        """Test run_full_training_pipeline has expected parameters."""
+        import inspect
+        from src.train import run_full_training_pipeline
+        
+        sig = inspect.signature(run_full_training_pipeline)
+        params = list(sig.parameters.keys())
+        
+        assert 'run_config_path' in params
+        assert 'data_config_path' in params
+        assert 'model_type' in params
+        assert 'run_cv' in params
+        assert 'parallel' in params
+        assert 'run_hpo' in params
+        assert 'enable_tracking' in params
+        assert 'enable_checkpoints' in params
+        assert 'enable_profiling' in params
+
+
+class TestTrainCLISection5:
+    """Tests for CLI options added in Section 5."""
+    
+    def test_cli_has_hpo_options(self):
+        """Test that CLI has HPO options."""
+        import subprocess
+        
+        result = subprocess.run(
+            ['python', '-m', 'src.train', '--help'],
+            capture_output=True,
+            text=True,
+            cwd=Path(__file__).parent.parent,
+            timeout=30
+        )
+        
+        assert result.returncode == 0
+        assert '--hpo' in result.stdout
+        assert '--hpo-trials' in result.stdout
+        assert '--hpo-timeout' in result.stdout
+    
+    def test_cli_has_full_pipeline_options(self):
+        """Test that CLI has full pipeline options."""
+        import subprocess
+        
+        result = subprocess.run(
+            ['python', '-m', 'src.train', '--help'],
+            capture_output=True,
+            text=True,
+            cwd=Path(__file__).parent.parent,
+            timeout=30
+        )
+        
+        assert result.returncode == 0
+        assert '--full-pipeline' in result.stdout
+        assert '--parallel' in result.stdout
+    
+    def test_cli_has_tracking_options(self):
+        """Test that CLI has experiment tracking options."""
+        import subprocess
+        
+        result = subprocess.run(
+            ['python', '-m', 'src.train', '--help'],
+            capture_output=True,
+            text=True,
+            cwd=Path(__file__).parent.parent,
+            timeout=30
+        )
+        
+        assert result.returncode == 0
+        assert '--enable-tracking' in result.stdout
+        assert '--tracking-backend' in result.stdout
+        assert '--enable-checkpoints' in result.stdout
+        assert '--enable-profiling' in result.stdout
+    
+    def test_cli_has_weight_transform_option(self):
+        """Test that CLI has weight transform option."""
+        import subprocess
+        
+        result = subprocess.run(
+            ['python', '-m', 'src.train', '--help'],
+            capture_output=True,
+            text=True,
+            cwd=Path(__file__).parent.parent,
+            timeout=30
+        )
+        
+        assert result.returncode == 0
+        assert '--weight-transform' in result.stdout
+        assert '--metric-aligned-weights' in result.stdout
+
+
+class TestConfigSection5:
+    """Tests for config additions in Section 5."""
+    
+    def test_experiment_tracking_config_exists(self):
+        """Test that experiment_tracking section exists in config."""
+        from src.utils import load_config
+        
+        config = load_config('configs/run_defaults.yaml')
+        
+        assert 'experiment_tracking' in config
+        tracking = config['experiment_tracking']
+        
+        assert 'enabled' in tracking
+        assert 'backend' in tracking
+        assert 'experiment_name' in tracking
+    
+    def test_experiment_tracking_config_values(self):
+        """Test experiment_tracking config has expected values."""
+        from src.utils import load_config
+        
+        config = load_config('configs/run_defaults.yaml')
+        tracking = config['experiment_tracking']
+        
+        assert tracking['enabled'] == False  # Disabled by default
+        assert tracking['backend'] in ['mlflow', 'wandb']
+        assert isinstance(tracking['experiment_name'], str)
 
 
 if __name__ == '__main__':
