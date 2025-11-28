@@ -4644,6 +4644,727 @@ class TestTrendBaseline:
         np.testing.assert_array_almost_equal(orig_preds, loaded_preds)
 
 
+# =============================================================================
+# Section 7: Inference & Submission Tests
+# =============================================================================
+
+class TestBatchPrediction:
+    """Tests for batch prediction functionality (Section 7.1)."""
+    
+    def test_predict_batch_small_dataset(self):
+        """Test batch prediction with small dataset (no batching needed)."""
+        from src.inference import predict_batch
+        
+        # Simple mock model
+        class MockModel:
+            def predict(self, X):
+                return np.ones(len(X))
+        
+        model = MockModel()
+        X = pd.DataFrame({'feature1': np.random.randn(100)})
+        
+        preds = predict_batch(model, X, batch_size=200, verbose=False)
+        
+        assert len(preds) == 100
+        assert np.allclose(preds, 1.0)
+    
+    def test_predict_batch_large_dataset(self):
+        """Test batch prediction with large dataset (batching used)."""
+        from src.inference import predict_batch
+        
+        # Mock model that tracks call count
+        class MockModel:
+            def __init__(self):
+                self.call_count = 0
+            
+            def predict(self, X):
+                self.call_count += 1
+                return np.arange(len(X))
+        
+        model = MockModel()
+        X = pd.DataFrame({'feature1': np.random.randn(100)})
+        
+        preds = predict_batch(model, X, batch_size=30, verbose=False)
+        
+        assert len(preds) == 100
+        assert model.call_count == 4  # 100/30 = 4 batches
+        # Check values are sequential (as expected from mock)
+        np.testing.assert_array_equal(preds, np.concatenate([
+            np.arange(30), np.arange(30), np.arange(30), np.arange(10)
+        ]))
+    
+    def test_predict_batch_preserves_order(self):
+        """Test batch prediction preserves order."""
+        from src.inference import predict_batch
+        
+        class MockModel:
+            def predict(self, X):
+                return X['value'].values * 2
+        
+        model = MockModel()
+        X = pd.DataFrame({'value': np.arange(100)})
+        
+        preds = predict_batch(model, X, batch_size=25, verbose=False)
+        
+        expected = np.arange(100) * 2
+        np.testing.assert_array_equal(preds, expected)
+
+
+class TestConfidenceIntervals:
+    """Tests for confidence interval computation (Section 7.1)."""
+    
+    def test_predict_with_confidence_single_model(self):
+        """Test confidence intervals with single model (no spread)."""
+        from src.inference import predict_with_confidence
+        
+        class MockModel:
+            def predict(self, X):
+                return np.ones(len(X)) * 0.5
+        
+        models = [MockModel()]
+        X = pd.DataFrame({'feature1': np.random.randn(50)})
+        
+        mean_pred, lower, upper = predict_with_confidence(models, X)
+        
+        assert len(mean_pred) == 50
+        assert np.allclose(mean_pred, 0.5)
+        # With single model, bounds should equal mean
+        np.testing.assert_array_equal(lower, mean_pred)
+        np.testing.assert_array_equal(upper, mean_pred)
+    
+    def test_predict_with_confidence_ensemble(self):
+        """Test confidence intervals with ensemble."""
+        from src.inference import predict_with_confidence
+        
+        # Models with different predictions
+        class MockModel:
+            def __init__(self, offset):
+                self.offset = offset
+            
+            def predict(self, X):
+                return np.ones(len(X)) * self.offset
+        
+        # 5 models predicting 0.1, 0.3, 0.5, 0.7, 0.9
+        models = [MockModel(o) for o in [0.1, 0.3, 0.5, 0.7, 0.9]]
+        X = pd.DataFrame({'feature1': np.random.randn(10)})
+        
+        mean_pred, lower, upper = predict_with_confidence(models, X, confidence_level=0.80)
+        
+        assert len(mean_pred) == 10
+        assert np.allclose(mean_pred, 0.5)  # Mean of 0.1, 0.3, 0.5, 0.7, 0.9
+        assert all(lower <= mean_pred)
+        assert all(upper >= mean_pred)
+        assert all(lower < upper)  # Bounds should differ
+    
+    def test_predict_with_confidence_empty_ensemble_raises(self):
+        """Test that empty ensemble raises error."""
+        from src.inference import predict_with_confidence
+        
+        X = pd.DataFrame({'feature1': [1, 2, 3]})
+        
+        with pytest.raises(ValueError, match="At least one model"):
+            predict_with_confidence([], X)
+
+
+class TestPredictionClipping:
+    """Tests for prediction clipping (Section 7.1)."""
+    
+    def test_clip_predictions_no_clipping_needed(self):
+        """Test clipping when all values are within bounds."""
+        from src.inference import clip_predictions
+        
+        preds = np.array([0.5, 0.8, 1.0, 1.2, 1.5])
+        
+        clipped = clip_predictions(preds)
+        
+        np.testing.assert_array_equal(clipped, preds)
+    
+    def test_clip_predictions_clips_low_values(self):
+        """Test clipping of values below minimum."""
+        from src.inference import clip_predictions
+        
+        preds = np.array([-0.5, 0.0, 0.5, 1.0])
+        
+        clipped = clip_predictions(preds, min_bound=0.0)
+        
+        assert clipped[0] == 0.0
+        assert clipped[1] == 0.0
+        assert clipped[2] == 0.5
+    
+    def test_clip_predictions_clips_high_values(self):
+        """Test clipping of values above maximum."""
+        from src.inference import clip_predictions
+        
+        preds = np.array([1.5, 2.0, 2.5, 3.0])
+        
+        clipped = clip_predictions(preds, max_bound=2.0)
+        
+        assert clipped[0] == 1.5
+        assert clipped[1] == 2.0
+        assert clipped[2] == 2.0
+        assert clipped[3] == 2.0
+    
+    def test_clip_predictions_custom_bounds(self):
+        """Test clipping with custom bounds."""
+        from src.inference import clip_predictions
+        
+        preds = np.array([0.0, 0.5, 1.0, 1.5])
+        
+        clipped = clip_predictions(preds, min_bound=0.3, max_bound=1.2)
+        
+        assert clipped[0] == 0.3
+        assert clipped[1] == 0.5
+        assert clipped[2] == 1.0
+        assert clipped[3] == 1.2
+
+
+class TestInverseTransformVerification:
+    """Tests for inverse transform verification (Section 7.1)."""
+    
+    def test_verify_inverse_transform_correct(self):
+        """Test verification passes for correct transform."""
+        from src.inference import verify_inverse_transform
+        
+        y_norm = np.array([0.5, 0.8, 1.0])
+        avg_vol = np.array([1000.0, 2000.0, 500.0])
+        volume = y_norm * avg_vol  # Correct transform
+        
+        result = verify_inverse_transform(y_norm, avg_vol, volume)
+        
+        assert result is True
+    
+    def test_verify_inverse_transform_incorrect(self):
+        """Test verification fails for incorrect transform."""
+        from src.inference import verify_inverse_transform
+        
+        y_norm = np.array([0.5, 0.8, 1.0])
+        avg_vol = np.array([1000.0, 2000.0, 500.0])
+        volume = y_norm * avg_vol * 1.5  # Incorrect transform
+        
+        with pytest.raises(ValueError, match="verification failed"):
+            verify_inverse_transform(y_norm, avg_vol, volume)
+    
+    def test_verify_inverse_transform_handles_zeros(self):
+        """Test verification handles zero values gracefully."""
+        from src.inference import verify_inverse_transform
+        
+        y_norm = np.array([0.0, 0.5, 0.0])
+        avg_vol = np.array([0.0, 1000.0, 500.0])
+        volume = y_norm * avg_vol  # [0, 500, 0]
+        
+        result = verify_inverse_transform(y_norm, avg_vol, volume)
+        
+        assert result is True
+
+
+class TestSubmissionValidation:
+    """Tests for enhanced submission validation (Section 7.2-7.3)."""
+    
+    def test_validate_submission_format_valid(self):
+        """Test validation passes for valid submission."""
+        from src.inference import validate_submission_format
+        
+        template = pd.DataFrame({
+            'country': ['A', 'A', 'B', 'B'],
+            'brand_name': ['X', 'X', 'Y', 'Y'],
+            'months_postgx': [0, 1, 0, 1],
+            'volume': [np.nan] * 4
+        })
+        
+        submission = pd.DataFrame({
+            'country': ['A', 'A', 'B', 'B'],
+            'brand_name': ['X', 'X', 'Y', 'Y'],
+            'months_postgx': [0, 1, 0, 1],
+            'volume': [1000.0, 900.0, 2000.0, 1800.0]
+        })
+        
+        result = validate_submission_format(submission, template)
+        assert result is True
+    
+    def test_validate_submission_format_missing_rows(self):
+        """Test validation fails for missing rows."""
+        from src.inference import validate_submission_format
+        
+        template = pd.DataFrame({
+            'country': ['A', 'B'],
+            'brand_name': ['X', 'Y'],
+            'months_postgx': [0, 0],
+            'volume': [np.nan] * 2
+        })
+        
+        submission = pd.DataFrame({
+            'country': ['A'],
+            'brand_name': ['X'],
+            'months_postgx': [0],
+            'volume': [1000.0]
+        })
+        
+        with pytest.raises(ValueError, match="Row count mismatch"):
+            validate_submission_format(submission, template)
+    
+    def test_validate_submission_format_nan_values(self):
+        """Test validation fails for NaN values."""
+        from src.inference import validate_submission_format
+        
+        template = pd.DataFrame({
+            'country': ['A', 'B'],
+            'brand_name': ['X', 'Y'],
+            'months_postgx': [0, 0],
+            'volume': [np.nan] * 2
+        })
+        
+        submission = pd.DataFrame({
+            'country': ['A', 'B'],
+            'brand_name': ['X', 'Y'],
+            'months_postgx': [0, 0],
+            'volume': [1000.0, np.nan]
+        })
+        
+        with pytest.raises(ValueError, match="missing volume values"):
+            validate_submission_format(submission, template)
+    
+    def test_validate_submission_format_negative_values(self):
+        """Test validation fails for negative values."""
+        from src.inference import validate_submission_format
+        
+        template = pd.DataFrame({
+            'country': ['A', 'B'],
+            'brand_name': ['X', 'Y'],
+            'months_postgx': [0, 0],
+            'volume': [np.nan] * 2
+        })
+        
+        submission = pd.DataFrame({
+            'country': ['A', 'B'],
+            'brand_name': ['X', 'Y'],
+            'months_postgx': [0, 0],
+            'volume': [1000.0, -100.0]
+        })
+        
+        with pytest.raises(ValueError, match="negative volume values"):
+            validate_submission_format(submission, template)
+    
+    def test_validate_submission_format_duplicates(self):
+        """Test validation fails for duplicates."""
+        from src.inference import validate_submission_format
+        
+        template = pd.DataFrame({
+            'country': ['A', 'B'],
+            'brand_name': ['X', 'Y'],
+            'months_postgx': [0, 0],
+            'volume': [np.nan] * 2
+        })
+        
+        submission = pd.DataFrame({
+            'country': ['A', 'A'],
+            'brand_name': ['X', 'X'],
+            'months_postgx': [0, 0],
+            'volume': [1000.0, 1100.0]
+        })
+        
+        with pytest.raises(ValueError, match="duplicate"):
+            validate_submission_format(submission, template)
+    
+    def test_validate_submission_format_non_strict_returns_false(self):
+        """Test non-strict mode returns False instead of raising."""
+        from src.inference import validate_submission_format
+        
+        template = pd.DataFrame({
+            'country': ['A'],
+            'brand_name': ['X'],
+            'months_postgx': [0],
+            'volume': [np.nan]
+        })
+        
+        submission = pd.DataFrame({
+            'country': ['A'],
+            'brand_name': ['X'],
+            'months_postgx': [0],
+            'volume': [np.nan]  # NaN is invalid
+        })
+        
+        result = validate_submission_format(submission, template, strict=False)
+        assert result is False
+
+
+class TestSubmissionStatistics:
+    """Tests for submission statistics (Section 7.4)."""
+    
+    def test_check_submission_statistics(self):
+        """Test statistics computation."""
+        from src.inference import check_submission_statistics
+        
+        submission = pd.DataFrame({
+            'country': ['A'] * 24 + ['B'] * 18,
+            'brand_name': ['X'] * 24 + ['Y'] * 18,
+            'months_postgx': list(range(24)) + list(range(6, 24)),
+            'volume': [1000 - i * 20 for i in range(24)] + [500 - i * 15 for i in range(18)]
+        })
+        
+        stats = check_submission_statistics(submission, verbose=False)
+        
+        assert 'volume_mean' in stats
+        assert 'volume_std' in stats
+        assert 'volume_min' in stats
+        assert 'volume_max' in stats
+        assert 'n_scenario1_series' in stats
+        assert 'n_scenario2_series' in stats
+        assert 'total_rows' in stats
+        
+        assert stats['total_rows'] == 42
+        assert stats['n_scenario1_series'] == 1  # Series starting at month 0
+        assert stats['n_scenario2_series'] == 1  # Series starting at month 6
+
+
+class TestAuxiliaryFileGeneration:
+    """Tests for auxiliary file generation (Section 7.3)."""
+    
+    def test_generate_auxiliary_file(self):
+        """Test auxiliary file generation."""
+        from src.inference import generate_auxiliary_file
+        
+        submission = pd.DataFrame({
+            'country': ['A'] * 24 + ['B'] * 24,
+            'brand_name': ['X'] * 24 + ['Y'] * 24,
+            'months_postgx': list(range(24)) * 2,
+            'volume': [1000.0] * 48
+        })
+        
+        panel = pd.DataFrame({
+            'country': ['A'] * 24 + ['B'] * 24,
+            'brand_name': ['X'] * 24 + ['Y'] * 24,
+            'months_postgx': list(range(24)) * 2,
+            'avg_vol_12m': [1500.0] * 24 + [2000.0] * 24,
+            'bucket': [1] * 24 + [2] * 24
+        })
+        
+        aux = generate_auxiliary_file(submission, panel)
+        
+        assert len(aux) == 2  # Two unique series
+        assert list(aux.columns) == ['country', 'brand_name', 'avg_vol', 'bucket']
+        assert aux.loc[aux['country'] == 'A', 'avg_vol'].values[0] == 1500.0
+        assert aux.loc[aux['country'] == 'B', 'bucket'].values[0] == 2
+    
+    def test_generate_auxiliary_file_saves_to_path(self, tmp_path):
+        """Test auxiliary file is saved when path provided."""
+        from src.inference import generate_auxiliary_file
+        
+        submission = pd.DataFrame({
+            'country': ['A'],
+            'brand_name': ['X'],
+            'months_postgx': [0],
+            'volume': [1000.0]
+        })
+        
+        panel = pd.DataFrame({
+            'country': ['A'],
+            'brand_name': ['X'],
+            'months_postgx': [0],
+            'avg_vol_12m': [1500.0],
+            'bucket': [1]
+        })
+        
+        output_path = tmp_path / 'auxiliary.csv'
+        aux = generate_auxiliary_file(submission, panel, output_path)
+        
+        assert output_path.exists()
+        loaded = pd.read_csv(output_path)
+        assert len(loaded) == 1
+
+
+class TestSubmissionVersioning:
+    """Tests for submission versioning (Section 7.4)."""
+    
+    def test_generate_submission_version(self):
+        """Test version string generation."""
+        from src.inference import generate_submission_version
+        
+        version = generate_submission_version(run_name="test_run")
+        
+        assert isinstance(version, str)
+        assert "test_run" in version
+        # Should have timestamp format at start
+        assert len(version.split("_")) >= 3
+    
+    def test_generate_submission_version_with_model_info(self):
+        """Test version includes hash from model info."""
+        from src.inference import generate_submission_version
+        
+        model_info = {'model_type': 'catboost', 'n_folds': 5}
+        
+        v1 = generate_submission_version(model_info=model_info, run_name="run")
+        v2 = generate_submission_version(model_info=model_info, run_name="run")
+        
+        # Same model info should produce same hash (last part)
+        assert v1.split("_")[-1] == v2.split("_")[-1]
+    
+    def test_log_submission(self, tmp_path):
+        """Test submission logging."""
+        from src.inference import log_submission
+        
+        submission = pd.DataFrame({
+            'country': ['A'] * 24,
+            'brand_name': ['X'] * 24,
+            'months_postgx': list(range(24)),
+            'volume': [1000.0] * 24
+        })
+        
+        log_path = tmp_path / 'submission_log.json'
+        
+        entry = log_submission(
+            submission_df=submission,
+            version="test_v1",
+            validation_score=0.123,
+            notes="Test submission",
+            log_path=log_path
+        )
+        
+        assert 'version' in entry
+        assert entry['version'] == 'test_v1'
+        assert entry['validation_score'] == 0.123
+        assert log_path.exists()
+        
+        # Log file should contain the entry
+        import json
+        with open(log_path) as f:
+            logs = json.load(f)
+        assert len(logs) == 1
+        assert logs[0]['version'] == 'test_v1'
+
+
+class TestEdgeCaseHandling:
+    """Tests for edge case handling (Section 7.5)."""
+    
+    def test_handle_missing_pre_entry_data(self):
+        """Test handling of missing pre-entry data."""
+        from src.inference import handle_missing_pre_entry_data
+        
+        panel = pd.DataFrame({
+            'country': ['A', 'A', 'B', 'B'],
+            'brand_name': ['X', 'X', 'Y', 'Y'],
+            'months_postgx': [0, 1, 0, 1],
+            'avg_vol_12m': [1000.0, 1000.0, np.nan, np.nan]
+        })
+        
+        result = handle_missing_pre_entry_data(panel)
+        
+        assert not result['avg_vol_12m'].isna().any()
+        # Missing values should be filled with median of valid values
+        assert result.loc[2, 'avg_vol_12m'] == 1000.0
+    
+    def test_handle_zero_volume_series(self):
+        """Test handling of zero-volume series."""
+        from src.inference import handle_zero_volume_series
+        
+        predictions = pd.DataFrame({
+            'country': ['A', 'B'],
+            'brand_name': ['X', 'Y'],
+            'months_postgx': [0, 0],
+            'volume': [0.0, 1000.0]
+        })
+        
+        panel = pd.DataFrame({
+            'country': ['A', 'A', 'B', 'B'],
+            'brand_name': ['X', 'X', 'Y', 'Y'],
+            'months_postgx': [0, 1, 0, 1],
+            'avg_vol_12m': [0.0, 0.0, 1000.0, 1000.0]
+        })
+        
+        result = handle_zero_volume_series(predictions, panel, replacement_strategy='global_erosion')
+        
+        # Zero-volume series should get non-zero predictions
+        assert result.loc[0, 'volume'] > 0
+        # Non-zero series should be unchanged
+        assert result.loc[1, 'volume'] == 1000.0
+    
+    def test_handle_extreme_predictions(self):
+        """Test handling of extreme predictions."""
+        from src.inference import handle_extreme_predictions
+        
+        predictions = pd.DataFrame({
+            'country': ['A', 'A', 'B', 'B'],
+            'brand_name': ['X', 'X', 'Y', 'Y'],
+            'months_postgx': [0, 1, 0, 1],
+            'volume': [500.0, 5000.0, 1000.0, -100.0]  # Some extreme values
+        })
+        
+        panel = pd.DataFrame({
+            'country': ['A', 'A', 'B', 'B'],
+            'brand_name': ['X', 'X', 'Y', 'Y'],
+            'months_postgx': [0, 1, 0, 1],
+            'avg_vol_12m': [1000.0, 1000.0, 1000.0, 1000.0]
+        })
+        
+        result = handle_extreme_predictions(predictions, panel, max_ratio=2.0, min_ratio=0.0)
+        
+        # Volume 5000 (ratio 5.0) should be clipped to 2000 (ratio 2.0)
+        assert result.loc[1, 'volume'] == 2000.0
+        # Negative volume should be clipped to 0
+        assert result.loc[3, 'volume'] == 0.0
+        # Normal values should be unchanged
+        assert result.loc[0, 'volume'] == 500.0
+
+
+class TestSaveSubmissionWithVersioning:
+    """Tests for complete submission workflow (Section 7.4)."""
+    
+    def test_save_submission_with_versioning(self, tmp_path):
+        """Test versioned submission saving."""
+        from src.inference import save_submission_with_versioning
+        
+        submission = pd.DataFrame({
+            'country': ['A'] * 24,
+            'brand_name': ['X'] * 24,
+            'months_postgx': list(range(24)),
+            'volume': [1000.0 - i * 30 for i in range(24)]
+        })
+        
+        panel = pd.DataFrame({
+            'country': ['A'] * 24,
+            'brand_name': ['X'] * 24,
+            'months_postgx': list(range(24)),
+            'avg_vol_12m': [1200.0] * 24,
+            'bucket': [1] * 24
+        })
+        
+        paths = save_submission_with_versioning(
+            submission_df=submission,
+            output_dir=tmp_path,
+            run_name="test_run",
+            model_info={'type': 'test'},
+            validation_score=0.15,
+            save_auxiliary=True,
+            panel_df=panel
+        )
+        
+        assert 'submission' in paths
+        assert 'metadata' in paths
+        assert 'log' in paths
+        assert 'auxiliary' in paths
+        
+        assert paths['submission'].exists()
+        assert paths['metadata'].exists()
+        assert paths['log'].exists()
+        assert paths['auxiliary'].exists()
+        
+        # Check submission content
+        loaded = pd.read_csv(paths['submission'])
+        assert len(loaded) == 24
+        assert list(loaded.columns) == ['country', 'brand_name', 'months_postgx', 'volume']
+
+
+class TestDetectTestScenarios:
+    """Tests for test scenario detection (Section 7.1)."""
+    
+    def test_detect_test_scenarios_basic(self):
+        """Test basic scenario detection."""
+        from src.inference import detect_test_scenarios
+        
+        # Create test data with mixed scenarios
+        # S1 series: NO data for months 0-5 (prediction needed from month 0)
+        # S2 series: HAS data for months 0-5 (prediction needed from month 6)
+        
+        # Series A (S1): Only has months 0-23 with empty volume (needs prediction)
+        s1_data = pd.DataFrame({
+            'country': ['A'] * 24,
+            'brand_name': ['X'] * 24,
+            'months_postgx': list(range(24)),
+            'volume': [np.nan] * 24  # No actual volume data
+        })
+        
+        # Series B (S2): Has actual volume data for months 0-5, needs prediction 6-23
+        s2_data = pd.DataFrame({
+            'country': ['B'] * 24,
+            'brand_name': ['Y'] * 24,
+            'months_postgx': list(range(24)),
+            'volume': [100.0] * 6 + [np.nan] * 18  # Has volume for 0-5
+        })
+        
+        # For S2 detection, the key is having rows in months 0-5
+        # Let's create the correct test: S1 = starts from month 0 with no early data
+        # S2 = has months 0-5 present
+        
+        # S1: series with months 0-23 but no data in 0-5 range marked distinctly
+        # Actually, the detection just checks if series HAS data for months 0-5
+        
+        # Simplify: S1 series has NO rows in months 0-5
+        s1_simple = pd.DataFrame({
+            'country': ['C'] * 18,
+            'brand_name': ['Z'] * 18,
+            'months_postgx': list(range(6, 24)),  # No months 0-5
+            'volume': [100.0] * 18
+        })
+        
+        test_volume = pd.concat([s2_data, s1_simple], ignore_index=True)
+        
+        result = detect_test_scenarios(test_volume)
+        
+        assert 1 in result
+        assert 2 in result
+        assert ('C', 'Z') in result[1]  # S1 series (no months 0-5)
+        assert ('B', 'Y') in result[2]  # S2 series (has months 0-5)
+    
+    def test_detect_test_scenarios_all_s1(self):
+        """Test detection when all series are S1 (no months 0-5 data)."""
+        from src.inference import detect_test_scenarios
+        
+        # Both series start at month 6 (no months 0-5)
+        test_volume = pd.DataFrame({
+            'country': ['A'] * 18 + ['B'] * 18,
+            'brand_name': ['X'] * 18 + ['Y'] * 18,
+            'months_postgx': list(range(6, 24)) * 2,  # Only months 6-23
+            'volume': [100.0] * 36
+        })
+        
+        result = detect_test_scenarios(test_volume)
+        
+        assert len(result[1]) == 2  # Both are S1 (no months 0-5)
+        assert len(result[2]) == 0
+    
+    def test_detect_test_scenarios_all_s2(self):
+        """Test detection when all series are S2 (have months 0-5 data)."""
+        from src.inference import detect_test_scenarios
+        
+        # Both series have months 0-5
+        test_volume = pd.DataFrame({
+            'country': ['A'] * 24 + ['B'] * 24,
+            'brand_name': ['X'] * 24 + ['Y'] * 24,
+            'months_postgx': list(range(24)) * 2,
+            'volume': [100.0] * 48
+        })
+        
+        result = detect_test_scenarios(test_volume)
+        
+        assert len(result[1]) == 0
+        assert len(result[2]) == 2  # Both are S2 (have months 0-5)
+
+
+class TestInferenceCLI:
+    """Tests for inference CLI (Section 7)."""
+    
+    def test_inference_cli_help_extended(self):
+        """Test that inference CLI --help shows new arguments."""
+        import subprocess
+        from pathlib import Path
+        
+        result = subprocess.run(
+            ['python', '-m', 'src.inference', '--help'],
+            capture_output=True,
+            text=True,
+            cwd=Path(__file__).parent.parent,
+            timeout=30
+        )
+        
+        assert result.returncode == 0
+        
+        # Check for new arguments
+        assert '--output-dir' in result.stdout
+        assert '--run-name' in result.stdout
+        assert '--validation-score' in result.stdout
+        assert '--use-versioning' in result.stdout
+        assert '--save-auxiliary' in result.stdout
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
 

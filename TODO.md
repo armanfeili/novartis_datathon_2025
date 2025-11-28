@@ -1102,40 +1102,40 @@
 - [x] `generate_submission()` - Create submission file ✅
 - [x] `apply_edge_case_fallback()` - Handle missing predictions ✅
 - [x] `validate_submission_format()` - Check format ✅
-- [ ] **Add batch prediction** for large datasets
-- [ ] **Add confidence intervals** (if using ensemble)
-- [ ] **Add prediction clipping** (reasonable bounds)
-- [ ] **Add inverse transform verification** (y_norm → volume)
-- [ ] **Ensure `generate_submission` always uses the `test_panel`'s own `avg_vol_12m`** and metadata (never look up or merge from training panel)
+- [x] **Add batch prediction** for large datasets ✅ (`predict_batch()`)
+- [x] **Add confidence intervals** (if using ensemble) ✅ (`predict_with_confidence()`)
+- [x] **Add prediction clipping** (reasonable bounds) ✅ (`clip_predictions()` with default [0, 2])
+- [x] **Add inverse transform verification** (y_norm → volume) ✅ (`verify_inverse_transform()`)
+- [x] **Ensure `generate_submission` always uses the `test_panel`'s own `avg_vol_12m`** and metadata (never look up or merge from training panel) ✅
 
 ### 7.2 Template Schema Alignment
-- [ ] **Confirm whether the submission template uses**:
-  - [ ] `months_postgx` or `month` as the time index column
-  - [ ] Standardize naming across code, docs, and TODO (rename references if needed)
-- [ ] **Verify key columns in `validate_submission_format`** match the template exactly
+- [x] **Confirm whether the submission template uses**: ✅
+  - [x] `months_postgx` as the time index column (confirmed via template analysis) ✅
+  - [x] Standardized naming across code, docs, and TODO ✅
+- [x] **Verify key columns in `validate_submission_format`** match the template exactly ✅ (uses `SUBMISSION_COLUMNS = ['country', 'brand_name', 'months_postgx', 'volume']`)
 
 ### 7.3 Submission File Generation
-- [ ] **Verify column order** matches template exactly
-- [ ] **Verify date format** (YYYY-MM format)
-- [ ] **Verify all required series** are present
-- [ ] **Verify no duplicate rows**
-- [ ] **Check for NaN/Inf values**
-- [ ] **Generate both submission and auxiliary files**
-  - [ ] Clarify: is the auxiliary file **only** for local metric calculation or also required for submission?
-  - [ ] Check competition rules and update docs to state clearly if `auxiliar_metric_computation.csv` is only for local evaluation
+- [x] **Verify column order** matches template exactly ✅ (enforced via `SUBMISSION_COLUMNS`)
+- [x] **Verify date format** (YYYY-MM format) ✅ (template uses integer `months_postgx`, not dates)
+- [x] **Verify all required series** are present ✅ (key matching in `validate_submission_format`)
+- [x] **Verify no duplicate rows** ✅ (duplicate check in validation)
+- [x] **Check for NaN/Inf values** ✅ (added in `validate_submission_format`)
+- [x] **Generate both submission and auxiliary files** ✅ (`generate_auxiliary_file()`)
+  - [x] Clarify: auxiliary file is **only** for local metric calculation, not required for submission ✅ (documented in function docstring)
 
 ### 7.4 Submission Workflow
-- [ ] **Create submission script** (`scripts/submit.py`)
-- [ ] **Add automatic validation** before writing file
-- [ ] **Add submission versioning** (timestamp + model info)
-- [ ] **Create submission log** (model, score, notes)
-- [ ] **Add quick sanity check** (mean, std, min, max)
+- [x] **Extended inference.py** instead of creating separate `scripts/submit.py` ✅
+- [x] **Add automatic validation** before writing file ✅ (integrated in CLI)
+- [x] **Add submission versioning** (timestamp + model info) ✅ (`generate_submission_version()`)
+- [x] **Create submission log** (model, score, notes) ✅ (`log_submission()`)
+- [x] **Add quick sanity check** (mean, std, min, max) ✅ (`check_submission_statistics()`)
+- [x] **Add save_submission_with_versioning** for complete workflow ✅
 
 ### 7.5 Edge Cases
-- [ ] **Handle series with missing pre-entry data**
-- [ ] **Handle series with all zeros volume**
-- [ ] **Handle extreme predictions** (clip to [0, 2]?)
-- [ ] **Document fallback strategies**
+- [x] **Handle series with missing pre-entry data** ✅ (`handle_missing_pre_entry_data()`)
+- [x] **Handle series with all zeros volume** ✅ (`handle_zero_volume_series()`)
+- [x] **Handle extreme predictions** (clip to [0, 2]) ✅ (`handle_extreme_predictions()`)
+- [x] **Document fallback strategies** ✅ (docstrings document all strategies)
 
 ---
 
@@ -1205,17 +1205,25 @@
   - [ ] `make_features` respects scenario cutoffs (`months_postgx < 0` for S1, `< 6` for S2)
   - [ ] `mode="test"` does not create `y_norm` or modify `volume`
   - [ ] Early-erosion features only appear for Scenario 2
-- [ ] **Add test for scenario detection**
-- [ ] **Add test for inverse transform** (y_norm → volume)
-- [ ] **Add test for edge cases** (empty series, missing data)
+- [x] **Add test for scenario detection** ✅ (`TestDetectTestScenarios` with 3 tests)
+- [x] **Add test for inverse transform** (y_norm → volume) ✅ (`TestInverseTransformVerification` with 3 tests)
+- [x] **Add test for edge cases** (empty series, missing data) ✅ (`TestEdgeCaseHandling` with 3 tests)
+- [x] **Add tests for batch prediction** ✅ (`TestBatchPrediction` with 3 tests)
+- [x] **Add tests for confidence intervals** ✅ (`TestConfidenceIntervals` with 3 tests)
+- [x] **Add tests for prediction clipping** ✅ (`TestPredictionClipping` with 4 tests)
+- [x] **Add tests for submission validation** ✅ (`TestSubmissionValidation` with 6 tests)
+- [x] **Add tests for submission statistics** ✅ (`TestSubmissionStatistics` with 1 test)
+- [x] **Add tests for auxiliary file generation** ✅ (`TestAuxiliaryFileGeneration` with 2 tests)
+- [x] **Add tests for submission versioning** ✅ (`TestSubmissionVersioning` with 3 tests)
+- [x] **Add tests for complete workflow** ✅ (`TestSaveSubmissionWithVersioning` with 1 test)
 
 ### 9.2 CLI Smoke Tests
 - [ ] **Add Pytest that calls `python -m src.train --help`** using subprocess
   - [ ] Assert exit code 0
   - [ ] Assert help text includes key arguments (`--scenario`, `--model`, `--data-config`, etc.)
-- [ ] **Add Pytest that calls `python -m src.inference --help`** using subprocess
-  - [ ] Assert exit code 0
-  - [ ] Assert help text includes key arguments (`--model-s1`, `--model-s2`, `--output`, etc.)
+- [x] **Add Pytest that calls `python -m src.inference --help`** using subprocess ✅ (`test_inference_cli_help_extended`)
+  - [x] Assert exit code 0 ✅
+  - [x] Assert help text includes key arguments (`--model-s1`, `--model-s2`, `--output`, `--use-versioning`, etc.) ✅
 
 ### 9.3 Leakage Test Strengthening
 - [ ] **Add a test that attempts to include `bucket`, `y_norm`, or `mean_erosion` in features** and confirms that `split_features_target_meta` / leakage checks throw or log errors
