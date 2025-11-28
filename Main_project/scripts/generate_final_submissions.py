@@ -324,14 +324,66 @@ def generate_final_submissions(model_type: str = 'lightgbm'):
     print("\n📤 Ready for upload to competition platform!")
 
 
+def generate_all_submissions():
+    """
+    Generate submissions for ALL enabled models in config.SUBMISSIONS_ENABLED.
+    This is the recommended way to generate multiple submission files at once.
+    """
+    from config import SUBMISSIONS_ENABLED
+    
+    enabled_models = [model for model, enabled in SUBMISSIONS_ENABLED.items() if enabled]
+    
+    if not enabled_models:
+        print("⚠️ No models enabled in SUBMISSIONS_ENABLED!")
+        print("   Edit src/config.py to enable at least one model.")
+        return
+    
+    print("=" * 70)
+    print(f"📝 GENERATING SUBMISSIONS FOR {len(enabled_models)} MODELS")
+    print("=" * 70)
+    print(f"   Models: {', '.join(enabled_models)}")
+    print()
+    
+    for model_type in enabled_models:
+        print(f"\n{'─' * 70}")
+        print(f"🔄 Generating submissions for: {model_type.upper()}")
+        print(f"{'─' * 70}")
+        try:
+            generate_final_submissions(model_type=model_type)
+        except Exception as e:
+            print(f"   ❌ Failed for {model_type}: {e}")
+            continue
+    
+    print("\n" + "=" * 70)
+    print(f"✅ ALL SUBMISSIONS COMPLETE ({len(enabled_models)} models)")
+    print("=" * 70)
+
+
 def main():
+    """
+    Main entry point. Uses config.py settings by default.
+    
+    If --model is specified: Generate submission for that specific model only.
+    If no --model: Generate submissions for ALL models in SUBMISSIONS_ENABLED.
+    """
+    from config import SUBMISSIONS_ENABLED
+    
     parser = argparse.ArgumentParser(description='Generate final submissions')
-    parser.add_argument('--model', type=str, default='lightgbm',
-                        choices=['lightgbm', 'xgboost', 'baseline', 'hybrid'])
+    parser.add_argument('--model', type=str,
+                        choices=['lightgbm', 'xgboost', 'baseline', 'hybrid', 'arihow'],
+                        help='Generate submission for ONE specific model (overrides config)')
+    parser.add_argument('--all', action='store_true',
+                        help='Generate submissions for ALL enabled models in SUBMISSIONS_ENABLED')
     
     args = parser.parse_args()
     
-    generate_final_submissions(model_type=args.model)
+    if args.model:
+        # CLI override: generate for specific model only
+        print(f"📋 CLI override: generating submission for '{args.model}' only")
+        generate_final_submissions(model_type=args.model)
+    else:
+        # Default behavior: generate for ALL enabled models
+        generate_all_submissions()
 
 
 if __name__ == "__main__":

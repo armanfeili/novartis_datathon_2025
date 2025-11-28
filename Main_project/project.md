@@ -79,37 +79,54 @@ If you predict Bucket 1 drugs wrong, your score gets **penalized TWICE as much!*
 
 ## 📁 File-by-File Explanation
 
-### 1️⃣ `src/config.py` - The Settings File
+### 1️⃣ `src/config.py` - The Central Control Panel 🆕
 
 | | Description |
 |---|---|
 | 📥 **INPUT** | None (configuration file) |
-| 📤 **OUTPUT** | Python constants, paths, and parameters importable by other modules |
-| 🎯 **GOAL** | Centralize ALL settings so you can change them in ONE place |
+| 📤 **OUTPUT** | Python constants, paths, toggles, and parameters importable by other modules |
+| 🎯 **GOAL** | Centralize ALL settings so you can change them in ONE place and run the entire pipeline |
 
-**What it does:** Stores ALL settings and constants in ONE place.
+**What it does:** Stores ALL settings, toggles, and constants in ONE place. **This is the ONLY file you need to edit to customize the pipeline!**
 
-**What's inside:**
+**Configuration Sections:**
 
 ```python
-# WHERE to find files
-PROJECT_ROOT = Path(__file__).parent.parent
-DATA_RAW = PROJECT_ROOT / "data" / "raw"
-MODELS_DIR = PROJECT_ROOT / "models"
+# =============================================================================
+# 1. RUN MODE & TOGGLES - Control what runs
+# =============================================================================
+RUN_SCENARIO = 1              # 1, 2, or [1, 2] for both scenarios
+TEST_MODE = True              # True = fast (50 brands), False = full training
+TEST_MODE_BRANDS = 50         # Number of brands in test mode
+SUBMISSION_MODEL = 'baseline' # Model for final submissions
 
-# COMPETITION RULES
-PRE_ENTRY_MONTHS = 12      # Use 12 months before generic entry
-POST_ENTRY_MONTHS = 24     # Predict 24 months after
-BUCKET_1_THRESHOLD = 0.25  # Below this = Bucket 1 (high erosion)
+# Pipeline step toggles
+RUN_EDA = False               # Run EDA visualization
+RUN_TRAINING = True           # Train models  
+RUN_SUBMISSION = False        # Generate submission files
+RUN_VALIDATION = False        # Validate submissions
 
-# SCORING WEIGHTS for Scenario 1
-S1_SUM_0_5_WEIGHT = 0.5    # First 6 months = 50% of score!
-S1_SUM_6_11_WEIGHT = 0.2   # Months 6-11 = 20%
-S1_SUM_12_23_WEIGHT = 0.1  # Months 12-23 = 10%
+# =============================================================================
+# 2. MODEL TOGGLES - Enable/disable specific models
+# =============================================================================
+MODELS_ENABLED = {
+    'baseline_no_erosion': True,   # ~1 sec  - Predicts avg_vol (no decline)
+    'baseline_exp_decay': True,    # ~2 sec  - Exponential decay (BEST!)
+    'lightgbm': True,              # ~5 sec  - LightGBM gradient boosting
+    'xgboost': True,               # ~10 sec - XGBoost gradient boosting
+    'hybrid_lightgbm': True,       # ~8 sec  - Decay + LightGBM residual
+    'hybrid_xgboost': True,        # ~12 sec - Decay + XGBoost residual
+    'arihow': True,                # ~30 sec - SARIMAX + Holt-Winters
+}
 
-# MODEL SETTINGS
-LGBM_PARAMS = {...}  # LightGBM hyperparameters
-XGB_PARAMS = {...}   # XGBoost hyperparameters
+# =============================================================================
+# 3-13. Other sections: Paths, Constants, Model Parameters, etc.
+# =============================================================================
+```
+
+**View current config:**
+```powershell
+python src/config.py
 ```
 
 **In simple terms:** This is like a "control panel" where you adjust all the knobs in one place instead of hunting through every file.
@@ -734,30 +751,56 @@ reports/eda_data/
 
 ## 🔄 Complete Workflow
 
+### Option 1: Config-Based (Recommended) 🆕
+
+**Just edit `src/config.py` toggles and run ONE command:**
+
+```powershell
+# 1. Edit config.py to set your preferences:
+#    RUN_SCENARIO = 1          # or 2, or [1, 2]
+#    TEST_MODE = True          # False for full training
+#    MODELS_ENABLED = {...}    # Enable/disable models
+#    RUN_TRAINING = True
+#    RUN_SUBMISSION = True
+
+# 2. Run the master pipeline
+python scripts/run_pipeline.py
+```
+
+### Option 2: Individual Scripts (CLI Override)
+
+```powershell
+# Uses config.py settings by default, CLI can override
+python scripts/train_models.py                    # Uses config settings
+python scripts/train_models.py --scenario 2       # Override scenario
+python scripts/train_models.py --full             # Override to full mode
+python scripts/generate_final_submissions.py      # Uses SUBMISSION_MODEL from config
+```
+
+### Option 3: Step-by-Step Manual
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    YOUR WORKFLOW                                │
+│                    MANUAL WORKFLOW                              │
 └─────────────────────────────────────────────────────────────────┘
 
 1. SETUP
    pip install -r requirements.txt
 
-2. QUICK TEST
-   python scripts/run_demo.py
+2. VIEW CONFIG
+   python src/config.py
 
 3. EXPLORE DATA (optional)
-   Open notebooks/01_eda_visualization.ipynb
+   python notebooks/01_eda_visualization.py
 
 4. TRAIN MODELS
-   python scripts/train_models.py --scenario 1
-   python scripts/train_models.py --scenario 2
+   python scripts/train_models.py
 
 5. CHECK RESULTS
    Look at reports/model_comparison_scenario1.csv
-   Open notebooks/03_model_results.ipynb
 
 6. GENERATE SUBMISSIONS
-   python scripts/generate_final_submissions.py --model baseline
+   python scripts/generate_final_submissions.py
 
 7. VALIDATE
    python scripts/validate_submissions.py
@@ -925,18 +968,30 @@ submissions/
 
 ## 📚 Quick Reference
 
+### 🆕 Config-Based Commands (Recommended)
+
+| Task | Command | Config Toggle |
+|------|---------|---------------|
+| Show current config | `python src/config.py` | - |
+| Run full pipeline | `python scripts/run_pipeline.py` | All `RUN_*` toggles |
+| Train models only | `python scripts/train_models.py` | `RUN_SCENARIO`, `TEST_MODE`, `MODELS_ENABLED` |
+| Generate submissions | `python scripts/generate_final_submissions.py` | `RUN_SCENARIO`, `SUBMISSION_MODEL` |
+| Run EDA | `python notebooks/01_eda_visualization.py` | - |
+| Validate submissions | `python scripts/validate_submissions.py` | - |
+
+### CLI Override Commands (Legacy)
+
 | Task | Command |
 |------|---------|
-| Test everything | `python scripts/run_demo.py` |
-| Train models | `python scripts/train_models.py --scenario 1` |
-| Generate submission (baseline) | `python scripts/generate_final_submissions.py --model baseline` |
-| Generate submission (hybrid) | `python scripts/generate_final_submissions.py --model hybrid` |
-| Validate submission | `python scripts/validate_submissions.py` |
-| Run full pipeline | `python src/pipeline.py --scenario 1 --model lightgbm` |
+| Train specific scenario | `python scripts/train_models.py --scenario 1` |
+| Train in test mode | `python scripts/train_models.py --test` |
+| Force full mode | `python scripts/train_models.py --no-test` |
 
 ### Available Model Types:
-- `baseline` - Exponential decay (best for both scenarios) 🏆
-- `hybrid` - Physics + ML hybrid (strong second place)
+- `baseline_no_erosion` - No generic erosion (naive baseline)
+- `baseline_exp_decay` - Exponential decay (best for both scenarios) 🏆
+- `hybrid_lightgbm` - Physics + LightGBM hybrid (strong second place)
+- `hybrid_xgboost` - Physics + XGBoost hybrid
 - `arihow` - SARIMAX + Holt-Winters time-series ensemble 🆕
 - `lightgbm` - LightGBM gradient boosting
 - `xgboost` - XGBoost gradient boosting
@@ -975,96 +1030,78 @@ data/raw/
 └── df_medicine_info.csv
 ```
 
-### Step 2: Run EDA (Optional but Recommended)
+### Step 2: Configure Pipeline in `src/config.py`
+
+Edit `src/config.py` to set your desired options:
+
+```python
+# ═══════════════════════════════════════════════════════════════════════
+# SECTION 1: RUN MODE SETTINGS (Most frequently changed)
+# ═══════════════════════════════════════════════════════════════════════
+RUN_SCENARIO = 1              # 1, 2, or [1, 2] for both
+TEST_MODE = True              # True = fast (50 brands), False = full
+TEST_MODE_BRANDS = 50         # Number of brands in test mode
+
+# ═══════════════════════════════════════════════════════════════════════
+# SECTION 2: MODEL ENABLE/DISABLE TOGGLES
+# ═══════════════════════════════════════════════════════════════════════
+MODELS_ENABLED = {
+    'baseline_no_erosion': True,   # No erosion baseline
+    'baseline_exp_decay': True,    # Exponential decay baseline 🏆
+    'lightgbm': True,              # LightGBM
+    'xgboost': True,               # XGBoost
+    'hybrid_lightgbm': True,       # Physics + LightGBM
+    'hybrid_xgboost': True,        # Physics + XGBoost
+    'arihow': True,                # Time-series ensemble
+}
+
+# ═══════════════════════════════════════════════════════════════════════
+# SECTION 3: PIPELINE STEP TOGGLES (for run_pipeline.py)
+# ═══════════════════════════════════════════════════════════════════════
+RUN_EDA = False               # Run EDA visualization
+RUN_TRAINING = True           # Run model training
+RUN_SUBMISSION = True         # Generate submissions
+RUN_VALIDATION = True         # Validate submissions
+```
+
+### Step 3: Verify Configuration
 
 ```powershell
-# Generate EDA visualizations and data exports
+# Check your current configuration
+python src/config.py
+```
+
+### Step 4: Run Complete Pipeline
+
+**Option A: Master Pipeline Script (Recommended)**
+```powershell
+# Runs all enabled steps based on config
+python scripts/run_pipeline.py
+```
+
+**Option B: Individual Steps**
+```powershell
+# Step 4a: Run EDA (optional)
 python notebooks/01_eda_visualization.py
+
+# Step 4b: Train models
+python scripts/train_models.py
+
+# Step 4c: Generate submissions
+python scripts/generate_final_submissions.py
+
+# Step 4d: Validate submissions
+python scripts/validate_submissions.py
 ```
 
-**Output:**
-- `reports/eda_data/fig01-08_*.json` - Summary statistics
-- `reports/eda_data/fig01-08_*.csv` - Raw data for each figure
-- `reports/figures/fig01-08_*.png` - Visualization images
-
-### Step 3: Quick Demo Test
-
-```powershell
-# Verify everything works with a quick test
-python scripts/run_demo.py
-```
-
-### Step 4: Train Models (Test Mode - Fast)
-
-```powershell
-# Train Scenario 1 models (test mode - subset of data)
-python scripts/train_models.py --scenario 1 --test
-
-# Train Scenario 2 models (test mode - subset of data)
-python scripts/train_models.py --scenario 2 --test
-```
-
-**Output:**
-- `reports/model_comparison_scenario1.csv`
-- `reports/model_comparison_scenario2.csv`
-- `reports/run_summary_scenario*.json`
-- `models/scenario*_*.joblib`
-
-### Step 5: Train Models (Full Mode - Production)
-
-```powershell
-# Train Scenario 1 models (FULL - all data)
-python scripts/train_models.py --scenario 1
-
-# Train Scenario 2 models (FULL - all data)
-python scripts/train_models.py --scenario 2
-```
-
-### Step 6: Review Results
+### Step 5: Review Results
 
 ```powershell
 # Check model comparison results
 type reports\model_comparison_scenario1.csv
-type reports\model_comparison_scenario2.csv
 ```
 
 Or open `notebooks/03_model_results.ipynb` for visualizations.
-
-### Step 7: Generate Final Submissions
-
-```powershell
-# Generate submissions using best model (baseline exponential decay)
-python scripts/generate_final_submissions.py --model baseline
-
-# OR generate submissions using hybrid model
-python scripts/generate_final_submissions.py --model hybrid
-```
-
-**Output:**
-- `submissions/scenario1_baseline_final.csv`
-- `submissions/scenario2_baseline_final.csv`
-- `submissions/scenario*_*.json` - Summary files
-
-### Step 8: Validate Submissions
-
-```powershell
-# Validate submission files before upload
-python scripts/validate_submissions.py
-```
-
-**Checks performed:**
-- ✅ Correct column names
-- ✅ No missing values
-- ✅ No negative volumes
-- ✅ Correct months per scenario
-- ✅ All brands present
-- ✅ Correct total row count
-
-### Step 9: Upload to Competition
-
-Upload the following files to the competition platform:
-- `submissions/scenario1_baseline_final.csv`
-- `submissions/scenario2_baseline_final.csv`
 
 ---
 
@@ -1072,27 +1109,84 @@ Upload the following files to the competition platform:
 
 ```powershell
 # ============================================
-# COMPLETE PIPELINE - RUN ALL STEPS
+# COMPLETE PIPELINE - CONFIG-BASED (RECOMMENDED)
 # ============================================
 
 # Activate environment
 cd D:\Datathon\novartis_datathon_2025\Main_project
 .\saeed_venv\Scripts\Activate.ps1
 
-# Run EDA
-python notebooks/01_eda_visualization.py
+# 1. Check/edit config first
+python src/config.py                    # View current settings
 
-# Train models (full mode)
-python scripts/train_models.py --scenario 1
-python scripts/train_models.py --scenario 2
-
-# Generate submissions
-python scripts/generate_final_submissions.py --model baseline
-
-# Validate
-python scripts/validate_submissions.py
+# 2. Run master pipeline (uses config toggles)
+python scripts/run_pipeline.py          # Runs EDA→Train→Submit→Validate
 
 # Done! Files ready in submissions/ folder
+
+# ============================================
+# INDIVIDUAL STEPS (When you need more control)
+# ============================================
+
+# Run EDA only
+python notebooks/01_eda_visualization.py
+
+# Train models only (uses config.RUN_SCENARIO, TEST_MODE, MODELS_ENABLED)
+python scripts/train_models.py
+
+# Generate submissions only (uses config.RUN_SCENARIO, SUBMISSION_MODEL)
+python scripts/generate_final_submissions.py
+
+# Validate submissions only
+python scripts/validate_submissions.py
+
+# ============================================
+# CLI OVERRIDE (For quick tests)
+# ============================================
+
+# Override scenario (ignores config.RUN_SCENARIO)
+python scripts/train_models.py --scenario 2
+
+# Override test mode
+python scripts/train_models.py --test      # Force test mode
+python scripts/train_models.py --no-test   # Force full mode
+```
+
+### 🎯 Common Configuration Presets
+
+Edit `src/config.py` with these presets:
+
+```python
+# === QUICK TEST (Before full run) ===
+RUN_SCENARIO = 1
+TEST_MODE = True
+MODELS_ENABLED = {
+    'baseline_no_erosion': False,
+    'baseline_exp_decay': True,  # Test best model only
+    'lightgbm': False,
+    'xgboost': False,
+    'hybrid_lightgbm': False,
+    'hybrid_xgboost': False,
+    'arihow': False,
+}
+RUN_TRAINING = True
+RUN_SUBMISSION = False
+RUN_VALIDATION = False
+
+# === FULL PRODUCTION RUN ===
+RUN_SCENARIO = [1, 2]    # Both scenarios
+TEST_MODE = False        # All brands
+MODELS_ENABLED = {all_models: True}  # Enable all
+RUN_EDA = True
+RUN_TRAINING = True
+RUN_SUBMISSION = True
+RUN_VALIDATION = True
+
+# === SUBMISSION GENERATION ONLY (Models already trained) ===
+RUN_SCENARIO = [1, 2]
+RUN_TRAINING = False
+RUN_SUBMISSION = True
+RUN_VALIDATION = True
 ```
 
 ### 🎯 Expected Final Output Structure
@@ -1100,8 +1194,10 @@ python scripts/validate_submissions.py
 ```
 Main_project/
 ├── models/
-│   ├── scenario1_lightgbm.joblib
+│   ├── scenario1_lightgbm.joblib                    # Latest model (always updated)
+│   ├── scenario1_lightgbm_20251128_220910.joblib    # Timestamped backup
 │   ├── scenario1_xgboost.joblib
+│   ├── scenario1_xgboost_20251128_220911.joblib
 │   ├── scenario1_hybrid_hybrid.joblib
 │   ├── scenario1_arihow_arihow.joblib
 │   ├── scenario2_lightgbm.joblib
@@ -1110,6 +1206,7 @@ Main_project/
 │   └── scenario2_arihow_arihow.joblib
 ├── reports/
 │   ├── model_comparison_scenario1.csv
+│   ├── model_comparison_scenario1_20251128_220915.csv  # Timestamped
 │   ├── model_comparison_scenario2.csv
 │   ├── run_summary_scenario1_*.json
 │   ├── run_summary_scenario2_*.json
@@ -1126,23 +1223,37 @@ Main_project/
 
 ## 🔧 Recent Updates (November 2025) 🆕
 
-### 1. ARHOW Model Improvements
+### 1. **Config-Based Pipeline System** 🆕🔥
+- **Centralized configuration in `src/config.py`** - All settings in one place
+- **13 well-documented sections** covering run modes, model params, paths, etc.
+- **Model enable/disable toggles** - Select which models to train via `MODELS_ENABLED` dict
+- **Pipeline step toggles** - `RUN_EDA`, `RUN_TRAINING`, `RUN_SUBMISSION`, `RUN_VALIDATION`
+- **Master orchestrator script** - `scripts/run_pipeline.py` runs complete pipeline based on config
+- **CLI override still available** - Use `--scenario`, `--test` flags for quick overrides
+
+### 2. **Timestamped Model Saving** 🆕
+- Models now save with timestamps: `scenario1_lightgbm_20251128_220910.joblib`
+- Also saves a "latest" copy: `scenario1_lightgbm.joblib` (always updated)
+- Reports also timestamped: `model_comparison_scenario1_20251128_220915.csv`
+- Prevents accidental overwrites during experiments
+
+### 3. **ARHOW Model Improvements**
 - **Upgraded from basic ARIMA to SARIMAX** - Better handling of seasonal patterns
 - **Added Holt-Winters (ExponentialSmoothing)** - Captures level and trend
 - **Learned weights via Linear Regression** - Optimal combination: `y_hat = β₀ × ARIMA + β₁ × HW`
 - **Fixed training on ALL brands** - Previously only trained on training brands
 - **Added RangeIndex for statsmodels compatibility** - Prevents datetime index errors
 
-### 2. Warning Suppression
+### 4. **Warning Suppression**
 - Added `warnings.catch_warnings()` context managers to suppress statsmodels convergence warnings
 - Cleaner console output during training
 
-### 3. EDA Data Export
+### 5. **EDA Data Export**
 - All EDA figures now export accompanying CSV files with raw data
 - Enables custom visualizations and further analysis
 - 9 JSON + 9 CSV files in `reports/eda_data/`
 
-### 4. Pandas FutureWarning Fix
+### 6. **Pandas FutureWarning Fix**
 - Updated `feature_engineering.py` to use `include_groups=False` in groupby operations
 - Prevents deprecation warnings in newer pandas versions
 

@@ -31,6 +31,19 @@ from evaluation import evaluate_model, compare_models
 def get_full_config() -> dict:
     """Get all configuration settings as a dictionary."""
     return {
+        "run_mode": {
+            "scenario": RUN_SCENARIO,
+            "test_mode": TEST_MODE,
+            "test_mode_brands": TEST_MODE_BRANDS,
+            "submissions_enabled": SUBMISSIONS_ENABLED
+        },
+        "pipeline_steps": {
+            "run_eda": RUN_EDA,
+            "run_training": RUN_TRAINING,
+            "run_submission": RUN_SUBMISSION,
+            "run_validation": RUN_VALIDATION
+        },
+        "models_enabled": MODELS_ENABLED,
         "paths": {
             "project_root": str(PROJECT_ROOT),
             "data_raw": str(DATA_RAW),
@@ -62,7 +75,20 @@ def get_full_config() -> dict:
             "test_size": TEST_SIZE,
             "n_splits_cv": N_SPLITS_CV,
             "lgbm_params": LGBM_PARAMS,
-            "xgb_params": XGB_PARAMS
+            "xgb_params": XGB_PARAMS,
+            "arihow_params": ARIHOW_PARAMS,
+            "hybrid_params": HYBRID_PARAMS
+        },
+        "baseline_params": {
+            "decay_rate_range": DECAY_RATE_RANGE,
+            "decay_rate_steps": DECAY_RATE_STEPS,
+            "default_decay_rate": DEFAULT_DECAY_RATE
+        },
+        "feature_params": {
+            "lag_windows": LAG_WINDOWS,
+            "rolling_windows": ROLLING_WINDOWS,
+            "pct_change_windows": PCT_CHANGE_WINDOWS,
+            "pre_entry_features": PRE_ENTRY_FEATURES
         }
     }
 
@@ -139,7 +165,7 @@ def train_all_models(scenario: int = 1, test_mode: bool = False):
     merged = merge_datasets(volume, generics, medicine)
     
     if test_mode:
-        brands = merged[['country', 'brand_name']].drop_duplicates().head(50)
+        brands = merged[['country', 'brand_name']].drop_duplicates().head(TEST_MODE_BRANDS)
         merged = merged.merge(brands, on=['country', 'brand_name'])
         print(f"⚠️ TEST MODE: Using {len(brands)} brands")
     
@@ -173,90 +199,108 @@ def train_all_models(scenario: int = 1, test_mode: bool = False):
     val_avg_j = avg_j.merge(val_brands, on=['country', 'brand_name'])
     
     # =========================================================================
-    # Train models
+    # Train models (only if enabled in MODELS_ENABLED config)
     # =========================================================================
     all_results = []
     model_names = []
     
-    # 1. Baseline: No erosion (persistence)
-    print("\n" + "=" * 50)
-    print("📊 Model 1: Baseline - No Erosion")
-    print("=" * 50)
+    # Variables needed for multiple models
+    best_rate = DEFAULT_DECAY_RATE  # Default, will be tuned if exp_decay is enabled
     
-    pred_baseline = BaselineModels.naive_persistence(val_avg_j, months_to_predict)
-    results_baseline = evaluate_model(val_actual, pred_baseline, aux_df, scenario)
-    all_results.append(results_baseline)
-    model_names.append("Baseline-NoErosion")
+    # 1. Baseline: No erosion (persistence)
+    if MODELS_ENABLED.get('baseline_no_erosion', True):
+        print("\n" + "=" * 50)
+        print("📊 Model 1: Baseline - No Erosion")
+        print("=" * 50)
+        
+        pred_baseline = BaselineModels.naive_persistence(val_avg_j, months_to_predict)
+        results_baseline = evaluate_model(val_actual, pred_baseline, aux_df, scenario)
+        all_results.append(results_baseline)
+        model_names.append("Baseline-NoErosion")
+    else:
+        print("\n⏭️ Skipping Baseline-NoErosion (disabled in config)")
     
     # 2. Baseline: Exponential decay
-    print("\n" + "=" * 50)
-    print("📊 Model 2: Baseline - Exponential Decay")
-    print("=" * 50)
-    
-    # Tune decay rate
-    train_brands = train_df[['country', 'brand_name']].drop_duplicates()
-    train_avg_j = avg_j.merge(train_brands, on=['country', 'brand_name'])
-    train_actual = train_df[train_df['months_postgx'].isin(months_to_predict)][
-        ['country', 'brand_name', 'months_postgx', 'volume']
-    ]
-    
-    best_rate, _ = BaselineModels.tune_decay_rate(train_actual, train_avg_j, 'exponential')
-    
-    pred_exp_decay = BaselineModels.exponential_decay(val_avg_j, months_to_predict, best_rate)
-    results_exp_decay = evaluate_model(val_actual, pred_exp_decay, aux_df, scenario)
-    all_results.append(results_exp_decay)
-    model_names.append(f"Baseline-ExpDecay({best_rate:.3f})")
+    if MODELS_ENABLED.get('baseline_exp_decay', True):
+        print("\n" + "=" * 50)
+        print("📊 Model 2: Baseline - Exponential Decay")
+        print("=" * 50)
+        
+        # Tune decay rate
+        train_brands = train_df[['country', 'brand_name']].drop_duplicates()
+        train_avg_j = avg_j.merge(train_brands, on=['country', 'brand_name'])
+        train_actual = train_df[train_df['months_postgx'].isin(months_to_predict)][
+            ['country', 'brand_name', 'months_postgx', 'volume']
+        ]
+        
+        best_rate, _ = BaselineModels.tune_decay_rate(train_actual, train_avg_j, 'exponential')
+        
+        pred_exp_decay = BaselineModels.exponential_decay(val_avg_j, months_to_predict, best_rate)
+        results_exp_decay = evaluate_model(val_actual, pred_exp_decay, aux_df, scenario)
+        all_results.append(results_exp_decay)
+        model_names.append(f"Baseline-ExpDecay({best_rate:.3f})")
+    else:
+        print("\n⏭️ Skipping Baseline-ExpDecay (disabled in config)")
+        # Still tune decay rate for hybrid models
+        train_brands = train_df[['country', 'brand_name']].drop_duplicates()
+        train_avg_j = avg_j.merge(train_brands, on=['country', 'brand_name'])
+        train_actual = train_df[train_df['months_postgx'].isin(months_to_predict)][
+            ['country', 'brand_name', 'months_postgx', 'volume']
+        ]
+        best_rate, _ = BaselineModels.tune_decay_rate(train_actual, train_avg_j, 'exponential')
     
     # 3. LightGBM
-    print("\n" + "=" * 50)
-    print("📊 Model 3: LightGBM")
-    print("=" * 50)
-    
-    lgbm_model = GradientBoostingModel(model_type='lightgbm')
-    lgbm_model.fit(X_train, y_train, X_val, y_val)
-    
-    # Generate predictions
-    val_pred_data = val_df[val_df['months_postgx'].isin(months_to_predict)].copy()
-    X_val_pred = val_pred_data[feature_cols].fillna(0)
-    val_pred_data['volume_pred'] = lgbm_model.predict(X_val_pred)
-    
-    pred_lgbm = val_pred_data[['country', 'brand_name', 'months_postgx', 'volume_pred']].copy()
-    pred_lgbm.columns = ['country', 'brand_name', 'months_postgx', 'volume']
-    
-    results_lgbm = evaluate_model(val_actual, pred_lgbm, aux_df, scenario)
-    all_results.append(results_lgbm)
-    model_names.append("LightGBM")
-    
-    # Save model
-    lgbm_model.save(f"scenario{scenario}_lightgbm")
+    if MODELS_ENABLED.get('lightgbm', True):
+        print("\n" + "=" * 50)
+        print("📊 Model 3: LightGBM")
+        print("=" * 50)
+        
+        lgbm_model = GradientBoostingModel(model_type='lightgbm')
+        lgbm_model.fit(X_train, y_train, X_val, y_val)
+        
+        # Generate predictions
+        val_pred_data = val_df[val_df['months_postgx'].isin(months_to_predict)].copy()
+        X_val_pred = val_pred_data[feature_cols].fillna(0)
+        val_pred_data['volume_pred'] = lgbm_model.predict(X_val_pred)
+        
+        pred_lgbm = val_pred_data[['country', 'brand_name', 'months_postgx', 'volume_pred']].copy()
+        pred_lgbm.columns = ['country', 'brand_name', 'months_postgx', 'volume']
+        
+        results_lgbm = evaluate_model(val_actual, pred_lgbm, aux_df, scenario)
+        all_results.append(results_lgbm)
+        model_names.append("LightGBM")
+        
+        # Save model
+        lgbm_model.save(f"scenario{scenario}_lightgbm")
+    else:
+        print("\n⏭️ Skipping LightGBM (disabled in config)")
     
     # 4. XGBoost
-    print("\n" + "=" * 50)
-    print("📊 Model 4: XGBoost")
-    print("=" * 50)
+    if MODELS_ENABLED.get('xgboost', True):
+        print("\n" + "=" * 50)
+        print("📊 Model 4: XGBoost")
+        print("=" * 50)
+        
+        xgb_model = GradientBoostingModel(model_type='xgboost')
+        xgb_model.fit(X_train, y_train, X_val, y_val)
+        
+        val_pred_data = val_df[val_df['months_postgx'].isin(months_to_predict)].copy()
+        X_val_pred = val_pred_data[feature_cols].fillna(0)
+        val_pred_data['volume_pred'] = xgb_model.predict(X_val_pred)
     
-    xgb_model = GradientBoostingModel(model_type='xgboost')
-    xgb_model.fit(X_train, y_train, X_val, y_val)
+        pred_xgb = val_pred_data[['country', 'brand_name', 'months_postgx', 'volume_pred']].copy()
+        pred_xgb.columns = ['country', 'brand_name', 'months_postgx', 'volume']
+        
+        results_xgb = evaluate_model(val_actual, pred_xgb, aux_df, scenario)
+        all_results.append(results_xgb)
+        model_names.append("XGBoost")
+        
+        # Save model
+        xgb_model.save(f"scenario{scenario}_xgboost")
+    else:
+        print("\n⏭️ Skipping XGBoost (disabled in config)")
     
-    val_pred_data['volume_pred'] = xgb_model.predict(X_val_pred)
-    
-    pred_xgb = val_pred_data[['country', 'brand_name', 'months_postgx', 'volume_pred']].copy()
-    pred_xgb.columns = ['country', 'brand_name', 'months_postgx', 'volume']
-    
-    results_xgb = evaluate_model(val_actual, pred_xgb, aux_df, scenario)
-    all_results.append(results_xgb)
-    model_names.append("XGBoost")
-    
-    # Save model
-    xgb_model.save(f"scenario{scenario}_xgboost")
-    
-    # 5. Hybrid Model (Physics + ML)
-    print("\n" + "=" * 50)
-    print("📊 Model 5: Hybrid (Physics + LightGBM)")
-    print("=" * 50)
-    
-    # Prepare auxiliary data for hybrid model
-    # train_df already has avg_vol from feature engineering, but let's ensure it
+    # Prepare auxiliary data for hybrid models (needed by both hybrid variants)
     train_pred_data = train_df[train_df['months_postgx'].isin(months_to_predict)].copy()
     if 'avg_vol' not in train_pred_data.columns:
         train_pred_data = train_pred_data.merge(avg_j, on=['country', 'brand_name'], how='left')
@@ -275,116 +319,136 @@ def train_all_models(scenario: int = 1, test_mode: bool = False):
     avg_vol_val = val_pred_data_hybrid['avg_vol'].fillna(val_pred_data_hybrid['avg_vol'].median()).values
     months_val = val_pred_data_hybrid['months_postgx'].values
     
-    # Train hybrid model with best decay rate from baseline
-    hybrid_model = HybridPhysicsMLModel(
-        ml_model_type='lightgbm',
-        decay_rate=best_rate
-    )
-    hybrid_model.fit(
-        X_train_hybrid, y_train_hybrid,
-        avg_vol_train, months_train,
-        X_val_hybrid, y_val_hybrid,
-        avg_vol_val, months_val
-    )
+    # 5. Hybrid Model (Physics + LightGBM)
+    if MODELS_ENABLED.get('hybrid_lightgbm', True):
+        print("\n" + "=" * 50)
+        print("📊 Model 5: Hybrid (Physics + LightGBM)")
+        print("=" * 50)
+        
+        # Train hybrid model with best decay rate from baseline
+        hybrid_model = HybridPhysicsMLModel(
+            ml_model_type='lightgbm',
+            decay_rate=best_rate
+        )
+        hybrid_model.fit(
+            X_train_hybrid, y_train_hybrid,
+            avg_vol_train, months_train,
+            X_val_hybrid, y_val_hybrid,
+            avg_vol_val, months_val
+        )
+        
+        # Generate predictions
+        hybrid_preds = hybrid_model.predict(X_val_hybrid, avg_vol_val, months_val)
+        val_pred_data_hybrid['volume_pred'] = hybrid_preds
+        
+        pred_hybrid = val_pred_data_hybrid[['country', 'brand_name', 'months_postgx', 'volume_pred']].copy()
+        pred_hybrid.columns = ['country', 'brand_name', 'months_postgx', 'volume']
     
-    # Generate predictions
-    hybrid_preds = hybrid_model.predict(X_val_hybrid, avg_vol_val, months_val)
-    val_pred_data_hybrid['volume_pred'] = hybrid_preds
-    
-    pred_hybrid = val_pred_data_hybrid[['country', 'brand_name', 'months_postgx', 'volume_pred']].copy()
-    pred_hybrid.columns = ['country', 'brand_name', 'months_postgx', 'volume']
-    
-    results_hybrid = evaluate_model(val_actual, pred_hybrid, aux_df, scenario)
-    all_results.append(results_hybrid)
-    model_names.append(f"Hybrid-Physics+LightGBM")
-    
-    # Save hybrid model
-    hybrid_model.save(f"scenario{scenario}_hybrid")
+        results_hybrid = evaluate_model(val_actual, pred_hybrid, aux_df, scenario)
+        all_results.append(results_hybrid)
+        model_names.append(f"Hybrid-Physics+LightGBM")
+        
+        # Save hybrid model
+        hybrid_model.save(f"scenario{scenario}_hybrid")
+    else:
+        print("\n⏭️ Skipping Hybrid-LightGBM (disabled in config)")
     
     # 6. Hybrid Model with XGBoost
-    print("\n" + "=" * 50)
-    print("📊 Model 6: Hybrid (Physics + XGBoost)")
-    print("=" * 50)
-    
-    hybrid_xgb_model = HybridPhysicsMLModel(
-        ml_model_type='xgboost',
-        decay_rate=best_rate
-    )
-    hybrid_xgb_model.fit(
-        X_train_hybrid, y_train_hybrid,
-        avg_vol_train, months_train,
-        X_val_hybrid, y_val_hybrid,
-        avg_vol_val, months_val
-    )
-    
-    # Generate predictions
-    hybrid_xgb_preds = hybrid_xgb_model.predict(X_val_hybrid, avg_vol_val, months_val)
-    val_pred_data_hybrid['volume_pred'] = hybrid_xgb_preds
-    
-    pred_hybrid_xgb = val_pred_data_hybrid[['country', 'brand_name', 'months_postgx', 'volume_pred']].copy()
-    pred_hybrid_xgb.columns = ['country', 'brand_name', 'months_postgx', 'volume']
-    
-    results_hybrid_xgb = evaluate_model(val_actual, pred_hybrid_xgb, aux_df, scenario)
-    all_results.append(results_hybrid_xgb)
-    model_names.append(f"Hybrid-Physics+XGBoost")
+    if MODELS_ENABLED.get('hybrid_xgboost', True):
+        print("\n" + "=" * 50)
+        print("📊 Model 6: Hybrid (Physics + XGBoost)")
+        print("=" * 50)
+        
+        hybrid_xgb_model = HybridPhysicsMLModel(
+            ml_model_type='xgboost',
+            decay_rate=best_rate
+        )
+        hybrid_xgb_model.fit(
+            X_train_hybrid, y_train_hybrid,
+            avg_vol_train, months_train,
+            X_val_hybrid, y_val_hybrid,
+            avg_vol_val, months_val
+        )
+        
+        # Generate predictions
+        hybrid_xgb_preds = hybrid_xgb_model.predict(X_val_hybrid, avg_vol_val, months_val)
+        val_pred_data_hybrid['volume_pred'] = hybrid_xgb_preds
+        
+        pred_hybrid_xgb = val_pred_data_hybrid[['country', 'brand_name', 'months_postgx', 'volume_pred']].copy()
+        pred_hybrid_xgb.columns = ['country', 'brand_name', 'months_postgx', 'volume']
+        
+        results_hybrid_xgb = evaluate_model(val_actual, pred_hybrid_xgb, aux_df, scenario)
+        all_results.append(results_hybrid_xgb)
+        model_names.append(f"Hybrid-Physics+XGBoost")
+    else:
+        print("\n⏭️ Skipping Hybrid-XGBoost (disabled in config)")
     
     # 7. ARHOW Model (ARIMA + Holt-Winters with Learned Weights)
-    print("\n" + "=" * 50)
-    print("📊 Model 7: ARHOW (SARIMAX + HW + Weights)")
-    print("=" * 50)
-    
-    try:
-        import warnings
-        # Suppress verbose statsmodels warnings
-        with warnings.catch_warnings():
-            warnings.filterwarnings('ignore')
-            
-            # ARHOW is a per-brand time series model with learned weights
-            # Uses: y_hat = beta0 * ARIMA + beta1 * HW
-            # We need to fit on ALL brands' historical data
-            arihow_model = ARIHOWModel(
-                arima_order=(1, 1, 1),           # ARIMA(1,1,1)
-                seasonal_order=(0, 0, 0, 0),     # No seasonality (data is monthly, no yearly pattern)
-                hw_trend='add',                   # Additive trend
-                hw_seasonal=None,                 # No seasonality in HW
-                hw_seasonal_periods=12,           # Monthly data
-                weight_window=12,                 # Use last 12 months to estimate weights
-                suppress_warnings=True
-            )
-            
-            # Fit on ALL brands' historical data (use featured which has all brands)
-            # Only use pre-generic entry data for fitting (months_postgx < 0)
-            fit_data = featured[featured['months_postgx'] < 0].copy()
-            if len(fit_data) == 0:
-                # If no pre-entry data, use early post-entry data
-                fit_data = featured[featured['months_postgx'] <= 12].copy()
-            
-            arihow_model.fit(fit_data, target_col='volume', min_history_months=6)
-            
-            # Generate predictions with decay fallback for failed brands
-            pred_arihow = arihow_model.predict_with_decay_fallback(
-                val_df,
-                avg_j,
-                months_to_predict=months_to_predict,
-                decay_rate=best_rate
-            )
+    if MODELS_ENABLED.get('arihow', True):
+        print("\n" + "=" * 50)
+        print("📊 Model 7: ARHOW (SARIMAX + HW + Weights)")
+        print("=" * 50)
         
-        results_arihow = evaluate_model(val_actual, pred_arihow, aux_df, scenario)
-        all_results.append(results_arihow)
-        model_names.append("ARHOW-SARIMAX+HW")
-        
-        # Save model
-        arihow_model.save(f"scenario{scenario}_arihow")
-        
-    except ImportError as e:
-        print(f"   ⚠️ ARHOW skipped: statsmodels not installed ({e})")
-        print("   Install with: pip install statsmodels")
-    except Exception as e:
-        print(f"   ⚠️ ARIHOW failed: {e}")
+        try:
+            import warnings
+            # Suppress verbose statsmodels warnings
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore')
+                
+                # ARHOW is a per-brand time series model with learned weights
+                # Uses: y_hat = beta0 * ARIMA + beta1 * HW
+                # We need to fit on ALL brands' historical data
+                # Parameters loaded from config.py ARIHOW_PARAMS
+                arihow_model = ARIHOWModel(
+                    arima_order=ARIHOW_PARAMS['arima_order'],
+                    seasonal_order=ARIHOW_PARAMS['seasonal_order'],
+                    hw_trend=ARIHOW_PARAMS['hw_trend'],
+                    hw_seasonal=ARIHOW_PARAMS['hw_seasonal'],
+                    hw_seasonal_periods=ARIHOW_PARAMS['hw_seasonal_periods'],
+                    weight_window=ARIHOW_PARAMS['weight_window'],
+                    suppress_warnings=ARIHOW_PARAMS.get('suppress_warnings', True)
+                )
+                
+                # Fit on ALL brands' historical data (use featured which has all brands)
+                # Only use pre-generic entry data for fitting (months_postgx < 0)
+                fit_data = featured[featured['months_postgx'] < 0].copy()
+                if len(fit_data) == 0:
+                    # If no pre-entry data, use early post-entry data
+                    fit_data = featured[featured['months_postgx'] <= 12].copy()
+                
+                arihow_model.fit(fit_data, target_col='volume', 
+                           min_history_months=ARIHOW_PARAMS.get('min_history_months', 6))
+                
+                # Generate predictions with decay fallback for failed brands
+                pred_arihow = arihow_model.predict_with_decay_fallback(
+                    val_df,
+                    avg_j,
+                    months_to_predict=months_to_predict,
+                    decay_rate=best_rate
+                )
+            
+            results_arihow = evaluate_model(val_actual, pred_arihow, aux_df, scenario)
+            all_results.append(results_arihow)
+            model_names.append("ARHOW-SARIMAX+HW")
+            
+            # Save model
+            arihow_model.save(f"scenario{scenario}_arihow")
+            
+        except ImportError as e:
+            print(f"   ⚠️ ARHOW skipped: statsmodels not installed ({e})")
+            print("   Install with: pip install statsmodels")
+        except Exception as e:
+            print(f"   ⚠️ ARIHOW failed: {e}")
+    else:
+        print("\n⏭️ Skipping ARHOW (disabled in config)")
     
     # =========================================================================
     # Compare models
     # =========================================================================
+    if len(all_results) == 0:
+        print("\n⚠️ No models were trained. Enable at least one model in config.py MODELS_ENABLED")
+        return None
+    
     print("\n" + "=" * 70)
     print("📊 MODEL COMPARISON")
     print("=" * 70)
@@ -443,13 +507,39 @@ def train_all_models(scenario: int = 1, test_mode: bool = False):
 
 
 def main():
+    """
+    Main entry point. Uses config.py settings by default.
+    CLI arguments can override config settings if provided.
+    """
     parser = argparse.ArgumentParser(description='Train all models')
-    parser.add_argument('--scenario', type=int, default=1, choices=[1, 2])
-    parser.add_argument('--test', action='store_true', help='Test mode')
+    parser.add_argument('--scenario', type=int, choices=[1, 2],
+                        help=f'Scenario to run (default from config: {RUN_SCENARIO})')
+    parser.add_argument('--test', action='store_true', 
+                        help=f'Test mode with {TEST_MODE_BRANDS} brands (default from config: {TEST_MODE})')
+    parser.add_argument('--full', action='store_true',
+                        help='Full mode (override TEST_MODE to False)')
     
     args = parser.parse_args()
     
-    train_all_models(scenario=args.scenario, test_mode=args.test)
+    # Use config values as defaults, CLI overrides if provided
+    scenario = args.scenario if args.scenario is not None else RUN_SCENARIO
+    
+    # Test mode: CLI --test sets True, --full sets False, otherwise use config
+    if args.full:
+        test_mode = False
+    elif args.test:
+        test_mode = True
+    else:
+        test_mode = TEST_MODE
+    
+    # Handle multiple scenarios from config
+    scenarios = [scenario] if isinstance(scenario, int) else scenario
+    
+    for sc in scenarios:
+        print(f"\n{'='*70}")
+        print(f"🚀 Running Scenario {sc} (test_mode={test_mode})")
+        print(f"{'='*70}")
+        train_all_models(scenario=sc, test_mode=test_mode)
 
 
 if __name__ == "__main__":

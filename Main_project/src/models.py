@@ -19,6 +19,8 @@ import xgboost as xgb
 import joblib
 from pathlib import Path
 import sys
+from datetime import datetime
+import shutil
 
 sys.path.insert(0, str(Path(__file__).parent))
 from config import *
@@ -401,18 +403,32 @@ class HybridPhysicsMLModel:
         return importance_df.head(top_n)
     
     def save(self, name: str) -> Path:
-        """Save hybrid model to disk."""
-        path = MODELS_DIR / f"{name}_hybrid.joblib"
-        joblib.dump({
+        """Save hybrid model to disk with timestamp and latest copy."""
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        # Timestamped path
+        timestamped_path = MODELS_DIR / f"{name}_hybrid_{timestamp}.joblib"
+        # Latest path (for easy access)
+        latest_path = MODELS_DIR / f"{name}_hybrid.joblib"
+        
+        save_data = {
             'ml_model': self.ml_model,
             'ml_model_type': self.ml_model_type,
             'decay_rate': self.decay_rate,
             'params': self.params,
             'feature_names': self.feature_names,
-            'is_fitted': self.is_fitted
-        }, path)
-        print(f"✅ Hybrid model saved to {path}")
-        return path
+            'is_fitted': self.is_fitted,
+            'timestamp': timestamp
+        }
+        
+        # Save timestamped version
+        joblib.dump(save_data, timestamped_path)
+        # Save/overwrite latest version
+        joblib.dump(save_data, latest_path)
+        
+        print(f"✅ Hybrid model saved to {timestamped_path}")
+        print(f"   (latest copy: {latest_path})")
+        return timestamped_path
     
     def load(self, name: str) -> 'HybridPhysicsMLModel':
         """Load hybrid model from disk."""
@@ -864,8 +880,13 @@ class ARIHOWModel:
         return pd.DataFrame(weights)
     
     def save(self, name: str) -> Path:
-        """Save ARHOW model to disk (saves model parameters and weights)."""
-        path = MODELS_DIR / f"{name}_arihow.joblib"
+        """Save ARHOW model to disk with timestamp and latest copy."""
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        # Timestamped path
+        timestamped_path = MODELS_DIR / f"{name}_arihow_{timestamp}.joblib"
+        # Latest path (for easy access)
+        latest_path = MODELS_DIR / f"{name}_arihow.joblib"
         
         # Save configuration and brand weights (statsmodels objects don't serialize well)
         save_data = {
@@ -876,6 +897,7 @@ class ARIHOWModel:
             'hw_seasonal_periods': self.hw_seasonal_periods,
             'weight_window': self.weight_window,
             'is_fitted': self.is_fitted,
+            'timestamp': timestamp,
             # Save weights and fallback values for each brand
             'brand_data': {
                 str(k): {
@@ -888,9 +910,14 @@ class ARIHOWModel:
             }
         }
         
-        joblib.dump(save_data, path)
-        print(f"✅ ARHOW model config saved to {path}")
-        return path
+        # Save timestamped version
+        joblib.dump(save_data, timestamped_path)
+        # Save/overwrite latest version
+        joblib.dump(save_data, latest_path)
+        
+        print(f"✅ ARHOW model config saved to {timestamped_path}")
+        print(f"   (latest copy: {latest_path})")
+        return timestamped_path
     
     @classmethod
     def load(cls, name: str) -> 'ARIHOWModel':
@@ -1055,16 +1082,30 @@ class GradientBoostingModel:
         return results
     
     def save(self, name: str) -> Path:
-        """Save model to disk."""
-        path = MODELS_DIR / f"{name}.joblib"
-        joblib.dump({
+        """Save model to disk with timestamp and latest copy."""
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        # Timestamped path
+        timestamped_path = MODELS_DIR / f"{name}_{timestamp}.joblib"
+        # Latest path (for easy access)
+        latest_path = MODELS_DIR / f"{name}.joblib"
+        
+        save_data = {
             'model': self.model,
             'model_type': self.model_type,
             'params': self.params,
-            'feature_names': self.feature_names
-        }, path)
-        print(f"✅ Model saved to {path}")
-        return path
+            'feature_names': self.feature_names,
+            'timestamp': timestamp
+        }
+        
+        # Save timestamped version
+        joblib.dump(save_data, timestamped_path)
+        # Save/overwrite latest version
+        joblib.dump(save_data, latest_path)
+        
+        print(f"✅ Model saved to {timestamped_path}")
+        print(f"   (latest copy: {latest_path})")
+        return timestamped_path
     
     def load(self, name: str) -> 'GradientBoostingModel':
         """Load model from disk."""
