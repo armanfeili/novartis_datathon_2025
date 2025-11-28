@@ -5,6 +5,23 @@
 
 ---
 
+## 📊 Input/Output Summary Table
+
+| Step | Module | Input | Output | Goal |
+|------|--------|-------|--------|------|
+| 1 | `config.py` | None | Constants, paths, params | Central configuration |
+| 2 | `data_loader.py` | Raw CSVs | Merged DataFrame | Load & combine all data |
+| 3 | `bucket_calculator.py` | Merged DataFrame | `aux_bucket_avgvol.csv` | Calculate pre-entry avg & buckets |
+| 4 | `feature_engineering.py` | Merged DataFrame + aux | DataFrame + 40 features | Create ML-ready features |
+| 5 | `models.py` | Features (X) + Target (y) | Trained model + predictions | Train prediction model |
+| 5b | `HybridPhysicsMLModel` | Features + avg_vol + months | Hybrid model + predictions | Physics + ML combined |
+| 5c | `ARIHOWModel` 🆕 | Time-series per brand | ARHOW predictions | SARIMAX + Holt-Winters ensemble |
+| 6 | `evaluation.py` | Predictions + Actuals | PE Score | Measure prediction quality |
+| 7 | `submission.py` | Test predictions | CSV + JSON summary | Format for competition |
+| 8 | `pipeline.py` | All modules | End-to-end execution | Orchestrate workflow |
+
+---
+
 ## 🎯 The Big Picture: What Are We Doing?
 
 ### The Business Problem (In Plain English)
@@ -64,6 +81,12 @@ If you predict Bucket 1 drugs wrong, your score gets **penalized TWICE as much!*
 
 ### 1️⃣ `src/config.py` - The Settings File
 
+| | Description |
+|---|---|
+| 📥 **INPUT** | None (configuration file) |
+| 📤 **OUTPUT** | Python constants, paths, and parameters importable by other modules |
+| 🎯 **GOAL** | Centralize ALL settings so you can change them in ONE place |
+
 **What it does:** Stores ALL settings and constants in ONE place.
 
 **What's inside:**
@@ -95,6 +118,12 @@ XGB_PARAMS = {...}   # XGBoost hyperparameters
 
 ### 2️⃣ `src/data_loader.py` - The Data Reader
 
+| | Description |
+|---|---|
+| 📥 **INPUT** | 3 raw CSV files: `df_volume_[train/test].csv`, `df_generics_[train/test].csv`, `df_medicine_info.csv` |
+| 📤 **OUTPUT** | Single merged DataFrame with all columns from all 3 files |
+| 🎯 **GOAL** | Combine scattered data into ONE unified table for analysis |
+
 **What it does:** Loads the 3 CSV files and combines them.
 
 **The 3 datasets:**
@@ -125,6 +154,12 @@ merged = merge_datasets(volume, generics, medicine)
 ---
 
 ### 3️⃣ `src/bucket_calculator.py` - The Normalization Engine
+
+| | Description |
+|---|---|
+| 📥 **INPUT** | Merged DataFrame with `volume` column and `months_pregx` (pre-entry months: -12 to -1) |
+| 📤 **OUTPUT** | `aux_bucket_avgvol.csv` file with columns: `country`, `brand_name`, `avg_vol`, `mean_erosion`, `bucket` |
+| 🎯 **GOAL** | Calculate the baseline (avg_vol) and bucket assignment for scoring |
 
 **What it does:** Calculates key metrics for evaluation.
 
@@ -183,6 +218,12 @@ else:
 
 ### 4️⃣ `src/feature_engineering.py` - The Feature Factory
 
+| | Description |
+|---|---|
+| 📥 **INPUT** | Merged DataFrame + `aux_bucket_avgvol.csv` (for avg_vol baseline) |
+| 📤 **OUTPUT** | DataFrame with original columns + ~40 NEW feature columns |
+| 🎯 **GOAL** | Transform raw data into ML-friendly patterns that capture erosion dynamics |
+
 **What it does:** Creates ~40 features for the ML model to learn from.
 
 **Feature Categories:**
@@ -234,6 +275,12 @@ is_early_postgx = is this in first 6 months? (binary)
 
 ### 5️⃣ `src/models.py` - The Prediction Models
 
+| | Description |
+|---|---|
+| 📥 **INPUT** | Feature matrix X (from feature_engineering), target vector y (actual volumes), avg_vol per brand |
+| 📤 **OUTPUT** | Trained model object + predictions array + saved model file (`.joblib`) |
+| 🎯 **GOAL** | Learn patterns from historical data to predict future sales volumes |
+
 **What it does:** Implements different prediction strategies.
 
 #### A. Baseline Models (Simple)
@@ -278,9 +325,121 @@ model.save("scenario1_lightgbm")
 
 **Why?** The decay pattern is so consistent that a simple formula works better than complex ML on this data.
 
+#### C. Hybrid Model (Physics + ML) 🆕
+
+**The Best of Both Worlds!**
+
+```python
+# Physics-based baseline
+base_prediction = avg_vol × exp(-0.05 × month)
+
+# ML learns the residuals (what physics misses)
+residual = ML_model.predict(features)
+
+# Combine them
+final_prediction = base_prediction + residual
+```
+
+**Why Hybrid?**
+- Physics captures the KNOWN decay pattern
+- ML corrects systematic deviations
+- Best of both worlds!
+
+**Class: `HybridPhysicsMLModel`**
+```python
+from models import HybridPhysicsMLModel
+
+hybrid = HybridPhysicsMLModel(
+    ml_model_type='lightgbm',  # or 'xgboost'
+    decay_rate=0.05
+)
+
+# Training requires avg_vol and months for physics baseline
+hybrid.fit(X_train, y_train, avg_vol_train, months_train,
+           X_val, y_val, avg_vol_val, months_val)
+
+# Prediction also needs avg_vol and months
+predictions = hybrid.predict(X_test, avg_vol_test, months_test)
+
+# Save/Load
+hybrid.save("scenario1_hybrid")
+hybrid.load("scenario1_hybrid")
+```
+
+**Current Results:**
+
+| Model | Scenario 1 PE | Scenario 2 PE |
+|-------|---------------|---------------|
+| **Hybrid-Physics+LightGBM** 🏆 | **1.08** ✅ | 29.60 |
+| Exponential Decay | 1.18 | **1.10** ✅ |
+| XGBoost | 2.84 | 3.39 |
+
+**Key Insight:** Hybrid wins for Scenario 1 (no actuals), Baseline wins for Scenario 2 (has 0-5 actuals).
+
+---
+
+### 5c. ARHOW Model (SARIMAX + Holt-Winters Ensemble) 🆕
+
+**Time-Series Based Forecasting!**
+
+The ARHOW (ARIMA + Holt-Winters) model uses a sophisticated ensemble approach:
+
+```python
+# For each brand, fit two time-series models on pre-entry data:
+1. SARIMAX - Captures autocorrelation and trend
+2. Holt-Winters (ExponentialSmoothing) - Captures level and trend
+
+# Learn optimal weights via Linear Regression:
+y_hat = β₀ × y_SARIMAX + β₁ × y_HW
+
+# The weights are learned from the last N observations
+```
+
+**Why This Approach?**
+- SARIMAX captures autoregressive patterns in the data
+- Holt-Winters captures exponential smoothing trends
+- Learned weights (β₀, β₁) adapt to each brand's characteristics
+- No manual weight tuning required
+
+**Class: `ARIHOWModel`**
+```python
+from models import ARIHOWModel
+
+arhow = ARIHOWModel(
+    arima_order=(1, 1, 1),      # ARIMA(p,d,q)
+    seasonal_order=(0, 0, 0, 0), # SARIMA seasonal
+    hw_trend='add',              # Holt-Winters trend type
+    hw_seasonal=None,            # HW seasonality
+    hw_seasonal_periods=12,      # Seasonal period
+    weight_window=12             # Observations for weight learning
+)
+
+# Fit on ALL brands (not just training set)
+arhow.fit(df)  # Full dataframe with all brands
+
+# Predict for test brands
+predictions = arhow.predict(X_test)
+
+# Inspect learned weights per brand
+weights = arhow.get_brand_weights()
+# Returns: {(country, brand): {'beta0': 0.6, 'beta1': 0.4, 'method': 'weights'}, ...}
+```
+
+**Key Features:**
+- ✅ Fits on ALL brands' pre-entry data (not just training brands)
+- ✅ Uses `get_forecast()` with RangeIndex for statsmodels compatibility
+- ✅ Falls back to exponential decay if time-series fitting fails
+- ✅ Suppresses statsmodels warnings for cleaner output
+
 ---
 
 ### 6️⃣ `src/evaluation.py` - The Scoring System
+
+| | Description |
+|---|---|
+| 📥 **INPUT** | Predictions DataFrame, Actuals DataFrame, `aux_bucket_avgvol.csv` (for avg_vol & buckets) |
+| 📤 **OUTPUT** | PE score (float) - lower is better |
+| 🎯 **GOAL** | Measure prediction accuracy using the EXACT same formula the competition uses |
 
 **What it does:** Calculates the official competition metric (PE = Prediction Error).
 
@@ -323,6 +482,12 @@ Final Score = (2 × avg_PE_bucket1 + 1 × avg_PE_bucket2) / total_weighted_brand
 
 ### 7️⃣ `src/submission.py` - The Output Generator
 
+| | Description |
+|---|---|
+| 📥 **INPUT** | Predictions DataFrame with columns: `country`, `brand_name`, `months_postgx`, `volume` |
+| 📤 **OUTPUT** | CSV file formatted for competition upload (e.g., `scenario1_baseline_final.csv`) |
+| 🎯 **GOAL** | Format predictions into the EXACT structure required by the competition |
+
 **What it does:** Creates the CSV file you upload to the competition.
 
 #### Required Format:
@@ -352,6 +517,12 @@ Final Score = (2 × avg_PE_bucket1 + 1 × avg_PE_bucket2) / total_weighted_brand
 ---
 
 ### 8️⃣ `src/pipeline.py` - The Orchestrator
+
+| | Description |
+|---|---|
+| 📥 **INPUT** | Command-line arguments: `--scenario` (1 or 2), `--model` (baseline/lightgbm/xgboost) |
+| 📤 **OUTPUT** | Trained model files, submission CSVs, performance reports |
+| 🎯 **GOAL** | Run the ENTIRE workflow from raw data to final submission in ONE command |
 
 **What it does:** Runs EVERYTHING in the correct order.
 
@@ -384,6 +555,12 @@ python src/pipeline.py --scenario 1 --model lightgbm
 
 ### 9️⃣ `src/eda_analysis.py` - The Data Explorer
 
+| | Description |
+|---|---|
+| 📥 **INPUT** | Merged DataFrame from data_loader |
+| 📤 **OUTPUT** | Dictionary of statistics, DataFrames with aggregated insights |
+| 🎯 **GOAL** | Understand data patterns BEFORE modeling to inform feature engineering |
+
 **What it does:** Analyzes and understands the data BEFORE modeling.
 
 **Key analyses:**
@@ -414,6 +591,13 @@ python src/pipeline.py --scenario 1 --model lightgbm
 ## 📜 Scripts Explained
 
 ### `scripts/run_demo.py`
+
+| | Description |
+|---|---|
+| 📥 **INPUT** | Raw data files |
+| 📤 **OUTPUT** | Console output showing pipeline works |
+| 🎯 **GOAL** | Quick sanity check that all code works |
+
 **Purpose:** Quick test to make sure everything works.
 
 ```powershell
@@ -432,6 +616,13 @@ python scripts/run_demo.py
 ---
 
 ### `scripts/train_models.py`
+
+| | Description |
+|---|---|
+| 📥 **INPUT** | Raw data files, `--scenario` argument (1 or 2) |
+| 📤 **OUTPUT** | Model files in `models/`, comparison CSV in `reports/` |
+| 🎯 **GOAL** | Train ALL models and find the best one for each scenario |
+
 **Purpose:** Train and compare ALL models.
 
 ```powershell
@@ -451,6 +642,13 @@ python scripts/train_models.py --scenario 2
 ---
 
 ### `scripts/generate_final_submissions.py`
+
+| | Description |
+|---|---|
+| 📥 **INPUT** | Test data, trained models, `--model` argument |
+| 📤 **OUTPUT** | `submissions/scenario1_*_final.csv`, `submissions/scenario2_*_final.csv` |
+| 🎯 **GOAL** | Create the final CSV files ready for competition upload |
+
 **Purpose:** Create the final competition submission files.
 
 ```powershell
@@ -464,6 +662,13 @@ python scripts/generate_final_submissions.py --model baseline
 ---
 
 ### `scripts/validate_submissions.py`
+
+| | Description |
+|---|---|
+| 📥 **INPUT** | Submission CSV files in `submissions/` folder |
+| 📤 **OUTPUT** | Console output with pass/fail for each check |
+| 🎯 **GOAL** | Verify submission files meet ALL competition requirements BEFORE upload |
+
 **Purpose:** Check submissions BEFORE uploading.
 
 ```powershell
@@ -482,6 +687,12 @@ python scripts/validate_submissions.py
 
 ## 📓 Notebooks Explained
 
+| Notebook | Input | Output | Goal |
+|----------|-------|--------|------|
+| `01_eda_visualization.ipynb` | Raw data | Visualizations + insights | Understand data before modeling |
+| `02_feature_exploration.ipynb` | Feature DataFrame | Feature correlation heatmaps, importance charts | Validate feature engineering |
+| `03_model_results.ipynb` | Model comparison CSVs | Performance charts | Compare models, analyze predictions |
+
 | Notebook | Purpose |
 |----------|---------|
 | `01_eda_visualization.ipynb` | See data distributions, erosion curves, bucket breakdown |
@@ -489,6 +700,35 @@ python scripts/validate_submissions.py
 | `03_model_results.ipynb` | Compare model performance, analyze submissions |
 
 **These are for VISUALIZATION only** - all logic is in `src/` files.
+
+### EDA Data Export 🆕
+
+The EDA notebook (`01_eda_visualization.py`) now exports both JSON and CSV files for all figures:
+
+```
+reports/eda_data/
+├── fig01_volume_distribution.json      # JSON summary
+├── fig01_volume_distribution.csv       # Full data (histogram bin edges, counts)
+├── fig02_erosion_curves.json
+├── fig02_erosion_curves.csv            # Erosion curves per bucket
+├── fig03_bucket_distribution.json
+├── fig03_bucket_distribution.csv       # Bucket counts by country
+├── fig04_generic_impact.json
+├── fig04_generic_impact.csv            # Volume by generics count
+├── fig05_therapeutic_area.json
+├── fig05_therapeutic_area.csv          # Metrics by therapeutic area
+├── fig06_monthly_patterns.json
+├── fig06_monthly_patterns.csv          # Monthly volume trends
+├── fig07_correlation_matrix.json
+├── fig07_correlation_matrix.csv        # Feature correlations
+├── fig08_country_analysis.json
+└── fig08_country_analysis.csv          # Country-level analysis
+```
+
+**CSV Data Contents:**
+- Raw data used to generate each figure
+- Can be used for custom visualizations or further analysis
+- Complements JSON summary files
 
 ---
 
@@ -528,16 +768,148 @@ python scripts/validate_submissions.py
 
 ---
 
-## 📈 Current Results
+## 📈 Current Results (Updated November 2025) 🆕
 
-| Model | Scenario 1 PE | Scenario 2 PE |
-|-------|---------------|---------------|
-| No Erosion | 1.84 | 2.18 |
-| **Exponential Decay (λ=0.05)** | **1.18** ✅ | **1.10** ✅ |
-| XGBoost | 2.84 | 3.39 |
-| LightGBM | 14.93 | 14.96 |
+### Latest Model Comparison (Test Mode)
 
-**Winner:** Simple exponential decay beats complex ML!
+**Scenario 1:** (Predict months 0-23 with only pre-entry data)
+
+| Model | Final PE Score |
+|-------|----------------|
+| **Baseline-ExpDecay(0.020)** 🏆 | **0.1483** ✅ |
+| Hybrid-Physics+LightGBM | 0.2294 |
+| Baseline-NoErosion | 0.2470 |
+| Hybrid-Physics+XGBoost | 0.2716 |
+| ARHOW-SARIMAX+HW | 0.2995 |
+| LightGBM | 0.3432 |
+| XGBoost | 0.6738 |
+
+**Scenario 2:** (Predict months 6-23 with actual months 0-5)
+
+| Model | Final PE Score |
+|-------|----------------|
+| **Baseline-ExpDecay(0.020)** 🏆 | **0.1580** ✅ |
+| Hybrid-Physics+LightGBM | 0.2086 |
+| Hybrid-Physics+XGBoost | 0.3258 |
+| Baseline-NoErosion | 0.3289 |
+| LightGBM | 0.3316 |
+| ARHOW-SARIMAX+HW | 0.4062 |
+| XGBoost | 0.6445 |
+
+### Key Findings:
+
+1. **Exponential Decay Baseline wins both scenarios** - Simple physics-based approach outperforms complex ML
+2. **Hybrid models are strong second place** - Physics + ML correction works well
+3. **ARHOW model** - Time-series approach shows promise but needs tuning
+4. **Pure ML models struggle** - XGBoost/LightGBM alone don't capture erosion patterns well
+
+**Recommendations:**
+- **Scenario 1:** Use Exponential Decay (PE=0.1483) or Hybrid-LightGBM (PE=0.2294)
+- **Scenario 2:** Use Exponential Decay (PE=0.1580) or Hybrid-LightGBM (PE=0.2086)
+
+---
+
+## 📁 Output Files with Timestamps
+
+All training runs and submissions now save with timestamps and JSON summaries.
+
+### Training Output Files:
+
+```
+reports/
+├── model_comparison_scenario1_20251128_210310.csv    ← Timestamped CSV
+├── model_comparison_scenario1.csv                     ← Latest (easy access)
+├── run_summary_scenario1_20251128_210310.json        ← Full JSON summary
+├── model_comparison_scenario2_20251128_210433.csv
+├── model_comparison_scenario2.csv
+└── run_summary_scenario2_20251128_210433.json
+```
+
+### EDA Data Files: 🆕
+
+```
+reports/eda_data/
+├── fig01_volume_distribution.json + .csv
+├── fig02_erosion_curves.json + .csv
+├── fig03_bucket_distribution.json + .csv
+├── fig04_generic_impact.json + .csv
+├── fig05_therapeutic_area.json + .csv
+├── fig06_monthly_patterns.json + .csv
+├── fig07_correlation_matrix.json + .csv
+└── fig08_country_analysis.json + .csv
+```
+
+### Submission Output Files:
+
+```
+submissions/
+├── scenario1_baseline_20251128_185734.csv            ← Timestamped CSV
+├── scenario1_baseline_20251128_185734.json           ← Summary JSON
+└── scenario1_baseline_final.csv                       ← Latest (easy access)
+```
+
+### JSON Summary Contents:
+
+**Training Run Summary (`run_summary_*.json`):**
+```json
+{
+  "run_info": {
+    "run_id": "20251128_185725",
+    "timestamp": "20251128_185725",
+    "scenario": 1,
+    "date": "2025-11-28",
+    "time": "18:57:25"
+  },
+  "best_model": {
+    "name": "Hybrid-Physics+LightGBM",
+    "final_score": 1.0758
+  },
+  "all_results": [...],
+  "config": {
+    "paths": {...},
+    "constants": {...},
+    "metric_weights": {...},
+    "model_params": {...}
+  },
+  "data_info": {
+    "train_rows": 75024,
+    "val_rows": 18720,
+    "n_features": 40,
+    "feature_cols": [...]
+  },
+  "feature_importance": [...]
+}
+```
+
+**Submission Summary (`scenario*_*.json`):**
+```json
+{
+  "submission_info": {
+    "scenario": 1,
+    "model_type": "baseline",
+    "timestamp": "20251128_185734",
+    "date": "2025-11-28",
+    "time": "18:57:34"
+  },
+  "data_stats": {
+    "n_brands": 340,
+    "n_rows": 8160,
+    "months_predicted": [0, 1, ..., 23]
+  },
+  "volume_predictions": {
+    "min": 25.84,
+    "max": 126466938.0,
+    "mean": 1909240.94,
+    "median": 110694.60,
+    "std": 7035711.05
+  },
+  "model_config": {
+    "decay_rate": 0.05,
+    "model_type": "baseline"
+  },
+  "full_config": {...}
+}
+```
 
 ---
 
@@ -557,9 +929,222 @@ python scripts/validate_submissions.py
 |------|---------|
 | Test everything | `python scripts/run_demo.py` |
 | Train models | `python scripts/train_models.py --scenario 1` |
-| Generate submission | `python scripts/generate_final_submissions.py --model baseline` |
+| Generate submission (baseline) | `python scripts/generate_final_submissions.py --model baseline` |
+| Generate submission (hybrid) | `python scripts/generate_final_submissions.py --model hybrid` |
 | Validate submission | `python scripts/validate_submissions.py` |
 | Run full pipeline | `python src/pipeline.py --scenario 1 --model lightgbm` |
+
+### Available Model Types:
+- `baseline` - Exponential decay (best for both scenarios) 🏆
+- `hybrid` - Physics + ML hybrid (strong second place)
+- `arihow` - SARIMAX + Holt-Winters time-series ensemble 🆕
+- `lightgbm` - LightGBM gradient boosting
+- `xgboost` - XGBoost gradient boosting
+
+---
+
+## 🚀 Complete Pipeline: From Zero to Submission (Step-by-Step) 🆕
+
+This section provides a **complete, copy-paste ready** guide to run the entire pipeline from scratch.
+
+### Prerequisites
+
+```powershell
+# 1. Navigate to project directory
+cd D:\Datathon\novartis_datathon_2025\Main_project
+
+# 2. Create virtual environment (first time only)
+python -m venv saeed_venv
+
+# 3. Activate virtual environment
+.\saeed_venv\Scripts\Activate.ps1
+
+# 4. Install dependencies (first time only)
+pip install -r requirements.txt
+```
+
+### Step 1: Verify Data Files
+
+Ensure raw data files exist in `data/raw/`:
+```
+data/raw/
+├── df_volume_train.csv
+├── df_volume_test.csv
+├── df_generics_train.csv
+├── df_generics_test.csv
+└── df_medicine_info.csv
+```
+
+### Step 2: Run EDA (Optional but Recommended)
+
+```powershell
+# Generate EDA visualizations and data exports
+python notebooks/01_eda_visualization.py
+```
+
+**Output:**
+- `reports/eda_data/fig01-08_*.json` - Summary statistics
+- `reports/eda_data/fig01-08_*.csv` - Raw data for each figure
+- `reports/figures/fig01-08_*.png` - Visualization images
+
+### Step 3: Quick Demo Test
+
+```powershell
+# Verify everything works with a quick test
+python scripts/run_demo.py
+```
+
+### Step 4: Train Models (Test Mode - Fast)
+
+```powershell
+# Train Scenario 1 models (test mode - subset of data)
+python scripts/train_models.py --scenario 1 --test
+
+# Train Scenario 2 models (test mode - subset of data)
+python scripts/train_models.py --scenario 2 --test
+```
+
+**Output:**
+- `reports/model_comparison_scenario1.csv`
+- `reports/model_comparison_scenario2.csv`
+- `reports/run_summary_scenario*.json`
+- `models/scenario*_*.joblib`
+
+### Step 5: Train Models (Full Mode - Production)
+
+```powershell
+# Train Scenario 1 models (FULL - all data)
+python scripts/train_models.py --scenario 1
+
+# Train Scenario 2 models (FULL - all data)
+python scripts/train_models.py --scenario 2
+```
+
+### Step 6: Review Results
+
+```powershell
+# Check model comparison results
+type reports\model_comparison_scenario1.csv
+type reports\model_comparison_scenario2.csv
+```
+
+Or open `notebooks/03_model_results.ipynb` for visualizations.
+
+### Step 7: Generate Final Submissions
+
+```powershell
+# Generate submissions using best model (baseline exponential decay)
+python scripts/generate_final_submissions.py --model baseline
+
+# OR generate submissions using hybrid model
+python scripts/generate_final_submissions.py --model hybrid
+```
+
+**Output:**
+- `submissions/scenario1_baseline_final.csv`
+- `submissions/scenario2_baseline_final.csv`
+- `submissions/scenario*_*.json` - Summary files
+
+### Step 8: Validate Submissions
+
+```powershell
+# Validate submission files before upload
+python scripts/validate_submissions.py
+```
+
+**Checks performed:**
+- ✅ Correct column names
+- ✅ No missing values
+- ✅ No negative volumes
+- ✅ Correct months per scenario
+- ✅ All brands present
+- ✅ Correct total row count
+
+### Step 9: Upload to Competition
+
+Upload the following files to the competition platform:
+- `submissions/scenario1_baseline_final.csv`
+- `submissions/scenario2_baseline_final.csv`
+
+---
+
+### 📋 Quick Reference Commands (Copy-Paste Ready)
+
+```powershell
+# ============================================
+# COMPLETE PIPELINE - RUN ALL STEPS
+# ============================================
+
+# Activate environment
+cd D:\Datathon\novartis_datathon_2025\Main_project
+.\saeed_venv\Scripts\Activate.ps1
+
+# Run EDA
+python notebooks/01_eda_visualization.py
+
+# Train models (full mode)
+python scripts/train_models.py --scenario 1
+python scripts/train_models.py --scenario 2
+
+# Generate submissions
+python scripts/generate_final_submissions.py --model baseline
+
+# Validate
+python scripts/validate_submissions.py
+
+# Done! Files ready in submissions/ folder
+```
+
+### 🎯 Expected Final Output Structure
+
+```
+Main_project/
+├── models/
+│   ├── scenario1_lightgbm.joblib
+│   ├── scenario1_xgboost.joblib
+│   ├── scenario1_hybrid_hybrid.joblib
+│   ├── scenario1_arihow_arihow.joblib
+│   ├── scenario2_lightgbm.joblib
+│   ├── scenario2_xgboost.joblib
+│   ├── scenario2_hybrid_hybrid.joblib
+│   └── scenario2_arihow_arihow.joblib
+├── reports/
+│   ├── model_comparison_scenario1.csv
+│   ├── model_comparison_scenario2.csv
+│   ├── run_summary_scenario1_*.json
+│   ├── run_summary_scenario2_*.json
+│   └── eda_data/
+│       ├── fig01-08_*.json
+│       └── fig01-08_*.csv
+└── submissions/
+    ├── scenario1_baseline_final.csv  ← UPLOAD THIS
+    ├── scenario2_baseline_final.csv  ← UPLOAD THIS
+    └── scenario*_*.json
+```
+
+---
+
+## 🔧 Recent Updates (November 2025) 🆕
+
+### 1. ARHOW Model Improvements
+- **Upgraded from basic ARIMA to SARIMAX** - Better handling of seasonal patterns
+- **Added Holt-Winters (ExponentialSmoothing)** - Captures level and trend
+- **Learned weights via Linear Regression** - Optimal combination: `y_hat = β₀ × ARIMA + β₁ × HW`
+- **Fixed training on ALL brands** - Previously only trained on training brands
+- **Added RangeIndex for statsmodels compatibility** - Prevents datetime index errors
+
+### 2. Warning Suppression
+- Added `warnings.catch_warnings()` context managers to suppress statsmodels convergence warnings
+- Cleaner console output during training
+
+### 3. EDA Data Export
+- All EDA figures now export accompanying CSV files with raw data
+- Enables custom visualizations and further analysis
+- 9 JSON + 9 CSV files in `reports/eda_data/`
+
+### 4. Pandas FutureWarning Fix
+- Updated `feature_engineering.py` to use `include_groups=False` in groupby operations
+- Prevents deprecation warnings in newer pandas versions
 
 ---
 

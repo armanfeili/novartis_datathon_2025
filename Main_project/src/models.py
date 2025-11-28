@@ -3,6 +3,13 @@
 # Description: Model classes for baseline and gradient boosting models
 # =============================================================================
 
+import warnings
+# Suppress statsmodels warnings
+warnings.filterwarnings('ignore', category=UserWarning, module='statsmodels')
+warnings.filterwarnings('ignore', message='.*unsupported index.*')
+warnings.filterwarnings('ignore', message='.*No supported index.*')
+warnings.filterwarnings('ignore', message='.*No frequency information.*')
+
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import TimeSeriesSplit, cross_val_score
@@ -152,6 +159,758 @@ class BaselineModels:
 # =============================================================================
 # GRADIENT BOOSTING MODELS
 # =============================================================================
+
+class GradientBoostingModel:
+    """LightGBM/XGBoost model wrapper for volume prediction."""
+    
+    def __init__(self, model_type: str = 'lightgbm', params: dict = None):
+        """
+        Initialize model.
+        
+        Args:
+            model_type: 'lightgbm' or 'xgboost'
+            params: Model hyperparameters (uses defaults if None)
+        """
+        self.model_type = model_type
+        self.model = None
+        self.params = params or self._default_params()
+        self.feature_names = None
+        
+    def _default_params(self) -> dict:
+        """Get default parameters for model type."""
+        if self.model_type == 'lightgbm':
+            return LGBM_PARAMS.copy()
+        else:
+            return XGB_PARAMS.copy()
+
+
+# =============================================================================
+# HYBRID MODEL (PHYSICS + ML)
+# =============================================================================
+
+class HybridPhysicsMLModel:
+    """
+    Hybrid model combining physics-based exponential decay with ML residual learning.
+    
+    Formula:
+        base_prediction = avg_vol * exp(-decay_rate * months_postgx)  # Physics
+        residual = ML_model.predict(features)                          # Learn residuals
+        final = base_prediction + residual                             # Combine
+    """
+    
+    def __init__(self, 
+                 ml_model_type: str = 'lightgbm',
+                 decay_rate: float = 0.05,
+                 params: dict = None):
+        """
+        Initialize hybrid model.
+        
+        Args:
+            ml_model_type: 'lightgbm' or 'xgboost' for residual model
+            decay_rate: Exponential decay rate (lambda)
+            params: ML model hyperparameters
+        """
+        self.ml_model_type = ml_model_type
+        self.decay_rate = decay_rate
+        self.ml_model = None
+        self.params = params or self._default_params()
+        self.feature_names = None
+        self.is_fitted = False
+        
+    def _default_params(self) -> dict:
+        """Get conservative default parameters for residual learning."""
+        if self.ml_model_type == 'lightgbm':
+            return {
+                'n_estimators': 100,
+                'max_depth': 4,           # Shallow trees for residuals
+                'learning_rate': 0.05,
+                'min_child_samples': 50,
+                'subsample': 0.8,
+                'colsample_bytree': 0.8,
+                'reg_alpha': 0.1,
+                'reg_lambda': 0.1,
+                'random_state': 42,
+                'verbosity': -1
+            }
+        else:
+            return {
+                'n_estimators': 100,
+                'max_depth': 4,
+                'learning_rate': 0.05,
+                'min_child_weight': 50,
+                'subsample': 0.8,
+                'colsample_bytree': 0.8,
+                'reg_alpha': 0.1,
+                'reg_lambda': 0.1,
+                'random_state': 42,
+                'verbosity': 0
+            }
+    
+    def _compute_physics_baseline(self, 
+                                   avg_vol: np.ndarray, 
+                                   months_postgx: np.ndarray) -> np.ndarray:
+        """
+        Compute physics-based exponential decay prediction.
+        
+        Args:
+            avg_vol: Pre-entry average volume for each sample
+            months_postgx: Months since generic entry
+            
+        Returns:
+            Physics baseline predictions
+        """
+        return avg_vol * np.exp(-self.decay_rate * months_postgx)
+    
+    def fit(self, 
+            X_train: pd.DataFrame, 
+            y_train: pd.Series,
+            avg_vol_train: np.ndarray,
+            months_train: np.ndarray,
+            X_val: pd.DataFrame = None, 
+            y_val: pd.Series = None,
+            avg_vol_val: np.ndarray = None,
+            months_val: np.ndarray = None,
+            early_stopping_rounds: int = 50) -> 'HybridPhysicsMLModel':
+        """
+        Train the hybrid model.
+        
+        Step 1: Compute physics baseline
+        Step 2: Compute residuals (actual - physics)
+        Step 3: Train ML model on residuals
+        
+        Args:
+            X_train: Training features
+            y_train: Training target (actual volumes)
+            avg_vol_train: Pre-entry average volume for training samples
+            months_train: Months post generic entry for training samples
+            X_val, y_val: Validation data (optional)
+            avg_vol_val, months_val: Validation auxiliary data (optional)
+            early_stopping_rounds: Early stopping patience
+            
+        Returns:
+            Self (fitted model)
+        """
+        self.feature_names = list(X_train.columns)
+        
+        # Step 1: Physics baseline
+        physics_pred_train = self._compute_physics_baseline(avg_vol_train, months_train)
+        
+        # Step 2: Residuals
+        residuals_train = y_train.values - physics_pred_train
+        
+        print(f"📊 Physics baseline RMSE: {np.sqrt(np.mean((y_train.values - physics_pred_train)**2)):.2f}")
+        print(f"📊 Residual stats: mean={residuals_train.mean():.2f}, std={residuals_train.std():.2f}")
+        
+        # Step 3: Train ML model on residuals
+        if self.ml_model_type == 'lightgbm':
+            self.ml_model = lgb.LGBMRegressor(**self.params)
+            
+            if X_val is not None and y_val is not None and avg_vol_val is not None:
+                physics_pred_val = self._compute_physics_baseline(avg_vol_val, months_val)
+                residuals_val = y_val.values - physics_pred_val
+                
+                self.ml_model.fit(
+                    X_train, residuals_train,
+                    eval_set=[(X_val, residuals_val)],
+                    callbacks=[lgb.early_stopping(early_stopping_rounds, verbose=False)]
+                )
+            else:
+                self.ml_model.fit(X_train, residuals_train)
+                
+        else:  # xgboost
+            self.ml_model = xgb.XGBRegressor(**self.params)
+            
+            if X_val is not None and y_val is not None and avg_vol_val is not None:
+                physics_pred_val = self._compute_physics_baseline(avg_vol_val, months_val)
+                residuals_val = y_val.values - physics_pred_val
+                
+                self.ml_model.fit(
+                    X_train, residuals_train,
+                    eval_set=[(X_val, residuals_val)],
+                    verbose=False
+                )
+            else:
+                self.ml_model.fit(X_train, residuals_train)
+        
+        self.is_fitted = True
+        print(f"✅ Hybrid {self.ml_model_type} model trained (decay_rate={self.decay_rate})")
+        return self
+    
+    def predict(self, 
+                X: pd.DataFrame, 
+                avg_vol: np.ndarray, 
+                months_postgx: np.ndarray) -> np.ndarray:
+        """
+        Generate predictions using hybrid approach.
+        
+        Args:
+            X: Features
+            avg_vol: Pre-entry average volume for each sample
+            months_postgx: Months since generic entry
+            
+        Returns:
+            Array of predictions (physics + ML residual)
+        """
+        if not self.is_fitted:
+            raise ValueError("Model not fitted. Call fit() first.")
+        
+        # Physics baseline
+        physics_pred = self._compute_physics_baseline(avg_vol, months_postgx)
+        
+        # ML residual prediction
+        residual_pred = self.ml_model.predict(X)
+        
+        # Combine
+        final_pred = physics_pred + residual_pred
+        
+        # Ensure no negative predictions
+        final_pred = np.clip(final_pred, 0, None)
+        
+        return final_pred
+    
+    def predict_components(self, 
+                           X: pd.DataFrame, 
+                           avg_vol: np.ndarray, 
+                           months_postgx: np.ndarray) -> dict:
+        """
+        Get prediction components (for analysis).
+        
+        Returns:
+            Dictionary with 'physics', 'residual', 'final' predictions
+        """
+        physics_pred = self._compute_physics_baseline(avg_vol, months_postgx)
+        residual_pred = self.ml_model.predict(X)
+        final_pred = np.clip(physics_pred + residual_pred, 0, None)
+        
+        return {
+            'physics': physics_pred,
+            'residual': residual_pred,
+            'final': final_pred
+        }
+    
+    def get_feature_importance(self, top_n: int = 20) -> pd.DataFrame:
+        """Get feature importance from the ML residual model."""
+        if not self.is_fitted:
+            return None
+        
+        importance_df = pd.DataFrame({
+            'feature': self.feature_names,
+            'importance': self.ml_model.feature_importances_
+        }).sort_values('importance', ascending=False)
+        
+        return importance_df.head(top_n)
+    
+    def save(self, name: str) -> Path:
+        """Save hybrid model to disk."""
+        path = MODELS_DIR / f"{name}_hybrid.joblib"
+        joblib.dump({
+            'ml_model': self.ml_model,
+            'ml_model_type': self.ml_model_type,
+            'decay_rate': self.decay_rate,
+            'params': self.params,
+            'feature_names': self.feature_names,
+            'is_fitted': self.is_fitted
+        }, path)
+        print(f"✅ Hybrid model saved to {path}")
+        return path
+    
+    def load(self, name: str) -> 'HybridPhysicsMLModel':
+        """Load hybrid model from disk."""
+        path = MODELS_DIR / f"{name}_hybrid.joblib"
+        data = joblib.load(path)
+        self.ml_model = data['ml_model']
+        self.ml_model_type = data['ml_model_type']
+        self.decay_rate = data['decay_rate']
+        self.params = data['params']
+        self.feature_names = data['feature_names']
+        self.is_fitted = data['is_fitted']
+        print(f"✅ Hybrid model loaded from {path}")
+        return self
+
+
+# =============================================================================
+# ARIHOW MODEL (ARIMA + Holt-Winters Hybrid with Learned Weights)
+# =============================================================================
+
+import warnings
+
+class ARIHOWModel:
+    """
+    ARHOW hybrid model with learned weights:
+        y_hat = beta0 * y_hat_ARIMA + beta1 * y_hat_HW
+    
+    This model combines:
+    1. SARIMAX for capturing trend, autocorrelation, and seasonality
+    2. Holt-Winters (Exponential Smoothing) for level/trend/seasonality patterns
+    3. Linear regression to optimally weight the two forecasts
+    
+    The weights (beta0, beta1) are learned from the last `weight_window` observations
+    to minimize prediction error on in-sample data.
+    
+    Note: This model works per-brand, fitting a time series model to each brand's
+    historical data and forecasting future months.
+    """
+    
+    def __init__(self,
+                 arima_order: tuple = (1, 1, 1),
+                 seasonal_order: tuple = None,
+                 hw_trend: str = 'add',
+                 hw_seasonal: str = None,
+                 hw_seasonal_periods: int = 12,
+                 weight_window: int = 12,
+                 suppress_warnings: bool = True):
+        """
+        Initialize ARHOW model.
+        
+        Args:
+            arima_order: (p, d, q) order for ARIMA
+                        p = AR order, d = differencing, q = MA order
+            seasonal_order: (P, D, Q, s) seasonal order for SARIMAX (optional)
+            hw_trend: Holt-Winters trend type ('add', 'mul', None)
+            hw_seasonal: Holt-Winters seasonal type ('add', 'mul', None)
+            hw_seasonal_periods: Seasonal periods for Holt-Winters
+            weight_window: Number of last observations to estimate ARHOW weights
+            suppress_warnings: If True, suppress statsmodels warnings
+        """
+        self.arima_order = arima_order
+        self.seasonal_order = seasonal_order or (0, 0, 0, 0)
+        self.hw_trend = hw_trend
+        self.hw_seasonal = hw_seasonal
+        self.hw_seasonal_periods = hw_seasonal_periods
+        self.weight_window = weight_window
+        self.suppress_warnings = suppress_warnings
+        
+        self.brand_models = {}  # Store fitted models per brand
+        self.is_fitted = False
+        
+    def _fit_brand_arhow(self, series: pd.Series, brand_key: str) -> dict:
+        """
+        Fit ARHOW model for a single brand using SARIMAX + Holt-Winters + regression weights.
+        
+        Args:
+            series: Time series data for the brand (indexed by months_postgx)
+            brand_key: Identifier for the brand
+            
+        Returns:
+            Dictionary with fitted model info
+        """
+        try:
+            from statsmodels.tsa.statespace.sarimax import SARIMAX
+            from statsmodels.tsa.holtwinters import ExponentialSmoothing
+            from sklearn.linear_model import LinearRegression
+        except ImportError:
+            raise ImportError("statsmodels and scikit-learn required.")
+        
+        result = {
+            'arima_res': None,
+            'hw_res': None,
+            'beta': None,  # (beta0, beta1) weights
+            'success': False,
+            'fallback_value': float(series.mean()) if len(series) > 0 else 0,
+            'last_value': float(series.iloc[-1]) if len(series) > 0 else 0
+        }
+        
+        # Need enough data points
+        min_points = max(self.weight_window + 2, 8)
+        if len(series) < min_points:
+            return result
+        
+        # Use context manager to suppress all statsmodels warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            
+            try:
+                # Sort and clean series
+                series = series.sort_index().dropna().astype(float)
+                
+                # Reset to RangeIndex for statsmodels compatibility
+                y = pd.Series(series.values, index=pd.RangeIndex(len(series)))
+                
+                # --- 1. Fit SARIMAX model ---
+                arima_model = SARIMAX(
+                    y,
+                    order=self.arima_order,
+                    seasonal_order=self.seasonal_order,
+                    enforce_stationarity=False,
+                    enforce_invertibility=False,
+                )
+                arima_res = arima_model.fit(disp=False)
+                result['arima_res'] = arima_res
+                
+                # --- 2. Fit Holt-Winters model ---
+                # Determine if we have enough data for seasonality
+                use_seasonal = (self.hw_seasonal is not None and 
+                               self.hw_seasonal_periods is not None and
+                               len(y) >= 2 * self.hw_seasonal_periods)
+                
+                hw_model = ExponentialSmoothing(
+                    y,
+                    trend=self.hw_trend,
+                    seasonal=self.hw_seasonal if use_seasonal else None,
+                    seasonal_periods=self.hw_seasonal_periods if use_seasonal else None,
+                    initialization_method='estimated'
+                )
+                hw_res = hw_model.fit(optimized=True)
+                result['hw_res'] = hw_res
+                
+                # --- 3. Build regression window to estimate weights ---
+                effective_window = min(self.weight_window, len(y) - 2)
+                if effective_window < 3:
+                    # Not enough data for weight estimation, use equal weights
+                    result['beta'] = np.array([0.5, 0.5])
+                else:
+                    start_idx = len(y) - effective_window
+                    
+                    # In-sample predictions from each model
+                    arima_pred = arima_res.fittedvalues.iloc[start_idx:]
+                    hw_pred = hw_res.fittedvalues.iloc[start_idx:]
+                    y_true = y.iloc[start_idx:]
+                    
+                    # Align and create regression data
+                    df_reg = pd.DataFrame({
+                        'y': y_true.values,
+                        'arima': arima_pred.values,
+                        'hw': hw_pred.values
+                    }).dropna()
+                    
+                    if len(df_reg) >= 3:
+                        X = df_reg[['arima', 'hw']].values
+                        y_reg = df_reg['y'].values
+                        
+                        # Estimate weights: y = beta0*arima + beta1*hw (no intercept)
+                        lr = LinearRegression(fit_intercept=False)
+                        lr.fit(X, y_reg)
+                        result['beta'] = lr.coef_  # array([beta0, beta1])
+                    else:
+                        result['beta'] = np.array([0.5, 0.5])
+                
+                # Store original index for reference
+                result['original_index'] = series.index.tolist()
+                result['series_length'] = len(y)
+                result['success'] = True
+                
+            except Exception as e:
+                result['error'] = str(e)
+            
+        return result
+    
+    def fit(self, 
+            df: pd.DataFrame,
+            target_col: str = 'volume',
+            min_history_months: int = 6) -> 'ARIHOWModel':
+        """
+        Fit ARHOW models for all brands in the dataset.
+        
+        Args:
+            df: DataFrame with columns [country, brand_name, months_postgx, volume]
+            target_col: Target column name
+            min_history_months: Minimum months of history required to fit
+            
+        Returns:
+            Self (fitted model)
+        """
+        print(f"🔧 Fitting ARHOW model (SARIMAX + HW + weights) for each brand...")
+        
+        # Suppress statsmodels warnings if requested
+        if self.suppress_warnings:
+            warnings.filterwarnings('ignore', category=UserWarning)
+            warnings.filterwarnings('ignore', message='.*unsupported index.*')
+            warnings.filterwarnings('ignore', message='.*Non-invertible.*')
+            warnings.filterwarnings('ignore', message='.*non-stationary.*')
+        
+        brands = df[['country', 'brand_name']].drop_duplicates()
+        n_brands = len(brands)
+        success_count = 0
+        
+        for idx, (_, brand_row) in enumerate(brands.iterrows()):
+            brand_key = (brand_row['country'], brand_row['brand_name'])
+            
+            # Get brand's time series
+            brand_data = df[
+                (df['country'] == brand_row['country']) & 
+                (df['brand_name'] == brand_row['brand_name'])
+            ].sort_values('months_postgx')
+            
+            # Create series indexed by months_postgx
+            series = brand_data.set_index('months_postgx')[target_col]
+            
+            if len(series) >= min_history_months:
+                model_result = self._fit_brand_arhow(series, str(brand_key))
+                self.brand_models[brand_key] = model_result
+                if model_result['success']:
+                    success_count += 1
+            else:
+                # Not enough data - store fallback
+                self.brand_models[brand_key] = {
+                    'success': False,
+                    'fallback_value': float(series.mean()) if len(series) > 0 else 0,
+                    'last_value': float(series.iloc[-1]) if len(series) > 0 else 0
+                }
+            
+            if (idx + 1) % 200 == 0:
+                print(f"   Processed {idx + 1}/{n_brands} brands...")
+        
+        self.is_fitted = True
+        print(f"✅ ARHOW fitted: {success_count}/{n_brands} brands successfully")
+        return self
+    
+    def _forecast_brand(self, model_info: dict, steps: int) -> np.ndarray:
+        """
+        Generate multi-step forecast for a single brand using ARHOW hybrid.
+        
+        Args:
+            model_info: Dictionary with fitted model components
+            steps: Number of periods to forecast
+            
+        Returns:
+            Array of forecasts
+        """
+        if not model_info.get('success', False):
+            return None
+        
+        arima_res = model_info['arima_res']
+        hw_res = model_info['hw_res']
+        beta = model_info['beta']
+        
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            
+            # ARIMA/SARIMAX forecast
+            arima_fc = arima_res.forecast(steps=steps)
+            
+            # Holt-Winters forecast
+            hw_fc = hw_res.forecast(steps=steps)
+            
+            # Ensure same length
+            if len(hw_fc) != len(arima_fc):
+                hw_fc = hw_fc[:len(arima_fc)]
+            
+            # Combine with learned weights: y_hat = beta0 * ARIMA + beta1 * HW
+            beta0, beta1 = beta
+            arhow_fc = beta0 * arima_fc.values + beta1 * hw_fc.values
+            
+            # Ensure non-negative
+            arhow_fc = np.maximum(arhow_fc, 0)
+            
+            return arhow_fc
+    
+    def predict(self,
+                df: pd.DataFrame,
+                months_to_predict: list = None) -> pd.DataFrame:
+        """
+        Generate predictions for brands.
+        
+        Args:
+            df: DataFrame with brands to predict for
+            months_to_predict: List of months to predict (defaults to 0-23)
+            
+        Returns:
+            DataFrame with predictions
+        """
+        if not self.is_fitted:
+            raise ValueError("Model not fitted. Call fit() first.")
+        
+        months_to_predict = months_to_predict or list(range(0, 24))
+        max_steps = max(months_to_predict) + 1
+        predictions = []
+        
+        brands = df[['country', 'brand_name']].drop_duplicates()
+        
+        for _, brand_row in brands.iterrows():
+            brand_key = (brand_row['country'], brand_row['brand_name'])
+            model_info = self.brand_models.get(brand_key, None)
+            
+            if model_info and model_info.get('success', False):
+                # Generate full forecast
+                with warnings.catch_warnings():
+                    warnings.simplefilter('ignore')
+                    try:
+                        forecasts = self._forecast_brand(model_info, max_steps)
+                        for month in months_to_predict:
+                            pred_value = float(forecasts[month]) if forecasts is not None else model_info.get('fallback_value', 0)
+                            predictions.append({
+                                'country': brand_row['country'],
+                                'brand_name': brand_row['brand_name'],
+                                'months_postgx': month,
+                                'volume': max(0, pred_value)
+                            })
+                    except:
+                        # Fallback
+                        for month in months_to_predict:
+                            predictions.append({
+                                'country': brand_row['country'],
+                                'brand_name': brand_row['brand_name'],
+                                'months_postgx': month,
+                                'volume': model_info.get('fallback_value', 0)
+                            })
+            else:
+                # Use fallback
+                fallback = model_info.get('fallback_value', 0) if model_info else 0
+                for month in months_to_predict:
+                    predictions.append({
+                        'country': brand_row['country'],
+                        'brand_name': brand_row['brand_name'],
+                        'months_postgx': month,
+                        'volume': fallback
+                    })
+        
+        return pd.DataFrame(predictions)
+    
+    def predict_with_decay_fallback(self,
+                                     df: pd.DataFrame,
+                                     avg_j: pd.DataFrame,
+                                     months_to_predict: list = None,
+                                     decay_rate: float = 0.05) -> pd.DataFrame:
+        """
+        Generate predictions with exponential decay fallback for failed brands.
+        
+        Uses ARHOW where it works, exponential decay otherwise.
+        
+        Args:
+            df: DataFrame with brands to predict
+            avg_j: DataFrame with avg_vol per brand
+            months_to_predict: List of months
+            decay_rate: Fallback decay rate
+            
+        Returns:
+            DataFrame with predictions
+        """
+        if not self.is_fitted:
+            raise ValueError("Model not fitted. Call fit() first.")
+        
+        months_to_predict = months_to_predict or list(range(0, 24))
+        max_steps = max(months_to_predict) + 1
+        predictions = []
+        
+        brands = df[['country', 'brand_name']].drop_duplicates()
+        brands = brands.merge(avg_j[['country', 'brand_name', 'avg_vol']], 
+                             on=['country', 'brand_name'], how='left')
+        
+        arhow_used = 0
+        decay_used = 0
+        
+        for _, brand_row in brands.iterrows():
+            brand_key = (brand_row['country'], brand_row['brand_name'])
+            avg_vol = brand_row.get('avg_vol', 0)
+            if pd.isna(avg_vol):
+                avg_vol = 0
+            
+            model_info = self.brand_models.get(brand_key, None)
+            use_arhow = model_info and model_info.get('success', False)
+            
+            if use_arhow:
+                with warnings.catch_warnings():
+                    warnings.simplefilter('ignore')
+                    try:
+                        forecasts = self._forecast_brand(model_info, max_steps)
+                        if forecasts is not None:
+                            for month in months_to_predict:
+                                pred_value = float(forecasts[month])
+                                predictions.append({
+                                    'country': brand_row['country'],
+                                    'brand_name': brand_row['brand_name'],
+                                    'months_postgx': month,
+                                    'volume': max(0, pred_value)
+                                })
+                                arhow_used += 1
+                        else:
+                            raise ValueError("Forecast failed")
+                    except:
+                        # Fallback to decay
+                        for month in months_to_predict:
+                            pred_value = avg_vol * np.exp(-decay_rate * month)
+                            predictions.append({
+                                'country': brand_row['country'],
+                                'brand_name': brand_row['brand_name'],
+                                'months_postgx': month,
+                                'volume': max(0, pred_value)
+                            })
+                            decay_used += 1
+            else:
+                # Use exponential decay fallback
+                for month in months_to_predict:
+                    pred_value = avg_vol * np.exp(-decay_rate * month) if avg_vol > 0 else 0
+                    predictions.append({
+                        'country': brand_row['country'],
+                        'brand_name': brand_row['brand_name'],
+                        'months_postgx': month,
+                        'volume': max(0, pred_value)
+                    })
+                    decay_used += 1
+        
+        print(f"   📊 ARHOW predictions: {arhow_used}, Decay fallback: {decay_used}")
+        return pd.DataFrame(predictions)
+    
+    def get_brand_weights(self) -> pd.DataFrame:
+        """Get the learned ARHOW weights for each brand."""
+        weights = []
+        for brand_key, model_info in self.brand_models.items():
+            if model_info.get('success', False) and model_info.get('beta') is not None:
+                weights.append({
+                    'country': brand_key[0],
+                    'brand_name': brand_key[1],
+                    'beta_arima': model_info['beta'][0],
+                    'beta_hw': model_info['beta'][1],
+                    'success': True
+                })
+            else:
+                weights.append({
+                    'country': brand_key[0],
+                    'brand_name': brand_key[1],
+                    'beta_arima': None,
+                    'beta_hw': None,
+                    'success': False
+                })
+        return pd.DataFrame(weights)
+    
+    def save(self, name: str) -> Path:
+        """Save ARHOW model to disk (saves model parameters and weights)."""
+        path = MODELS_DIR / f"{name}_arihow.joblib"
+        
+        # Save configuration and brand weights (statsmodels objects don't serialize well)
+        save_data = {
+            'arima_order': self.arima_order,
+            'seasonal_order': self.seasonal_order,
+            'hw_trend': self.hw_trend,
+            'hw_seasonal': self.hw_seasonal,
+            'hw_seasonal_periods': self.hw_seasonal_periods,
+            'weight_window': self.weight_window,
+            'is_fitted': self.is_fitted,
+            # Save weights and fallback values for each brand
+            'brand_data': {
+                str(k): {
+                    'success': v.get('success', False),
+                    'fallback_value': v.get('fallback_value', 0),
+                    'last_value': v.get('last_value', 0),
+                    'beta': v.get('beta', [0.5, 0.5]) if v.get('beta') is not None else [0.5, 0.5]
+                }
+                for k, v in self.brand_models.items()
+            }
+        }
+        
+        joblib.dump(save_data, path)
+        print(f"✅ ARHOW model config saved to {path}")
+        return path
+    
+    @classmethod
+    def load(cls, name: str) -> 'ARIHOWModel':
+        """Load ARHOW model from disk."""
+        path = MODELS_DIR / f"{name}_arihow.joblib"
+        data = joblib.load(path)
+        
+        model = cls(
+            arima_order=data['arima_order'],
+            seasonal_order=data['seasonal_order'],
+            hw_trend=data['hw_trend'],
+            hw_seasonal=data['hw_seasonal'],
+            hw_seasonal_periods=data['hw_seasonal_periods'],
+            weight_window=data.get('weight_window', 12)
+        )
+        model.is_fitted = data['is_fitted']
+        
+        print(f"✅ ARHOW model config loaded from {path}")
+        return model
+
 
 class GradientBoostingModel:
     """LightGBM/XGBoost model wrapper for volume prediction."""

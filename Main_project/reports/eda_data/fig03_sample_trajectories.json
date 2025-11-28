@@ -1,0 +1,1289 @@
+{
+  "metadata": {
+    "filename": "fig03_sample_trajectories.json",
+    "description": "Individual brand volume trajectories as examples",
+    "generated_at": "2025-11-28T20:56:14.125961",
+    "figure_file": "fig03_sample_trajectories.png"
+  },
+  "data": {
+    "summary": {
+      "n_samples": 6,
+      "random_seed": 42,
+      "purpose": "Visual examples of individual brand volume trajectories"
+    },
+    "brands": [
+      {
+        "country": "COUNTRY_0024",
+        "brand_name": "BRAND_9925",
+        "bucket": 2,
+        "avg_vol_pre_entry": 61685.554122400936,
+        "n_months": 48,
+        "months_range": [
+          -24,
+          23
+        ],
+        "volume_stats": {
+          "min": 28069.29523762752,
+          "max": 69000.9213470952,
+          "mean": 50418.3219027202,
+          "pre_entry_mean": 62218.43784853147,
+          "post_entry_mean": 38618.20595690894
+        },
+        "trajectory": [
+          {
+            "months_postgx": -24,
+            "volume": 63299.906824050726
+          },
+          {
+            "months_postgx": -23,
+            "volume": 60031.1496722778
+          },
+          {
+            "months_postgx": -22,
+            "volume": 63839.70423878997
+          },
+          {
+            "months_postgx": -21,
+            "volume": 63245.8498442608
+          },
+          {
+            "months_postgx": -20,
+            "volume": 58227.21756250013
+          },
+          {
+            "months_postgx": -19,
+            "volume": 62932.07881483439
+          },
+          {
+            "months_postgx": -18,
+            "volume": 61562.80734785362
+          },
+          {
+            "months_postgx": -17,
+            "volume": 59984.87845833379
+          },
+          {
+            "months_postgx": -16,
+            "volume": 65093.06089841916
+          },
+          {
+            "months_postgx": -15,
+            "volume": 67818.4781360332
+          },
+          {
+            "months_postgx": -14,
+            "volume": 60982.79242480373
+          },
+          {
+            "months_postgx": -13,
+            "volume": 65997.9346737866
+          },
+          {
+            "months_postgx": -12,
+            "volume": 61249.81049279686
+          },
+          {
+            "months_postgx": -11,
+            "volume": 61736.72990941182
+          },
+          {
+            "months_postgx": -10,
+            "volume": 69000.9213470952
+          },
+          {
+            "months_postgx": -9,
+            "volume": 55009.75894460804
+          },
+          {
+            "months_postgx": -8,
+            "volume": 68038.52693638697
+          },
+          {
+            "months_postgx": -7,
+            "volume": 60825.4364186229
+          },
+          {
+            "months_postgx": -6,
+            "volume": 61965.04734107371
+          },
+          {
+            "months_postgx": -5,
+            "volume": 54861.429574456764
+          },
+          {
+            "months_postgx": -4,
+            "volume": 62176.573359632006
+          },
+          {
+            "months_postgx": -3,
+            "volume": 65064.75499627258
+          },
+          {
+            "months_postgx": -2,
+            "volume": 57007.681809008456
+          },
+          {
+            "months_postgx": -1,
+            "volume": 63289.97833944595
+          },
+          {
+            "months_postgx": 0,
+            "volume": 51037.50133995208
+          },
+          {
+            "months_postgx": 1,
+            "volume": 51801.93423295025
+          },
+          {
+            "months_postgx": 2,
+            "volume": 49812.19671359866
+          },
+          {
+            "months_postgx": 3,
+            "volume": 38454.51322375123
+          },
+          {
+            "months_postgx": 4,
+            "volume": 37782.713220034784
+          },
+          {
+            "months_postgx": 5,
+            "volume": 46553.64306923387
+          },
+          {
+            "months_postgx": 6,
+            "volume": 34328.83257494313
+          },
+          {
+            "months_postgx": 7,
+            "volume": 38523.03740301832
+          },
+          {
+            "months_postgx": 8,
+            "volume": 50699.36498577038
+          },
+          {
+            "months_postgx": 9,
+            "volume": 28069.29523762752
+          },
+          {
+            "months_postgx": 10,
+            "volume": 34573.39654387875
+          },
+          {
+            "months_postgx": 11,
+            "volume": 39033.25618838774
+          },
+          {
+            "months_postgx": 12,
+            "volume": 35496.99184528747
+          },
+          {
+            "months_postgx": 13,
+            "volume": 38359.31889618843
+          },
+          {
+            "months_postgx": 14,
+            "volume": 37831.13879064366
+          },
+          {
+            "months_postgx": 15,
+            "volume": 41779.51950054906
+          },
+          {
+            "months_postgx": 16,
+            "volume": 37485.34583113772
+          },
+          {
+            "months_postgx": 17,
+            "volume": 32857.354253923666
+          },
+          {
+            "months_postgx": 18,
+            "volume": 31965.534931865
+          },
+          {
+            "months_postgx": 19,
+            "volume": 32243.037258337183
+          },
+          {
+            "months_postgx": 20,
+            "volume": 34267.19276988666
+          },
+          {
+            "months_postgx": 21,
+            "volume": 32706.48995494572
+          },
+          {
+            "months_postgx": 22,
+            "volume": 32838.417631389675
+          },
+          {
+            "months_postgx": 23,
+            "volume": 38336.91656851361
+          }
+        ]
+      },
+      {
+        "country": "COUNTRY_EA71",
+        "brand_name": "BRAND_53D2",
+        "bucket": 2,
+        "avg_vol_pre_entry": 2461643.182771722,
+        "n_months": 48,
+        "months_range": [
+          -24,
+          23
+        ],
+        "volume_stats": {
+          "min": 983293.4682133178,
+          "max": 2870000.868762053,
+          "mean": 1937111.5427845835,
+          "pre_entry_mean": 2516455.448361254,
+          "post_entry_mean": 1357767.6372079132
+        },
+        "trajectory": [
+          {
+            "months_postgx": -24,
+            "volume": 2458800.3728995305
+          },
+          {
+            "months_postgx": -23,
+            "volume": 2817325.260907907
+          },
+          {
+            "months_postgx": -22,
+            "volume": 2527414.4727507373
+          },
+          {
+            "months_postgx": -21,
+            "volume": 2825200.5271209097
+          },
+          {
+            "months_postgx": -20,
+            "volume": 2600030.7717869105
+          },
+          {
+            "months_postgx": -19,
+            "volume": 2403571.83585652
+          },
+          {
+            "months_postgx": -18,
+            "volume": 2870000.868762053
+          },
+          {
+            "months_postgx": -17,
+            "volume": 2474557.6396163446
+          },
+          {
+            "months_postgx": -16,
+            "volume": 2498741.937200588
+          },
+          {
+            "months_postgx": -15,
+            "volume": 2645701.5781300697
+          },
+          {
+            "months_postgx": -14,
+            "volume": 2371068.8782440824
+          },
+          {
+            "months_postgx": -13,
+            "volume": 2362798.424133784
+          },
+          {
+            "months_postgx": -12,
+            "volume": 2468439.798288039
+          },
+          {
+            "months_postgx": -11,
+            "volume": 2772609.901628006
+          },
+          {
+            "months_postgx": -10,
+            "volume": 2238241.047956732
+          },
+          {
+            "months_postgx": -9,
+            "volume": 2824428.2898623627
+          },
+          {
+            "months_postgx": -8,
+            "volume": 2160830.6303072143
+          },
+          {
+            "months_postgx": -7,
+            "volume": 2348117.92272303
+          },
+          {
+            "months_postgx": -6,
+            "volume": 2593794.1312681464
+          },
+          {
+            "months_postgx": -5,
+            "volume": 2433494.022293217
+          },
+          {
+            "months_postgx": -4,
+            "volume": 2316118.135381511
+          },
+          {
+            "months_postgx": -3,
+            "volume": 2830727.882506669
+          },
+          {
+            "months_postgx": -2,
+            "volume": 2227686.8624665067
+          },
+          {
+            "months_postgx": -1,
+            "volume": 2325229.568579227
+          },
+          {
+            "months_postgx": 0,
+            "volume": 2030646.9706425583
+          },
+          {
+            "months_postgx": 1,
+            "volume": 2211822.604730989
+          },
+          {
+            "months_postgx": 2,
+            "volume": 2022299.58343702
+          },
+          {
+            "months_postgx": 3,
+            "volume": 2132702.962826029
+          },
+          {
+            "months_postgx": 4,
+            "volume": 1564951.6457303097
+          },
+          {
+            "months_postgx": 5,
+            "volume": 1724743.8570861018
+          },
+          {
+            "months_postgx": 6,
+            "volume": 1519453.162030113
+          },
+          {
+            "months_postgx": 7,
+            "volume": 1181345.1690269671
+          },
+          {
+            "months_postgx": 8,
+            "volume": 1275028.0188009974
+          },
+          {
+            "months_postgx": 9,
+            "volume": 1354647.5075157408
+          },
+          {
+            "months_postgx": 10,
+            "volume": 1144023.250071391
+          },
+          {
+            "months_postgx": 11,
+            "volume": 1220470.5073933494
+          },
+          {
+            "months_postgx": 12,
+            "volume": 1199022.656682406
+          },
+          {
+            "months_postgx": 13,
+            "volume": 1180768.71293317
+          },
+          {
+            "months_postgx": 14,
+            "volume": 1176221.8762277835
+          },
+          {
+            "months_postgx": 15,
+            "volume": 1208367.6092470286
+          },
+          {
+            "months_postgx": 16,
+            "volume": 1014505.3788346666
+          },
+          {
+            "months_postgx": 17,
+            "volume": 1090695.0220596923
+          },
+          {
+            "months_postgx": 18,
+            "volume": 1181050.924542609
+          },
+          {
+            "months_postgx": 19,
+            "volume": 1027388.725503054
+          },
+          {
+            "months_postgx": 20,
+            "volume": 1027948.336612316
+          },
+          {
+            "months_postgx": 21,
+            "volume": 1088251.5753289894
+          },
+          {
+            "months_postgx": 22,
+            "volume": 983293.4682133178
+          },
+          {
+            "months_postgx": 23,
+            "volume": 1026773.7675133176
+          }
+        ]
+      },
+      {
+        "country": "COUNTRY_1007",
+        "brand_name": "BRAND_FD37",
+        "bucket": 1,
+        "avg_vol_pre_entry": 496291.530107028,
+        "n_months": 48,
+        "months_range": [
+          -24,
+          23
+        ],
+        "volume_stats": {
+          "min": 1902.452359550442,
+          "max": 651824.6917189197,
+          "mean": 285288.3841302222,
+          "pre_entry_mean": 465580.63287597644,
+          "post_entry_mean": 104996.1353844679
+        },
+        "trajectory": [
+          {
+            "months_postgx": -24,
+            "volume": 555103.8105400662
+          },
+          {
+            "months_postgx": -23,
+            "volume": 474245.37520636665
+          },
+          {
+            "months_postgx": -22,
+            "volume": 452775.2419718421
+          },
+          {
+            "months_postgx": -21,
+            "volume": 517282.1289361852
+          },
+          {
+            "months_postgx": -20,
+            "volume": 456969.6594049023
+          },
+          {
+            "months_postgx": -19,
+            "volume": 552027.9839627735
+          },
+          {
+            "months_postgx": -18,
+            "volume": 519142.3938214809
+          },
+          {
+            "months_postgx": -17,
+            "volume": 489245.08903934615
+          },
+          {
+            "months_postgx": -16,
+            "volume": 490734.7305676348
+          },
+          {
+            "months_postgx": -15,
+            "volume": 71684.88701908912
+          },
+          {
+            "months_postgx": -14,
+            "volume": 17045.86178673792
+          },
+          {
+            "months_postgx": -13,
+            "volume": 622179.6654826739
+          },
+          {
+            "months_postgx": -12,
+            "volume": 651824.6917189197
+          },
+          {
+            "months_postgx": -11,
+            "volume": 462915.2921136562
+          },
+          {
+            "months_postgx": -10,
+            "volume": 440437.0755655104
+          },
+          {
+            "months_postgx": -9,
+            "volume": 440602.59497259074
+          },
+          {
+            "months_postgx": -8,
+            "volume": 381844.1150173404
+          },
+          {
+            "months_postgx": -7,
+            "volume": 530593.3089021054
+          },
+          {
+            "months_postgx": -6,
+            "volume": 502278.5314527977
+          },
+          {
+            "months_postgx": -5,
+            "volume": 505218.29363417753
+          },
+          {
+            "months_postgx": -4,
+            "volume": 550732.6877462039
+          },
+          {
+            "months_postgx": -3,
+            "volume": 640366.8427991214
+          },
+          {
+            "months_postgx": -2,
+            "volume": 211724.9587501752
+          },
+          {
+            "months_postgx": -1,
+            "volume": 636959.9686117377
+          },
+          {
+            "months_postgx": 0,
+            "volume": 190284.09517113608
+          },
+          {
+            "months_postgx": 1,
+            "volume": 402057.68187938177
+          },
+          {
+            "months_postgx": 2,
+            "volume": 237398.2460944232
+          },
+          {
+            "months_postgx": 3,
+            "volume": 227240.00646333728
+          },
+          {
+            "months_postgx": 4,
+            "volume": 43522.784668016015
+          },
+          {
+            "months_postgx": 5,
+            "volume": 13724.026179693838
+          },
+          {
+            "months_postgx": 6,
+            "volume": 7182.732138530605
+          },
+          {
+            "months_postgx": 7,
+            "volume": 4303.847035681919
+          },
+          {
+            "months_postgx": 8,
+            "volume": 2752.7393828721765
+          },
+          {
+            "months_postgx": 9,
+            "volume": 3601.423215044776
+          },
+          {
+            "months_postgx": 10,
+            "volume": 1902.452359550442
+          },
+          {
+            "months_postgx": 11,
+            "volume": 28467.75717423871
+          },
+          {
+            "months_postgx": 12,
+            "volume": 37594.880875252056
+          },
+          {
+            "months_postgx": 13,
+            "volume": 6253.851797580644
+          },
+          {
+            "months_postgx": 14,
+            "volume": 105755.79355229416
+          },
+          {
+            "months_postgx": 15,
+            "volume": 59043.423205677085
+          },
+          {
+            "months_postgx": 16,
+            "volume": 21159.53701907991
+          },
+          {
+            "months_postgx": 17,
+            "volume": 73319.77520801281
+          },
+          {
+            "months_postgx": 18,
+            "volume": 58049.878423792965
+          },
+          {
+            "months_postgx": 19,
+            "volume": 77817.33056287967
+          },
+          {
+            "months_postgx": 20,
+            "volume": 239559.78847063697
+          },
+          {
+            "months_postgx": 21,
+            "volume": 208774.3470991501
+          },
+          {
+            "months_postgx": 22,
+            "volume": 275148.3443858245
+          },
+          {
+            "months_postgx": 23,
+            "volume": 194992.5068651421
+          }
+        ]
+      },
+      {
+        "country": "COUNTRY_1007",
+        "brand_name": "BRAND_0D48",
+        "bucket": 2,
+        "avg_vol_pre_entry": 416428.92617977154,
+        "n_months": 48,
+        "months_range": [
+          -24,
+          23
+        ],
+        "volume_stats": {
+          "min": 63049.19288065701,
+          "max": 491107.80391199846,
+          "mean": 293713.3337532797,
+          "pre_entry_mean": 424137.8083095397,
+          "post_entry_mean": 163288.85919701974
+        },
+        "trajectory": [
+          {
+            "months_postgx": -24,
+            "volume": 414654.95252264297
+          },
+          {
+            "months_postgx": -23,
+            "volume": 384794.0902593935
+          },
+          {
+            "months_postgx": -22,
+            "volume": 454170.4518017725
+          },
+          {
+            "months_postgx": -21,
+            "volume": 430132.4794087071
+          },
+          {
+            "months_postgx": -20,
+            "volume": 427071.1513502775
+          },
+          {
+            "months_postgx": -19,
+            "volume": 419205.7839960967
+          },
+          {
+            "months_postgx": -18,
+            "volume": 469358.66040154855
+          },
+          {
+            "months_postgx": -17,
+            "volume": 453995.8085063954
+          },
+          {
+            "months_postgx": -16,
+            "volume": 491107.80391199846
+          },
+          {
+            "months_postgx": -15,
+            "volume": 344428.9209223445
+          },
+          {
+            "months_postgx": -14,
+            "volume": 445198.6893427856
+          },
+          {
+            "months_postgx": -13,
+            "volume": 448041.4928477308
+          },
+          {
+            "months_postgx": -12,
+            "volume": 421832.6302390335
+          },
+          {
+            "months_postgx": -11,
+            "volume": 395443.1292928399
+          },
+          {
+            "months_postgx": -10,
+            "volume": 445300.6567405317
+          },
+          {
+            "months_postgx": -9,
+            "volume": 415963.2131431822
+          },
+          {
+            "months_postgx": -8,
+            "volume": 429614.4362106595
+          },
+          {
+            "months_postgx": -7,
+            "volume": 403694.9489465044
+          },
+          {
+            "months_postgx": -6,
+            "volume": 438133.39448768896
+          },
+          {
+            "months_postgx": -5,
+            "volume": 416998.8843699194
+          },
+          {
+            "months_postgx": -4,
+            "volume": 459125.423875373
+          },
+          {
+            "months_postgx": -3,
+            "volume": 322913.0054949501
+          },
+          {
+            "months_postgx": -2,
+            "volume": 429868.52966608113
+          },
+          {
+            "months_postgx": -1,
+            "volume": 418258.8616904948
+          },
+          {
+            "months_postgx": 0,
+            "volume": 393979.489691276
+          },
+          {
+            "months_postgx": 1,
+            "volume": 317912.7812512016
+          },
+          {
+            "months_postgx": 2,
+            "volume": 329063.6401872865
+          },
+          {
+            "months_postgx": 3,
+            "volume": 266148.5732810428
+          },
+          {
+            "months_postgx": 4,
+            "volume": 263840.6800899294
+          },
+          {
+            "months_postgx": 5,
+            "volume": 220712.32109498305
+          },
+          {
+            "months_postgx": 6,
+            "volume": 224447.56041278967
+          },
+          {
+            "months_postgx": 7,
+            "volume": 202546.3034082172
+          },
+          {
+            "months_postgx": 8,
+            "volume": 181198.9726215792
+          },
+          {
+            "months_postgx": 9,
+            "volume": 123729.08024541456
+          },
+          {
+            "months_postgx": 10,
+            "volume": 134670.01150491377
+          },
+          {
+            "months_postgx": 11,
+            "volume": 125881.3110263185
+          },
+          {
+            "months_postgx": 12,
+            "volume": 120463.83220097264
+          },
+          {
+            "months_postgx": 13,
+            "volume": 91261.8413644864
+          },
+          {
+            "months_postgx": 14,
+            "volume": 110703.80203045484
+          },
+          {
+            "months_postgx": 15,
+            "volume": 99173.82899955708
+          },
+          {
+            "months_postgx": 16,
+            "volume": 96987.2407245898
+          },
+          {
+            "months_postgx": 17,
+            "volume": 90530.45213725284
+          },
+          {
+            "months_postgx": 18,
+            "volume": 103709.96450247164
+          },
+          {
+            "months_postgx": 19,
+            "volume": 90617.32169423986
+          },
+          {
+            "months_postgx": 20,
+            "volume": 94344.75196013368
+          },
+          {
+            "months_postgx": 21,
+            "volume": 63049.19288065701
+          },
+          {
+            "months_postgx": 22,
+            "volume": 86468.08941657846
+          },
+          {
+            "months_postgx": 23,
+            "volume": 87491.5780021274
+          }
+        ]
+      },
+      {
+        "country": "COUNTRY_D8B0",
+        "brand_name": "BRAND_AAE9",
+        "bucket": 2,
+        "avg_vol_pre_entry": 371038791.09370726,
+        "n_months": 48,
+        "months_range": [
+          -24,
+          23
+        ],
+        "volume_stats": {
+          "min": 29351732.203384828,
+          "max": 495040067.8949664,
+          "mean": 279749134.063258,
+          "pre_entry_mean": 407823106.67182827,
+          "post_entry_mean": 151675161.45468786
+        },
+        "trajectory": [
+          {
+            "months_postgx": -24,
+            "volume": 448826910.4379969
+          },
+          {
+            "months_postgx": -23,
+            "volume": 478386307.1241337
+          },
+          {
+            "months_postgx": -22,
+            "volume": 447162608.3845146
+          },
+          {
+            "months_postgx": -21,
+            "volume": 369265430.2190569
+          },
+          {
+            "months_postgx": -20,
+            "volume": 480162393.9109113
+          },
+          {
+            "months_postgx": -19,
+            "volume": 445883614.4201005
+          },
+          {
+            "months_postgx": -18,
+            "volume": 446809705.29850143
+          },
+          {
+            "months_postgx": -17,
+            "volume": 428782442.0517734
+          },
+          {
+            "months_postgx": -16,
+            "volume": 495040067.8949664
+          },
+          {
+            "months_postgx": -15,
+            "volume": 486705026.8743923
+          },
+          {
+            "months_postgx": -14,
+            "volume": 348736359.68250537
+          },
+          {
+            "months_postgx": -13,
+            "volume": 459528200.700537
+          },
+          {
+            "months_postgx": -12,
+            "volume": 464261593.43883365
+          },
+          {
+            "months_postgx": -11,
+            "volume": 447703102.577933
+          },
+          {
+            "months_postgx": -10,
+            "volume": 363762127.0719957
+          },
+          {
+            "months_postgx": -9,
+            "volume": 352331833.74101394
+          },
+          {
+            "months_postgx": -8,
+            "volume": 365325085.6767226
+          },
+          {
+            "months_postgx": -7,
+            "volume": 346588442.7247239
+          },
+          {
+            "months_postgx": -6,
+            "volume": 372746997.4702457
+          },
+          {
+            "months_postgx": -5,
+            "volume": 428922311.2860371
+          },
+          {
+            "months_postgx": -4,
+            "volume": 291867841.2211192
+          },
+          {
+            "months_postgx": -3,
+            "volume": 324653181.8743332
+          },
+          {
+            "months_postgx": -2,
+            "volume": 304911854.2341701
+          },
+          {
+            "months_postgx": -1,
+            "volume": 389391121.8073593
+          },
+          {
+            "months_postgx": 0,
+            "volume": 349407802.93623483
+          },
+          {
+            "months_postgx": 1,
+            "volume": 139583154.84636563
+          },
+          {
+            "months_postgx": 2,
+            "volume": 82627731.77555308
+          },
+          {
+            "months_postgx": 3,
+            "volume": 84202034.6174616
+          },
+          {
+            "months_postgx": 4,
+            "volume": 136628056.80770138
+          },
+          {
+            "months_postgx": 5,
+            "volume": 301174967.0948901
+          },
+          {
+            "months_postgx": 6,
+            "volume": 159531495.43786627
+          },
+          {
+            "months_postgx": 7,
+            "volume": 162034225.4781834
+          },
+          {
+            "months_postgx": 8,
+            "volume": 236489556.5780128
+          },
+          {
+            "months_postgx": 9,
+            "volume": 187811829.37981176
+          },
+          {
+            "months_postgx": 10,
+            "volume": 163528827.63753065
+          },
+          {
+            "months_postgx": 11,
+            "volume": 202021567.7118716
+          },
+          {
+            "months_postgx": 12,
+            "volume": 195819935.74450523
+          },
+          {
+            "months_postgx": 13,
+            "volume": 199061673.11058787
+          },
+          {
+            "months_postgx": 14,
+            "volume": 182241467.2336441
+          },
+          {
+            "months_postgx": 15,
+            "volume": 123694131.63688429
+          },
+          {
+            "months_postgx": 16,
+            "volume": 125956527.39555642
+          },
+          {
+            "months_postgx": 17,
+            "volume": 160191910.60821655
+          },
+          {
+            "months_postgx": 18,
+            "volume": 127092969.901075
+          },
+          {
+            "months_postgx": 19,
+            "volume": 187531080.3225132
+          },
+          {
+            "months_postgx": 20,
+            "volume": 29351732.203384828
+          },
+          {
+            "months_postgx": 21,
+            "volume": 34600928.923582084
+          },
+          {
+            "months_postgx": 22,
+            "volume": 32659151.968784444
+          },
+          {
+            "months_postgx": 23,
+            "volume": 36961115.562291615
+          }
+        ]
+      },
+      {
+        "country": "COUNTRY_5180",
+        "brand_name": "BRAND_FF98",
+        "bucket": 2,
+        "avg_vol_pre_entry": 539.611740582769,
+        "n_months": 48,
+        "months_range": [
+          -24,
+          23
+        ],
+        "volume_stats": {
+          "min": 41.20743302201741,
+          "max": 684.5810563208923,
+          "mean": 329.3711832823207,
+          "pre_entry_mean": 511.0396259776997,
+          "post_entry_mean": 147.7027405869416
+        },
+        "trajectory": [
+          {
+            "months_postgx": -24,
+            "volume": 629.6154469604741
+          },
+          {
+            "months_postgx": -23,
+            "volume": 536.3567822256125
+          },
+          {
+            "months_postgx": -22,
+            "volume": 477.7481695941644
+          },
+          {
+            "months_postgx": -21,
+            "volume": 442.26556566236815
+          },
+          {
+            "months_postgx": -20,
+            "volume": 551.3243175883779
+          },
+          {
+            "months_postgx": -19,
+            "volume": 322.6231947145171
+          },
+          {
+            "months_postgx": -18,
+            "volume": 541.6139644482281
+          },
+          {
+            "months_postgx": -17,
+            "volume": 452.48068493022106
+          },
+          {
+            "months_postgx": -16,
+            "volume": 405.3507137439467
+          },
+          {
+            "months_postgx": -15,
+            "volume": 525.0943439532741
+          },
+          {
+            "months_postgx": -14,
+            "volume": 437.27948924091686
+          },
+          {
+            "months_postgx": -13,
+            "volume": 467.8574634094646
+          },
+          {
+            "months_postgx": -12,
+            "volume": 467.7465656102024
+          },
+          {
+            "months_postgx": -11,
+            "volume": 426.08650088229
+          },
+          {
+            "months_postgx": -10,
+            "volume": 480.24440977706007
+          },
+          {
+            "months_postgx": -9,
+            "volume": 480.34826416342287
+          },
+          {
+            "months_postgx": -8,
+            "volume": 499.0187394056844
+          },
+          {
+            "months_postgx": -7,
+            "volume": 557.907592251306
+          },
+          {
+            "months_postgx": -6,
+            "volume": 631.6288309965361
+          },
+          {
+            "months_postgx": -5,
+            "volume": 635.5959417859165
+          },
+          {
+            "months_postgx": -4,
+            "volume": 477.8720015652447
+          },
+          {
+            "months_postgx": -3,
+            "volume": 684.5810563208923
+          },
+          {
+            "months_postgx": -2,
+            "volume": 529.6119625301004
+          },
+          {
+            "months_postgx": -1,
+            "volume": 604.6990217045728
+          },
+          {
+            "months_postgx": 0,
+            "volume": 438.604257281418
+          },
+          {
+            "months_postgx": 1,
+            "volume": 404.812092680338
+          },
+          {
+            "months_postgx": 2,
+            "volume": 408.65255872728886
+          },
+          {
+            "months_postgx": 3,
+            "volume": 230.88812663316915
+          },
+          {
+            "months_postgx": 4,
+            "volume": 265.6829613558634
+          },
+          {
+            "months_postgx": 5,
+            "volume": 167.1842162215209
+          },
+          {
+            "months_postgx": 6,
+            "volume": 172.72834950152432
+          },
+          {
+            "months_postgx": 7,
+            "volume": 108.49846004351556
+          },
+          {
+            "months_postgx": 8,
+            "volume": 195.6214926217789
+          },
+          {
+            "months_postgx": 9,
+            "volume": 225.6448847083704
+          },
+          {
+            "months_postgx": 10,
+            "volume": 81.52734374481653
+          },
+          {
+            "months_postgx": 11,
+            "volume": 79.62667054768151
+          },
+          {
+            "months_postgx": 12,
+            "volume": 76.21673306310348
+          },
+          {
+            "months_postgx": 13,
+            "volume": 48.62745281658813
+          },
+          {
+            "months_postgx": 14,
+            "volume": 71.95349829343357
+          },
+          {
+            "months_postgx": 15,
+            "volume": 51.29423455776165
+          },
+          {
+            "months_postgx": 16,
+            "volume": 77.94183924570389
+          },
+          {
+            "months_postgx": 17,
+            "volume": 41.20743302201741
+          },
+          {
+            "months_postgx": 18,
+            "volume": 72.6927202427642
+          },
+          {
+            "months_postgx": 19,
+            "volume": 86.95424461049379
+          },
+          {
+            "months_postgx": 20,
+            "volume": 108.8988642472498
+          },
+          {
+            "months_postgx": 21,
+            "volume": 41.6353779897221
+          },
+          {
+            "months_postgx": 22,
+            "volume": 42.78945960395031
+          },
+          {
+            "months_postgx": 23,
+            "volume": 45.1825023265245
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -113,8 +113,13 @@ def create_pre_entry_features(df: pd.DataFrame, avg_j_df: pd.DataFrame) -> pd.Da
         except:
             return 0
     
-    slopes = pre_entry.groupby(['country', 'brand_name']).apply(calc_slope).reset_index()
-    slopes.columns = ['country', 'brand_name', 'pre_entry_slope']
+    slopes = pre_entry.groupby(['country', 'brand_name'], as_index=False).apply(
+        lambda g: pd.Series({'pre_entry_slope': calc_slope(g)}), 
+        include_groups=False
+    ).reset_index(drop=True)
+    # Flatten and add back group columns
+    slopes = pre_entry[['country', 'brand_name']].drop_duplicates().reset_index(drop=True)
+    slopes['pre_entry_slope'] = pre_entry.groupby(['country', 'brand_name']).apply(calc_slope, include_groups=False).values
     
     # 2. Pre-entry volatility
     volatility = pre_entry.groupby(['country', 'brand_name'])['volume'].std().reset_index()
@@ -138,8 +143,9 @@ def create_pre_entry_features(df: pd.DataFrame, avg_j_df: pd.DataFrame) -> pd.Da
             return 0
         return (last_vol - first_vol) / first_vol
     
-    growth = pre_entry.groupby(['country', 'brand_name']).apply(calc_growth_rate).reset_index()
-    growth.columns = ['country', 'brand_name', 'pre_entry_growth_rate']
+    # Fix FutureWarning - use include_groups=False
+    growth = pre_entry[['country', 'brand_name']].drop_duplicates().reset_index(drop=True)
+    growth['pre_entry_growth_rate'] = pre_entry.groupby(['country', 'brand_name']).apply(calc_growth_rate, include_groups=False).values
     
     # 5. Last pre-entry volume (month -1)
     last_pre = pre_entry[pre_entry['months_postgx'] == -1][['country', 'brand_name', 'volume']].copy()
