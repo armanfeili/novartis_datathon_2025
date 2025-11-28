@@ -5,18 +5,21 @@ Includes:
 - LinearModel: Ridge/Lasso/ElasticNet with preprocessing
 - GlobalMeanBaseline: Predict global average erosion curve
 - FlatBaseline: Predict no erosion (y_norm = 1.0)
+- TrendBaseline: Extrapolate pre-entry trend
+- HistoricalCurveBaseline: Match to similar historical series
 """
 
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Tuple
 import logging
 
 import numpy as np
 import pandas as pd
 import joblib
 from sklearn.linear_model import Ridge, Lasso, ElasticNet, HuberRegressor
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, PolynomialFeatures
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
+from sklearn.neighbors import NearestNeighbors
 
 from .base import BaseModel
 
@@ -24,7 +27,26 @@ logger = logging.getLogger(__name__)
 
 
 class LinearModel(BaseModel):
-    """Linear regression with preprocessing pipeline."""
+    """Linear regression with preprocessing pipeline.
+    
+    Supports polynomial features for capturing non-linear relationships.
+    
+    Config options:
+        model.type: 'ridge', 'lasso', 'elasticnet', 'huber'
+        preprocessing.handle_missing: 'mean', 'median', etc.
+        preprocessing.scale_features: True/False
+        preprocessing.polynomial_degree: int (2 for quadratic features)
+        
+    Example config:
+        config = {
+            'model': {'type': 'ridge'},
+            'ridge': {'alpha': 1.0},
+            'preprocessing': {
+                'scale_features': True,
+                'polynomial_degree': 2  # Add quadratic features
+            }
+        }
+    """
     
     def __init__(self, config: dict):
         """
@@ -38,6 +60,7 @@ class LinearModel(BaseModel):
         self.model_type = config.get('model', {}).get('type', 'ridge')
         self.params = config.get(self.model_type, {})
         self.preprocessing = config.get('preprocessing', {})
+        self.polynomial_degree = self.preprocessing.get('polynomial_degree', None)
         
         # Define regressor
         if self.model_type == 'ridge':
@@ -58,6 +81,16 @@ class LinearModel(BaseModel):
         
         if self.preprocessing.get('scale_features', True):
             steps.append(('scaler', StandardScaler()))
+        
+        # Add polynomial features if specified
+        if self.polynomial_degree is not None and self.polynomial_degree > 1:
+            steps.append(('poly', PolynomialFeatures(
+                degree=self.polynomial_degree,
+                include_bias=False,
+                interaction_only=self.preprocessing.get('interaction_only', False)
+            )))
+            # Re-scale after polynomial transformation
+            steps.append(('post_poly_scaler', StandardScaler()))
         
         steps.append(('model', regressor))
         self.model = Pipeline(steps)
@@ -295,3 +328,390 @@ class TrendBaseline(BaseModel):
         instance.decay_factor = data.get('decay_factor', 0.95)
         instance.global_trend = data.get('global_trend', 0.0)
         return instance
+
+
+class HistoricalCurveBaseline(BaseModel):
+    """
+    Match test series to similar historical series and use their erosion curves.
+    
+    This baseline uses K-nearest neighbors to find similar series based on
+    pre-entry features and drug characteristics, then uses their averaged
+    erosion curves as predictions.
+    
+    Features used for matching:
+    - Drug characteristics: ther_area, hospital_rate, biological, small_molecule
+    - Pre-entry statistics: log_avg_vol_12m, pre_entry_trend, pre_entry_volatility
+    - Competition: n_gxs at entry
+    
+    Config options:
+        n_neighbors: Number of similar series to average (default: 5)
+        metric: Distance metric for KNN (default: 'cosine')
+        weights: KNN weights ('uniform' or 'distance', default: 'distance')
+        
+    Example config:
+        config = {
+            'n_neighbors': 5,
+            'metric': 'cosine',
+            'weights': 'distance'
+        }
+    """
+    
+    # Features used for matching similar series
+    MATCHING_FEATURES = [
+        'log_avg_vol_12m', 'pre_entry_trend', 'pre_entry_volatility',
+        'hospital_rate', 'n_gxs_at_entry', 'n_gxs'
+    ]
+    
+    # Categorical features that need encoding
+    CATEGORICAL_FEATURES = ['ther_area', 'main_package']
+    
+    def __init__(self, config: dict):
+        """
+        Initialize historical curve baseline.
+        
+        Args:
+            config: Configuration dict with n_neighbors, metric, weights
+        """
+        super().__init__(config)
+        
+        self.n_neighbors = config.get('n_neighbors', 5)
+        self.metric = config.get('metric', 'cosine')
+        self.weights = config.get('weights', 'distance')
+        
+        self.knn_model: Optional[NearestNeighbors] = None
+        self.scaler: Optional[StandardScaler] = None
+        self.train_erosion_curves: Dict[Tuple[str, str], Dict[int, float]] = {}
+        self.train_feature_matrix: Optional[np.ndarray] = None
+        self.train_series_keys: List[Tuple[str, str]] = []
+        self.global_mean: float = 0.5
+        self.global_curve: Dict[int, float] = {}
+        self._categorical_encodings: Dict[str, Dict[str, int]] = {}
+        self._available_features: List[str] = []
+    
+    def _encode_categorical(
+        self, 
+        df: pd.DataFrame, 
+        col: str, 
+        is_training: bool = False
+    ) -> np.ndarray:
+        """Encode categorical column to integers."""
+        if is_training:
+            unique_vals = df[col].unique()
+            self._categorical_encodings[col] = {
+                val: idx for idx, val in enumerate(unique_vals)
+            }
+        
+        encoding = self._categorical_encodings.get(col, {})
+        default_val = len(encoding)  # Unknown category gets new index
+        
+        return np.array([encoding.get(v, default_val) for v in df[col]])
+    
+    def _extract_series_features(
+        self, 
+        X: pd.DataFrame, 
+        is_training: bool = False
+    ) -> Tuple[np.ndarray, List[Tuple[str, str]]]:
+        """
+        Extract per-series features for KNN matching.
+        
+        Args:
+            X: Feature DataFrame with multiple rows per series
+            is_training: Whether this is training (to learn encodings)
+            
+        Returns:
+            Feature matrix (n_series x n_features), list of (country, brand_name) keys
+        """
+        # Identify which features are available
+        available = []
+        for feat in self.MATCHING_FEATURES:
+            if feat in X.columns:
+                available.append(feat)
+        
+        if is_training:
+            self._available_features = available
+        
+        # Check for required ID columns
+        has_ids = 'country' in X.columns and 'brand_name' in X.columns
+        
+        if not has_ids:
+            # Fallback: use all rows as individual "series"
+            logger.warning("No country/brand_name columns - treating each row as a series")
+            series_keys = [(str(i), '') for i in range(len(X))]
+            
+            feature_data = []
+            for feat in self._available_features:
+                feature_data.append(X[feat].values)
+            
+            # Add categorical features
+            for cat_col in self.CATEGORICAL_FEATURES:
+                if cat_col in X.columns:
+                    encoded = self._encode_categorical(X, cat_col, is_training)
+                    feature_data.append(encoded)
+            
+            if not feature_data:
+                return np.zeros((len(X), 1)), series_keys
+            
+            return np.column_stack(feature_data), series_keys
+        
+        # Group by series and extract features
+        series_data = []
+        series_keys = []
+        
+        for (country, brand), group in X.groupby(['country', 'brand_name']):
+            series_keys.append((country, brand))
+            
+            row_features = []
+            for feat in self._available_features:
+                if feat in group.columns:
+                    # Use first available value (they should be same for static features)
+                    val = group[feat].iloc[0] if len(group) > 0 else 0.0
+                    row_features.append(val if not pd.isna(val) else 0.0)
+            
+            # Add categorical features
+            for cat_col in self.CATEGORICAL_FEATURES:
+                if cat_col in group.columns:
+                    encoded = self._encode_categorical(
+                        group.head(1), cat_col, is_training
+                    )[0]
+                    row_features.append(encoded)
+            
+            series_data.append(row_features)
+        
+        if not series_data:
+            return np.zeros((1, 1)), series_keys
+        
+        return np.array(series_data), series_keys
+    
+    def _extract_erosion_curves(
+        self, 
+        X: pd.DataFrame, 
+        y: pd.Series
+    ) -> Dict[Tuple[str, str], Dict[int, float]]:
+        """
+        Extract erosion curves per series.
+        
+        Returns:
+            Dict mapping (country, brand_name) to {months_postgx: y_norm}
+        """
+        if 'months_postgx' not in X.columns:
+            return {}
+        
+        has_ids = 'country' in X.columns and 'brand_name' in X.columns
+        
+        if not has_ids:
+            logger.warning("No country/brand_name columns - cannot extract series curves")
+            return {}
+        
+        curves = {}
+        
+        df = X[['country', 'brand_name', 'months_postgx']].copy()
+        df['y_norm'] = y.values
+        
+        for (country, brand), group in df.groupby(['country', 'brand_name']):
+            curve = group.set_index('months_postgx')['y_norm'].to_dict()
+            curves[(country, brand)] = curve
+        
+        return curves
+    
+    def fit(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: Optional[pd.DataFrame] = None,
+        y_val: Optional[pd.Series] = None,
+        sample_weight: Optional[pd.Series] = None
+    ) -> 'HistoricalCurveBaseline':
+        """
+        Fit the historical curve baseline.
+        
+        Learns:
+        1. Feature matrix for KNN matching
+        2. Erosion curves for each training series
+        3. Global average curve as fallback
+        """
+        # Extract series-level features
+        self.train_feature_matrix, self.train_series_keys = self._extract_series_features(
+            X_train, is_training=True
+        )
+        
+        # Handle missing/nan values
+        self.train_feature_matrix = np.nan_to_num(self.train_feature_matrix, nan=0.0)
+        
+        # Scale features
+        self.scaler = StandardScaler()
+        self.train_feature_matrix = self.scaler.fit_transform(self.train_feature_matrix)
+        
+        # Fit KNN model
+        n_neighbors = min(self.n_neighbors, len(self.train_series_keys))
+        self.knn_model = NearestNeighbors(
+            n_neighbors=n_neighbors,
+            metric=self.metric,
+            algorithm='auto'
+        )
+        self.knn_model.fit(self.train_feature_matrix)
+        
+        # Extract erosion curves
+        self.train_erosion_curves = self._extract_erosion_curves(X_train, y_train)
+        
+        # Compute global statistics
+        self.global_mean = y_train.mean()
+        
+        if 'months_postgx' in X_train.columns:
+            df = pd.DataFrame({
+                'months_postgx': X_train['months_postgx'],
+                'y_norm': y_train
+            })
+            self.global_curve = df.groupby('months_postgx')['y_norm'].mean().to_dict()
+        
+        n_curves = len(self.train_erosion_curves)
+        logger.info(f"HistoricalCurveBaseline: fitted with {n_curves} historical curves, "
+                   f"n_neighbors={n_neighbors}")
+        
+        return self
+    
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """
+        Predict by matching to similar historical series.
+        
+        For each test series:
+        1. Find k nearest neighbors in training data
+        2. Average their erosion curves (weighted by distance)
+        3. Return predictions for each row based on months_postgx
+        """
+        if self.knn_model is None:
+            return np.ones(len(X)) * self.global_mean
+        
+        # Extract features for test series
+        test_features, test_series_keys = self._extract_series_features(
+            X, is_training=False
+        )
+        test_features = np.nan_to_num(test_features, nan=0.0)
+        test_features = self.scaler.transform(test_features)
+        
+        # Find nearest neighbors
+        distances, indices = self.knn_model.kneighbors(test_features)
+        
+        # Build prediction curves for each test series
+        series_pred_curves: Dict[Tuple[str, str], Dict[int, float]] = {}
+        
+        for i, (test_country, test_brand) in enumerate(test_series_keys):
+            neighbor_indices = indices[i]
+            neighbor_distances = distances[i]
+            
+            # Compute weights (inverse distance)
+            if self.weights == 'distance':
+                # Add small epsilon to avoid division by zero
+                weights = 1.0 / (neighbor_distances + 1e-6)
+                weights = weights / weights.sum()
+            else:
+                weights = np.ones(len(neighbor_indices)) / len(neighbor_indices)
+            
+            # Aggregate erosion curves from neighbors
+            aggregated_curve: Dict[int, float] = {}
+            weight_sums: Dict[int, float] = {}
+            
+            for j, idx in enumerate(neighbor_indices):
+                if idx < len(self.train_series_keys):
+                    train_key = self.train_series_keys[idx]
+                    curve = self.train_erosion_curves.get(train_key, {})
+                    
+                    for month, y_val in curve.items():
+                        if month not in aggregated_curve:
+                            aggregated_curve[month] = 0.0
+                            weight_sums[month] = 0.0
+                        aggregated_curve[month] += weights[j] * y_val
+                        weight_sums[month] += weights[j]
+            
+            # Normalize by weights
+            for month in aggregated_curve:
+                if weight_sums[month] > 0:
+                    aggregated_curve[month] /= weight_sums[month]
+            
+            series_pred_curves[(test_country, test_brand)] = aggregated_curve
+        
+        # Generate predictions for each row
+        predictions = np.ones(len(X)) * self.global_mean
+        
+        has_ids = 'country' in X.columns and 'brand_name' in X.columns
+        has_months = 'months_postgx' in X.columns
+        
+        if has_ids and has_months:
+            for i, row in X.iterrows():
+                country = row['country']
+                brand = row['brand_name']
+                month = row['months_postgx']
+                
+                curve = series_pred_curves.get((country, brand), {})
+                
+                if month in curve:
+                    predictions[X.index.get_loc(i)] = curve[month]
+                elif month in self.global_curve:
+                    predictions[X.index.get_loc(i)] = self.global_curve[month]
+        elif has_months:
+            # Use global curve when no series info
+            for i, row in X.iterrows():
+                month = row['months_postgx']
+                if month in self.global_curve:
+                    predictions[X.index.get_loc(i)] = self.global_curve[month]
+        
+        return predictions
+    
+    def save(self, path: str) -> None:
+        """Save model to disk."""
+        joblib.dump({
+            'n_neighbors': self.n_neighbors,
+            'metric': self.metric,
+            'weights': self.weights,
+            'knn_model': self.knn_model,
+            'scaler': self.scaler,
+            'train_erosion_curves': self.train_erosion_curves,
+            'train_feature_matrix': self.train_feature_matrix,
+            'train_series_keys': self.train_series_keys,
+            'global_mean': self.global_mean,
+            'global_curve': self.global_curve,
+            '_categorical_encodings': self._categorical_encodings,
+            '_available_features': self._available_features,
+        }, path)
+    
+    @classmethod
+    def load(cls, path: str) -> 'HistoricalCurveBaseline':
+        """Load model from disk."""
+        data = joblib.load(path)
+        
+        config = {
+            'n_neighbors': data.get('n_neighbors', 5),
+            'metric': data.get('metric', 'cosine'),
+            'weights': data.get('weights', 'distance'),
+        }
+        instance = cls(config)
+        
+        instance.knn_model = data.get('knn_model')
+        instance.scaler = data.get('scaler')
+        instance.train_erosion_curves = data.get('train_erosion_curves', {})
+        instance.train_feature_matrix = data.get('train_feature_matrix')
+        instance.train_series_keys = data.get('train_series_keys', [])
+        instance.global_mean = data.get('global_mean', 0.5)
+        instance.global_curve = data.get('global_curve', {})
+        instance._categorical_encodings = data.get('_categorical_encodings', {})
+        instance._available_features = data.get('_available_features', [])
+        
+        return instance
+    
+    def get_feature_importance(self) -> pd.DataFrame:
+        """
+        Return feature importance for matching.
+        
+        Since this is KNN-based, returns the features used for matching
+        with uniform importance.
+        """
+        features = self._available_features + [
+            f"{col}_encoded" for col in self.CATEGORICAL_FEATURES
+        ]
+        
+        if not features:
+            return pd.DataFrame(columns=['feature', 'importance'])
+        
+        return pd.DataFrame({
+            'feature': features,
+            'importance': [1.0 / len(features)] * len(features)
+        })

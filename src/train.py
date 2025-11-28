@@ -2005,27 +2005,93 @@ def train_scenario_model(
 
 
 def _get_model(model_type: str, config: Optional[dict] = None):
-    """Get model instance by type."""
-    if model_type == 'catboost':
+    """
+    Get model instance by type.
+    
+    Supported model types:
+    - 'catboost': CatBoost gradient boosting
+    - 'lightgbm', 'lgbm': LightGBM gradient boosting
+    - 'xgboost', 'xgb': XGBoost gradient boosting
+    - 'linear', 'ridge', 'lasso', 'elasticnet', 'huber': Linear models
+    - 'nn', 'neural', 'mlp': Neural network
+    - 'baseline_global_mean', 'global_mean': Global mean baseline
+    - 'baseline_flat', 'flat': Flat baseline (no erosion)
+    - 'baseline_trend', 'trend': Trend extrapolation baseline
+    - 'baseline_historical', 'historical_curve', 'knn_curve': Historical curve baseline
+    - 'averaging', 'averaging_ensemble': Simple averaging ensemble
+    - 'weighted', 'weighted_averaging', 'weighted_ensemble': Weighted averaging ensemble
+    - 'stacking', 'stacking_ensemble': Stacking ensemble
+    - 'blending', 'blending_ensemble': Blending ensemble
+    
+    Args:
+        model_type: Type of model to create
+        config: Model configuration dictionary
+        
+    Returns:
+        Model instance
+        
+    Raises:
+        ValueError: If model type is not recognized
+    """
+    model_type_lower = model_type.lower()
+    config = config or {}
+    
+    # Tree boosters
+    if model_type_lower in ('catboost', 'cat'):
         from .models.cat_model import CatBoostModel
-        return CatBoostModel(config or {})
-    elif model_type == 'lightgbm':
+        return CatBoostModel(config)
+    elif model_type_lower in ('lightgbm', 'lgbm'):
         from .models.lgbm_model import LGBMModel
-        return LGBMModel(config or {})
-    elif model_type == 'xgboost':
+        return LGBMModel(config)
+    elif model_type_lower in ('xgboost', 'xgb'):
         from .models.xgb_model import XGBModel
-        return XGBModel(config or {})
-    elif model_type == 'linear':
+        return XGBModel(config)
+    
+    # Linear models
+    elif model_type_lower in ('linear', 'ridge', 'lasso', 'elasticnet', 'huber'):
         from .models.linear import LinearModel
-        return LinearModel(config or {})
-    elif model_type == 'baseline_global_mean':
+        return LinearModel(config)
+    
+    # Neural network
+    elif model_type_lower in ('nn', 'neural', 'mlp'):
+        from .models.nn import NNModel
+        return NNModel(config)
+    
+    # Baselines
+    elif model_type_lower in ('baseline_global_mean', 'global_mean'):
         from .models.linear import GlobalMeanBaseline
-        return GlobalMeanBaseline(config or {})
-    elif model_type == 'baseline_flat':
+        return GlobalMeanBaseline(config)
+    elif model_type_lower in ('baseline_flat', 'flat'):
         from .models.linear import FlatBaseline
-        return FlatBaseline(config or {})
+        return FlatBaseline(config)
+    elif model_type_lower in ('baseline_trend', 'trend'):
+        from .models.linear import TrendBaseline
+        return TrendBaseline(config)
+    elif model_type_lower in ('baseline_historical', 'historical_curve', 'knn_curve'):
+        from .models.linear import HistoricalCurveBaseline
+        return HistoricalCurveBaseline(config)
+    
+    # Ensemble models
+    elif model_type_lower in ('averaging', 'averaging_ensemble'):
+        from .models.ensemble import AveragingEnsemble
+        return AveragingEnsemble(config)
+    elif model_type_lower in ('weighted', 'weighted_averaging', 'weighted_ensemble'):
+        from .models.ensemble import WeightedAveragingEnsemble
+        return WeightedAveragingEnsemble(config)
+    elif model_type_lower in ('stacking', 'stacking_ensemble'):
+        from .models.ensemble import StackingEnsemble
+        return StackingEnsemble(config)
+    elif model_type_lower in ('blending', 'blending_ensemble'):
+        from .models.ensemble import BlendingEnsemble
+        return BlendingEnsemble(config)
+    
     else:
-        raise ValueError(f"Unknown model type: {model_type}")
+        available = [
+            'catboost', 'lightgbm', 'xgboost', 'linear', 'nn',
+            'global_mean', 'flat', 'trend', 'historical_curve',
+            'averaging', 'weighted', 'stacking', 'blending'
+        ]
+        raise ValueError(f"Unknown model type: {model_type}. Available: {available}")
 
 
 def run_cross_validation(

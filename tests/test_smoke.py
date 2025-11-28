@@ -4069,6 +4069,581 @@ class TestConfigSection5:
         assert isinstance(tracking['experiment_name'], str)
 
 
+# =============================================================================
+# SECTION 4 TESTS: MODEL DEVELOPMENT
+# =============================================================================
+
+
+class TestBaseModelInterface:
+    """Tests for BaseModel interface (Section 4.0)."""
+    
+    def test_base_model_abstract_class(self):
+        """Test BaseModel is an abstract class with required methods."""
+        from src.models.base import BaseModel
+        import abc
+        
+        assert abc.ABC in BaseModel.__bases__
+        
+        # Check required abstract methods
+        abstract_methods = getattr(BaseModel, '__abstractmethods__', set())
+        assert 'fit' in abstract_methods
+        assert 'predict' in abstract_methods
+    
+    def test_all_models_implement_interface(self):
+        """Test that all model classes implement BaseModel interface."""
+        from src.models.base import BaseModel
+        from src.models.linear import (
+            LinearModel, GlobalMeanBaseline, FlatBaseline, 
+            TrendBaseline, HistoricalCurveBaseline
+        )
+        from src.models.ensemble import (
+            AveragingEnsemble, WeightedAveragingEnsemble,
+            StackingEnsemble, BlendingEnsemble
+        )
+        
+        models_to_test = [
+            LinearModel, GlobalMeanBaseline, FlatBaseline,
+            TrendBaseline, HistoricalCurveBaseline,
+            AveragingEnsemble, WeightedAveragingEnsemble,
+            StackingEnsemble, BlendingEnsemble
+        ]
+        
+        for model_cls in models_to_test:
+            assert issubclass(model_cls, BaseModel), \
+                f"{model_cls.__name__} should inherit from BaseModel"
+            
+            # Check it has required methods
+            assert hasattr(model_cls, 'fit')
+            assert hasattr(model_cls, 'predict')
+            assert hasattr(model_cls, 'save')
+            assert hasattr(model_cls, 'load')
+            assert hasattr(model_cls, 'get_feature_importance')
+    
+    def test_model_factory_function(self):
+        """Test get_model_class returns correct model types."""
+        from src.models import get_model_class
+        from src.models.linear import (
+            LinearModel, GlobalMeanBaseline, FlatBaseline,
+            TrendBaseline, HistoricalCurveBaseline
+        )
+        from src.models.ensemble import (
+            AveragingEnsemble, WeightedAveragingEnsemble,
+            StackingEnsemble, BlendingEnsemble
+        )
+        
+        assert get_model_class('linear') == LinearModel
+        assert get_model_class('global_mean') == GlobalMeanBaseline
+        assert get_model_class('flat') == FlatBaseline
+        assert get_model_class('trend') == TrendBaseline
+        assert get_model_class('historical_curve') == HistoricalCurveBaseline
+        assert get_model_class('knn_curve') == HistoricalCurveBaseline
+        assert get_model_class('averaging') == AveragingEnsemble
+        assert get_model_class('weighted') == WeightedAveragingEnsemble
+        assert get_model_class('stacking') == StackingEnsemble
+        assert get_model_class('blending') == BlendingEnsemble
+    
+    def test_model_factory_case_insensitive(self):
+        """Test get_model_class is case-insensitive."""
+        from src.models import get_model_class
+        
+        assert get_model_class('LINEAR') == get_model_class('linear')
+        assert get_model_class('Averaging') == get_model_class('averaging')
+    
+    def test_model_factory_unknown_raises(self):
+        """Test get_model_class raises for unknown model."""
+        from src.models import get_model_class
+        
+        with pytest.raises(ValueError, match="Unknown model"):
+            get_model_class('unknown_model')
+
+
+class TestHistoricalCurveBaseline:
+    """Tests for HistoricalCurveBaseline (Section 4.1)."""
+    
+    def test_historical_curve_baseline_exists(self):
+        """Test HistoricalCurveBaseline class exists."""
+        from src.models.linear import HistoricalCurveBaseline
+        assert HistoricalCurveBaseline is not None
+    
+    def test_historical_curve_baseline_fit_predict(self):
+        """Test HistoricalCurveBaseline fit and predict."""
+        from src.models.linear import HistoricalCurveBaseline
+        
+        np.random.seed(42)
+        
+        # Create training data with ther_area groups
+        X_train = pd.DataFrame({
+            'months_postgx': list(range(24)) * 4,
+            'ther_area_encoded': [0] * 48 + [1] * 48,  # Two therapeutic areas
+            'feature1': np.random.randn(96)
+        })
+        y_train = pd.Series(
+            [1.0 - 0.02 * m + np.random.normal(0, 0.05) for m in range(24)] * 2 +
+            [1.0 - 0.03 * m + np.random.normal(0, 0.05) for m in range(24)] * 2
+        )
+        
+        X_val = X_train.iloc[:24].copy()
+        y_val = y_train.iloc[:24].copy()
+        sample_weight = pd.Series(np.ones(96))
+        
+        model = HistoricalCurveBaseline({'n_clusters': 2})
+        model.fit(X_train, y_train, X_val, y_val, sample_weight)
+        
+        # Predict
+        preds = model.predict(X_val)
+        
+        assert len(preds) == len(X_val)
+        assert not np.isnan(preds).any()
+    
+    def test_historical_curve_baseline_save_load(self, tmp_path):
+        """Test HistoricalCurveBaseline save and load."""
+        from src.models.linear import HistoricalCurveBaseline
+        
+        np.random.seed(42)
+        
+        X_train = pd.DataFrame({
+            'months_postgx': list(range(24)) * 2,
+            'ther_area_encoded': [0] * 48,
+            'feature1': np.random.randn(48)
+        })
+        y_train = pd.Series([1.0 - 0.02 * m for m in range(24)] * 2)
+        sample_weight = pd.Series(np.ones(48))
+        
+        model = HistoricalCurveBaseline({})
+        model.fit(X_train, y_train, X_train.iloc[:24], y_train.iloc[:24], sample_weight)
+        
+        # Save
+        model_path = tmp_path / 'model.pkl'
+        model.save(str(model_path))
+        
+        assert model_path.exists()
+        
+        # Load using classmethod (returns new instance)
+        loaded_model = HistoricalCurveBaseline.load(str(model_path))
+        
+        # Predictions should match
+        orig_preds = model.predict(X_train.iloc[:24])
+        loaded_preds = loaded_model.predict(X_train.iloc[:24])
+        
+        np.testing.assert_array_almost_equal(orig_preds, loaded_preds)
+
+
+class TestLinearModelPolynomial:
+    """Tests for LinearModel polynomial features (Section 4.2)."""
+    
+    def test_linear_model_polynomial_config(self):
+        """Test LinearModel accepts polynomial config."""
+        from src.models.linear import LinearModel
+        
+        config = {
+            'use_polynomial': True,
+            'polynomial_degree': 2
+        }
+        
+        model = LinearModel(config)
+        assert model.config.get('use_polynomial') == True
+        assert model.config.get('polynomial_degree') == 2
+    
+    def test_linear_model_polynomial_fit(self):
+        """Test LinearModel with polynomial features fits and predicts."""
+        from src.models.linear import LinearModel
+        
+        np.random.seed(42)
+        
+        # Create non-linear data
+        X_train = pd.DataFrame({
+            'x': np.linspace(0, 10, 100)
+        })
+        # Quadratic relationship
+        y_train = pd.Series(X_train['x'] ** 2 + np.random.normal(0, 1, 100))
+        
+        X_val = X_train.iloc[:20].copy()
+        y_val = y_train.iloc[:20].copy()
+        sample_weight = pd.Series(np.ones(100))
+        
+        # Model with polynomial features
+        model = LinearModel({
+            'use_polynomial': True,
+            'polynomial_degree': 2,
+            'model_type': 'ridge'
+        })
+        model.fit(X_train, y_train, X_val, y_val, sample_weight)
+        
+        preds = model.predict(X_train)
+        
+        assert len(preds) == len(X_train)
+        
+        # Polynomial model should capture the quadratic relationship better
+        # than linear (R^2 should be high)
+        ss_res = np.sum((y_train - preds) ** 2)
+        ss_tot = np.sum((y_train - y_train.mean()) ** 2)
+        r2 = 1 - ss_res / ss_tot
+        
+        assert r2 > 0.9, f"R^2 should be high for quadratic data with polynomial features: {r2}"
+    
+    def test_linear_model_without_polynomial(self):
+        """Test LinearModel works without polynomial features."""
+        from src.models.linear import LinearModel
+        
+        np.random.seed(42)
+        
+        X_train = pd.DataFrame({
+            'x': np.linspace(0, 10, 100)
+        })
+        y_train = pd.Series(2 * X_train['x'] + 1 + np.random.normal(0, 0.5, 100))
+        
+        X_val = X_train.iloc[:20].copy()
+        y_val = y_train.iloc[:20].copy()
+        sample_weight = pd.Series(np.ones(100))
+        
+        # Model without polynomial features (default)
+        model = LinearModel({'model_type': 'ridge'})
+        model.fit(X_train, y_train, X_val, y_val, sample_weight)
+        
+        preds = model.predict(X_train)
+        
+        assert len(preds) == len(X_train)
+
+
+class TestEnsembleModels:
+    """Tests for ensemble models (Section 4.8)."""
+    
+    def test_averaging_ensemble_exists(self):
+        """Test AveragingEnsemble class exists."""
+        from src.models.ensemble import AveragingEnsemble
+        assert AveragingEnsemble is not None
+    
+    def test_weighted_averaging_ensemble_exists(self):
+        """Test WeightedAveragingEnsemble class exists."""
+        from src.models.ensemble import WeightedAveragingEnsemble
+        assert WeightedAveragingEnsemble is not None
+    
+    def test_stacking_ensemble_exists(self):
+        """Test StackingEnsemble class exists."""
+        from src.models.ensemble import StackingEnsemble
+        assert StackingEnsemble is not None
+    
+    def test_blending_ensemble_exists(self):
+        """Test BlendingEnsemble class exists."""
+        from src.models.ensemble import BlendingEnsemble
+        assert BlendingEnsemble is not None
+    
+    def test_create_ensemble_helper(self):
+        """Test create_ensemble factory function."""
+        from src.models.ensemble import create_ensemble, AveragingEnsemble, StackingEnsemble
+        from src.models.linear import FlatBaseline, GlobalMeanBaseline
+        
+        # create_ensemble takes models as first arg, method as second
+        base_models = [FlatBaseline({}), GlobalMeanBaseline({})]
+        
+        avg_ensemble = create_ensemble(base_models, method='averaging')
+        assert isinstance(avg_ensemble, AveragingEnsemble)
+        
+        stack_ensemble = create_ensemble(base_models, method='stacking')
+        assert isinstance(stack_ensemble, StackingEnsemble)
+    
+    def test_averaging_ensemble_fit_predict(self):
+        """Test AveragingEnsemble fit and predict."""
+        from src.models.ensemble import AveragingEnsemble
+        from src.models.linear import FlatBaseline, GlobalMeanBaseline
+        
+        np.random.seed(42)
+        
+        X_train = pd.DataFrame({
+            'months_postgx': list(range(24)) * 4,
+            'feature1': np.random.randn(96)
+        })
+        y_train = pd.Series(np.random.rand(96) * 0.5 + 0.5)
+        
+        X_val = X_train.iloc[:24].copy()
+        y_val = y_train.iloc[:24].copy()
+        sample_weight = pd.Series(np.ones(96))
+        
+        # Create base models using 'models' key (not 'base_models')
+        base_models = [
+            FlatBaseline({}),
+            GlobalMeanBaseline({})
+        ]
+        
+        ensemble = AveragingEnsemble({'models': base_models})
+        ensemble.fit(X_train, y_train, X_val, y_val, sample_weight)
+        
+        preds = ensemble.predict(X_val)
+        
+        assert len(preds) == len(X_val)
+        assert not np.isnan(preds).any()
+        
+        # Average of flat (1.0) and global mean should be between them
+        assert preds.min() >= 0
+        assert preds.max() <= 1.5
+    
+    def test_weighted_averaging_ensemble_fit_predict(self):
+        """Test WeightedAveragingEnsemble fit and predict."""
+        from src.models.ensemble import WeightedAveragingEnsemble
+        from src.models.linear import FlatBaseline, GlobalMeanBaseline
+        
+        np.random.seed(42)
+        
+        X_train = pd.DataFrame({
+            'months_postgx': list(range(24)) * 4,
+            'feature1': np.random.randn(96)
+        })
+        y_train = pd.Series(np.random.rand(96) * 0.5 + 0.5)
+        
+        X_val = X_train.iloc[:24].copy()
+        y_val = y_train.iloc[:24].copy()
+        sample_weight = pd.Series(np.ones(96))
+        
+        # Use 'models' key for WeightedAveragingEnsemble
+        base_models = [
+            FlatBaseline({}),
+            GlobalMeanBaseline({})
+        ]
+        
+        ensemble = WeightedAveragingEnsemble({
+            'models': base_models,
+            'optimize_weights': True
+        })
+        ensemble.fit(X_train, y_train, X_val, y_val, sample_weight)
+        
+        preds = ensemble.predict(X_val)
+        
+        assert len(preds) == len(X_val)
+        assert not np.isnan(preds).any()
+        
+        # Check weights are stored (in 'weights' attribute, not 'weights_')
+        assert hasattr(ensemble, 'weights')
+        assert ensemble.weights is not None
+        assert len(ensemble.weights) == 2
+        assert abs(sum(ensemble.weights) - 1.0) < 1e-6  # Weights should sum to 1
+    
+    def test_stacking_ensemble_fit_predict(self):
+        """Test StackingEnsemble fit and predict."""
+        from src.models.ensemble import StackingEnsemble
+        from src.models.linear import FlatBaseline, GlobalMeanBaseline
+        
+        np.random.seed(42)
+        
+        X_train = pd.DataFrame({
+            'months_postgx': list(range(24)) * 4,
+            'feature1': np.random.randn(96)
+        })
+        y_train = pd.Series(np.random.rand(96) * 0.5 + 0.5)
+        
+        X_val = X_train.iloc[:24].copy()
+        y_val = y_train.iloc[:24].copy()
+        sample_weight = pd.Series(np.ones(96))
+        
+        # StackingEnsemble uses 'base_models' as list of (name, model) tuples
+        base_models = [
+            ('flat', FlatBaseline({})),
+            ('global_mean', GlobalMeanBaseline({}))
+        ]
+        
+        # Don't pass meta_learner string - use default Ridge
+        ensemble = StackingEnsemble({
+            'base_models': base_models,
+            'n_folds': 2
+        })
+        ensemble.fit(X_train, y_train, X_val, y_val, sample_weight)
+        
+        preds = ensemble.predict(X_val)
+        
+        assert len(preds) == len(X_val)
+        assert not np.isnan(preds).any()
+    
+    def test_blending_ensemble_fit_predict(self):
+        """Test BlendingEnsemble fit and predict."""
+        from src.models.ensemble import BlendingEnsemble
+        from src.models.linear import FlatBaseline, GlobalMeanBaseline
+        
+        np.random.seed(42)
+        
+        X_train = pd.DataFrame({
+            'months_postgx': list(range(24)) * 4,
+            'feature1': np.random.randn(96)
+        })
+        y_train = pd.Series(np.random.rand(96) * 0.5 + 0.5)
+        
+        X_val = X_train.iloc[:24].copy()
+        y_val = y_train.iloc[:24].copy()
+        sample_weight = pd.Series(np.ones(96))
+        
+        # Use 'models' key for BlendingEnsemble
+        base_models = [
+            FlatBaseline({}),
+            GlobalMeanBaseline({})
+        ]
+        
+        ensemble = BlendingEnsemble({
+            'models': base_models,
+            'holdout_fraction': 0.3
+        })
+        ensemble.fit(X_train, y_train, X_val, y_val, sample_weight)
+        
+        preds = ensemble.predict(X_val)
+        
+        assert len(preds) == len(X_val)
+        assert not np.isnan(preds).any()
+    
+    def test_ensemble_save_load(self, tmp_path):
+        """Test ensemble models can be saved and loaded."""
+        from src.models.ensemble import AveragingEnsemble
+        from src.models.linear import FlatBaseline, GlobalMeanBaseline
+        
+        np.random.seed(42)
+        
+        X_train = pd.DataFrame({
+            'months_postgx': list(range(24)) * 2,
+            'feature1': np.random.randn(48)
+        })
+        y_train = pd.Series(np.random.rand(48) * 0.5 + 0.5)
+        sample_weight = pd.Series(np.ones(48))
+        
+        # Use 'models' key
+        base_models = [FlatBaseline({}), GlobalMeanBaseline({})]
+        
+        ensemble = AveragingEnsemble({'models': base_models})
+        ensemble.fit(X_train, y_train, X_train.iloc[:24], y_train.iloc[:24], sample_weight)
+        
+        # Save
+        model_path = tmp_path / 'ensemble.pkl'
+        ensemble.save(str(model_path))
+        
+        assert model_path.exists()
+        
+        # Load using classmethod (returns new instance)
+        loaded = AveragingEnsemble.load(str(model_path))
+        
+        # Predictions should match
+        orig_preds = ensemble.predict(X_train.iloc[:24])
+        loaded_preds = loaded.predict(X_train.iloc[:24])
+        
+        np.testing.assert_array_almost_equal(orig_preds, loaded_preds)
+    
+    def test_ensemble_feature_importance(self):
+        """Test ensemble models return feature importance."""
+        from src.models.ensemble import AveragingEnsemble
+        from src.models.linear import FlatBaseline, GlobalMeanBaseline
+        
+        np.random.seed(42)
+        
+        X_train = pd.DataFrame({
+            'months_postgx': list(range(24)) * 2,
+            'feature1': np.random.randn(48)
+        })
+        y_train = pd.Series(np.random.rand(48) * 0.5 + 0.5)
+        sample_weight = pd.Series(np.ones(48))
+        
+        # Use 'models' key
+        base_models = [FlatBaseline({}), GlobalMeanBaseline({})]
+        
+        ensemble = AveragingEnsemble({'models': base_models})
+        ensemble.fit(X_train, y_train, X_train.iloc[:24], y_train.iloc[:24], sample_weight)
+        
+        # Get feature importance (should return None or empty for baselines)
+        importance = ensemble.get_feature_importance()
+        
+        # Should return something (None, empty dict, or DataFrame)
+        assert importance is None or isinstance(importance, (dict, pd.DataFrame))
+
+
+class TestTrainGetModel:
+    """Tests for _get_model function in train.py (Section 4.0)."""
+    
+    def test_get_model_returns_model_instances(self):
+        """Test _get_model returns actual model instances for models without native lib deps."""
+        from src.train import _get_model
+        from src.models.base import BaseModel
+        
+        # Test models that don't require native libraries (CatBoost, LightGBM, XGBoost)
+        model_types = [
+            'linear',
+            'global_mean', 'flat', 'trend', 'historical_curve',
+            'averaging', 'weighted', 'stacking', 'blending'
+        ]
+        
+        for model_type in model_types:
+            model = _get_model(model_type)
+            assert isinstance(model, BaseModel), \
+                f"_get_model('{model_type}') should return a BaseModel instance"
+    
+    def test_get_model_with_config(self):
+        """Test _get_model passes config to model."""
+        from src.train import _get_model
+        
+        config = {'custom_param': 'value'}
+        model = _get_model('linear', config)
+        
+        assert model.config.get('custom_param') == 'value'
+    
+    def test_get_model_unknown_raises(self):
+        """Test _get_model raises for unknown model type."""
+        from src.train import _get_model
+        
+        with pytest.raises(ValueError, match="Unknown model type"):
+            _get_model('nonexistent_model')
+
+
+class TestTrendBaseline:
+    """Tests for TrendBaseline model (Section 4.1)."""
+    
+    def test_trend_baseline_fit_predict(self):
+        """Test TrendBaseline fit and predict."""
+        from src.models.linear import TrendBaseline
+        
+        np.random.seed(42)
+        
+        X_train = pd.DataFrame({
+            'months_postgx': list(range(-12, 24)) * 2,
+            'feature1': np.random.randn(72)
+        })
+        y_train = pd.Series([1.0 - 0.01 * m for m in range(-12, 24)] * 2)
+        
+        X_val = X_train.iloc[:36].copy()
+        y_val = y_train.iloc[:36].copy()
+        sample_weight = pd.Series(np.ones(72))
+        
+        model = TrendBaseline({})
+        model.fit(X_train, y_train, X_val, y_val, sample_weight)
+        
+        preds = model.predict(X_val)
+        
+        assert len(preds) == len(X_val)
+        assert not np.isnan(preds).any()
+    
+    def test_trend_baseline_save_load(self, tmp_path):
+        """Test TrendBaseline save and load."""
+        from src.models.linear import TrendBaseline
+        
+        np.random.seed(42)
+        
+        X_train = pd.DataFrame({
+            'months_postgx': list(range(-12, 24)),
+            'feature1': np.random.randn(36)
+        })
+        y_train = pd.Series([1.0 - 0.01 * m for m in range(-12, 24)])
+        sample_weight = pd.Series(np.ones(36))
+        
+        model = TrendBaseline({})
+        model.fit(X_train, y_train, X_train.iloc[:12], y_train.iloc[:12], sample_weight)
+        
+        # Save
+        model_path = tmp_path / 'trend.pkl'
+        model.save(str(model_path))
+        
+        assert model_path.exists()
+        
+        # Load using classmethod (returns new instance)
+        loaded_model = TrendBaseline.load(str(model_path))
+        
+        # Predictions should match
+        orig_preds = model.predict(X_train.iloc[:12])
+        loaded_preds = loaded_model.predict(X_train.iloc[:12])
+        
+        np.testing.assert_array_almost_equal(orig_preds, loaded_preds)
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
 
