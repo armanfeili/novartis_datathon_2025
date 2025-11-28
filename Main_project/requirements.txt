@@ -6,29 +6,34 @@
 #   Install:  pip install -r requirements.txt
 #   Update:   pip install -r requirements.txt --upgrade
 #   Freeze:   pip freeze > requirements.txt
-#
+#   & "D:\Datathon\novartis_datathon_2025\Main_project\saeed_venv\Scripts\python.exe" -m pip install -r Main_project/requirements.txt --upgrade
 # ===========================================
 
-# Data Science & Analysis
-pandas
-numpy
-scipy
-
-# Data Visualization
-matplotlib
-seaborn
-plotly
+# Core data processing
+pandas>=1.5.0
+numpy>=1.23.0
+scipy>=1.9.0
 
 # Machine Learning
-scikit-learn
-xgboost
-lightgbm
+scikit-learn>=1.1.0
+lightgbm>=3.3.0
+xgboost>=1.7.0
+catboost>=1.1.0
 
-# Jupyter Notebooks
-jupyter
-notebook
-ipykernel
+# Time Series (optional)
+statsmodels>=0.13.0
+
+# Visualization
+matplotlib>=3.6.0
+seaborn>=0.12.0
+plotly>=5.10.0
 
 # Utilities
-tqdm
+tqdm>=4.64.0
+joblib>=1.2.0
 python-dotenv
+
+# Jupyter
+jupyter>=1.0.0
+notebook>=6.5.0
+ipykernel>=6.17.0
