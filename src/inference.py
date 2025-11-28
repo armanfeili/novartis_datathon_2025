@@ -40,6 +40,10 @@ def detect_test_scenarios(test_volume: pd.DataFrame) -> Dict[int, List[Tuple[str
         {1: list of (country, brand_name) tuples,
          2: list of (country, brand_name) tuples}
     """
+    # Expected counts from competition documentation
+    EXPECTED_S1_COUNT = 228
+    EXPECTED_S2_COUNT = 112
+    
     series_keys = ['country', 'brand_name']
     
     # Get min months_postgx per series
@@ -79,8 +83,30 @@ def detect_test_scenarios(test_volume: pd.DataFrame) -> Dict[int, List[Tuple[str
         2: list(scenario2_series.itertuples(index=False, name=None))
     }
     
-    logger.info(f"Detected {len(result[1])} Scenario 1 series")
-    logger.info(f"Detected {len(result[2])} Scenario 2 series")
+    n_s1 = len(result[1])
+    n_s2 = len(result[2])
+    
+    logger.info(f"Detected {n_s1} Scenario 1 series")
+    logger.info(f"Detected {n_s2} Scenario 2 series")
+    
+    # Warn if counts differ from expected
+    if n_s1 != EXPECTED_S1_COUNT:
+        logger.warning(
+            f"Scenario 1 count mismatch: detected {n_s1}, expected {EXPECTED_S1_COUNT}. "
+            "This may indicate changes in test data or detection logic issues."
+        )
+    if n_s2 != EXPECTED_S2_COUNT:
+        logger.warning(
+            f"Scenario 2 count mismatch: detected {n_s2}, expected {EXPECTED_S2_COUNT}. "
+            "This may indicate changes in test data or detection logic issues."
+        )
+    
+    total = n_s1 + n_s2
+    expected_total = EXPECTED_S1_COUNT + EXPECTED_S2_COUNT
+    if total != expected_total:
+        logger.warning(
+            f"Total series count mismatch: detected {total}, expected {expected_total}"
+        )
     
     return result
 

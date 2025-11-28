@@ -36,7 +36,7 @@ Bucket threshold:
 import sys
 import logging
 from pathlib import Path
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple, Optional, List, Any
 
 import numpy as np
 import pandas as pd
@@ -635,6 +635,215 @@ METRIC_NAME_S1 = "metric1_official"
 METRIC_NAME_S2 = "metric2_official"
 METRIC_NAME_RMSE = "rmse_y_norm"
 METRIC_NAME_MAE = "mae_y_norm"
+METRIC_NAME_MAPE = "mape_y_norm"
+
+
+# =============================================================================
+# METRIC BREAKDOWN FUNCTIONS (Section 6.3)
+# =============================================================================
+
+def compute_metric_by_ther_area(
+    df_actual: pd.DataFrame,
+    df_pred: pd.DataFrame,
+    df_aux: pd.DataFrame,
+    panel_df: pd.DataFrame,
+    scenario
+) -> Dict[str, Dict[str, float]]:
+    """
+    Compute metrics broken down by therapeutic area.
+    
+    Args:
+        df_actual: Actual volume data with columns [country, brand_name, months_postgx, volume]
+        df_pred: Predicted volume data with same columns
+        df_aux: Auxiliary data with columns [country, brand_name, avg_vol, bucket]
+        panel_df: Panel DataFrame containing ther_area column
+        scenario: 1 or 2
+        
+    Returns:
+        Dict mapping ther_area to {metric, n_series, mean_error, std_error}
+    """
+    # Get ther_area for each series
+    series_ther_area = panel_df[['country', 'brand_name', 'ther_area']].drop_duplicates()
+    
+    # Normalize scenario
+    if isinstance(scenario, str):
+        scenario = int(scenario[-1]) if scenario.startswith('scenario') else int(scenario)
+    
+    results = {}
+    
+    for ther_area in series_ther_area['ther_area'].unique():
+        area_series = series_ther_area[series_ther_area['ther_area'] == ther_area][['country', 'brand_name']]
+        
+        if len(area_series) == 0:
+            continue
+        
+        # Filter actual, pred, aux to this therapeutic area
+        actual_area = df_actual.merge(area_series, on=['country', 'brand_name'])
+        pred_area = df_pred.merge(area_series, on=['country', 'brand_name'])
+        aux_area = df_aux.merge(area_series, on=['country', 'brand_name'])
+        
+        if len(actual_area) == 0 or len(aux_area) == 0:
+            continue
+        
+        try:
+            if scenario == 1:
+                metric = compute_metric1(actual_area, pred_area, aux_area)
+            else:
+                metric = compute_metric2(actual_area, pred_area, aux_area)
+            
+            # Compute additional statistics
+            merged = actual_area.merge(
+                pred_area, on=['country', 'brand_name', 'months_postgx'],
+                suffixes=('_actual', '_pred')
+            )
+            error = merged['volume_pred'] - merged['volume_actual']
+            
+            results[ther_area] = {
+                'metric': metric,
+                'n_series': len(area_series),
+                'n_rows': len(merged),
+                'mean_error': error.mean(),
+                'std_error': error.std(),
+                'mean_abs_error': error.abs().mean()
+            }
+        except Exception as e:
+            logger.warning(f"Could not compute metric for ther_area={ther_area}: {e}")
+            results[ther_area] = {
+                'metric': np.nan,
+                'n_series': len(area_series),
+                'error': str(e)
+            }
+    
+    return results
+
+
+def compute_metric_by_country(
+    df_actual: pd.DataFrame,
+    df_pred: pd.DataFrame,
+    df_aux: pd.DataFrame,
+    scenario
+) -> Dict[str, Dict[str, float]]:
+    """
+    Compute metrics broken down by country.
+    
+    Args:
+        df_actual: Actual volume data with columns [country, brand_name, months_postgx, volume]
+        df_pred: Predicted volume data with same columns
+        df_aux: Auxiliary data with columns [country, brand_name, avg_vol, bucket]
+        scenario: 1 or 2
+        
+    Returns:
+        Dict mapping country to {metric, n_series, mean_error, std_error}
+    """
+    # Normalize scenario
+    if isinstance(scenario, str):
+        scenario = int(scenario[-1]) if scenario.startswith('scenario') else int(scenario)
+    
+    results = {}
+    
+    for country in df_actual['country'].unique():
+        # Filter to this country
+        actual_country = df_actual[df_actual['country'] == country]
+        pred_country = df_pred[df_pred['country'] == country]
+        aux_country = df_aux[df_aux['country'] == country]
+        
+        if len(actual_country) == 0 or len(aux_country) == 0:
+            continue
+        
+        n_series = actual_country[['country', 'brand_name']].drop_duplicates().shape[0]
+        
+        try:
+            if scenario == 1:
+                metric = compute_metric1(actual_country, pred_country, aux_country)
+            else:
+                metric = compute_metric2(actual_country, pred_country, aux_country)
+            
+            # Compute additional statistics
+            merged = actual_country.merge(
+                pred_country, on=['country', 'brand_name', 'months_postgx'],
+                suffixes=('_actual', '_pred')
+            )
+            error = merged['volume_pred'] - merged['volume_actual']
+            
+            results[country] = {
+                'metric': metric,
+                'n_series': n_series,
+                'n_rows': len(merged),
+                'mean_error': error.mean(),
+                'std_error': error.std(),
+                'mean_abs_error': error.abs().mean()
+            }
+        except Exception as e:
+            logger.warning(f"Could not compute metric for country={country}: {e}")
+            results[country] = {
+                'metric': np.nan,
+                'n_series': n_series,
+                'error': str(e)
+            }
+    
+    return results
+
+
+def create_evaluation_dataframe(
+    df_actual: pd.DataFrame,
+    df_pred: pd.DataFrame,
+    df_aux: pd.DataFrame,
+    panel_df: Optional[pd.DataFrame] = None,
+    scenario: Optional[int] = None
+) -> pd.DataFrame:
+    """
+    Create a comprehensive evaluation DataFrame for analysis.
+    
+    Args:
+        df_actual: Actual volume data
+        df_pred: Predicted volume data
+        df_aux: Auxiliary data
+        panel_df: Optional panel with additional metadata (ther_area, etc.)
+        scenario: Optional scenario number for labeling
+        
+    Returns:
+        DataFrame with columns:
+            series_id, country, brand_name, months_postgx, scenario, bucket,
+            y_true, y_pred, error, abs_error, pct_error, avg_vol
+    """
+    # Merge actual and predicted
+    merged = df_actual.merge(
+        df_pred,
+        on=['country', 'brand_name', 'months_postgx'],
+        how='inner',
+        suffixes=('_actual', '_pred')
+    )
+    
+    # Rename columns
+    merged = merged.rename(columns={
+        'volume_actual': 'y_true',
+        'volume_pred': 'y_pred'
+    })
+    
+    # Add aux info
+    merged = merged.merge(df_aux, on=['country', 'brand_name'], how='left')
+    
+    # Compute error metrics
+    merged['error'] = merged['y_pred'] - merged['y_true']
+    merged['abs_error'] = merged['error'].abs()
+    merged['pct_error'] = merged['error'] / (merged['y_true'] + 1e-8) * 100
+    
+    # Add scenario
+    if scenario is not None:
+        merged['scenario'] = scenario
+    
+    # Add series_id
+    merged['series_id'] = merged['country'] + '_' + merged['brand_name']
+    
+    # Add metadata from panel if available
+    if panel_df is not None:
+        meta_cols = ['country', 'brand_name', 'ther_area', 'main_package', 'biological']
+        available_meta = [c for c in meta_cols if c in panel_df.columns]
+        if len(available_meta) > 2:
+            meta = panel_df[available_meta].drop_duplicates()
+            merged = merged.merge(meta, on=['country', 'brand_name'], how='left')
+    
+    return merged
 
 # =============================================================================
 # OFFICIAL METRIC CONSTANTS (from metric_calculation.py)
@@ -718,3 +927,257 @@ def validate_config_matches_official(run_config: dict) -> bool:
     
     logger.info("Config metric values validated against official metric_calculation.py ✓")
     return True
+
+
+# =============================================================================
+# UNIFIED METRICS LOGGING SYSTEM (Section 6.7)
+# =============================================================================
+
+def make_metric_record(
+    phase: str,
+    split: str,
+    scenario: int,
+    model_name: str,
+    metric_name: str,
+    value: float,
+    run_id: Optional[str] = None,
+    step: Optional[str] = None,
+    bucket: Optional[int] = None,
+    series_id: Optional[str] = None,
+    extra: Optional[Dict] = None
+) -> Dict[str, Any]:
+    """
+    Create a standardized metric record.
+    
+    All phases (training, validation, CV, inference) use this function
+    to ensure consistent metric schema.
+    
+    Args:
+        phase: One of "train", "val", "cv", "simulation", "test_offline", "test_online"
+        split: "train", "val", or "test"
+        scenario: 1 or 2
+        model_name: E.g., "catboost", "lgbm"
+        metric_name: Canonical metric name (use METRIC_NAME_* constants)
+        value: Metric value (float, can be NaN)
+        run_id: Unique run identifier (auto-generated if None)
+        step: Epoch index, fold index, or "final"
+        bucket: Optional bucket number (1 or 2)
+        series_id: Optional series identifier (for per-series metrics)
+        extra: Optional dict with additional info (JSON-serializable)
+        
+    Returns:
+        Dict with standardized fields
+    """
+    from datetime import datetime, timezone
+    
+    if run_id is None:
+        run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    record = {
+        'run_id': run_id,
+        'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+        'phase': phase,
+        'split': split,
+        'scenario': scenario,
+        'model': model_name,
+        'metric': metric_name,
+        'value': float(value) if value is not None and not np.isnan(value) else np.nan,
+        'step': step,
+        'bucket': bucket,
+        'series_id': series_id,
+        'extra': extra
+    }
+    
+    return record
+
+
+def save_metric_records(
+    records: List[Dict],
+    path: Path,
+    append: bool = True
+) -> None:
+    """
+    Save metric records to a CSV file.
+    
+    Creates parent directories if missing. Appends to existing file
+    if append=True, otherwise overwrites.
+    
+    Args:
+        records: List of metric record dicts (from make_metric_record)
+        path: Path to output CSV file
+        append: Whether to append to existing file
+    """
+    import json
+    
+    if not records:
+        logger.warning("No records to save")
+        return
+    
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Convert records to DataFrame
+    df = pd.DataFrame(records)
+    
+    # Serialize 'extra' column as JSON string
+    if 'extra' in df.columns:
+        df['extra'] = df['extra'].apply(
+            lambda x: json.dumps(x) if x is not None else None
+        )
+    
+    # Define column order for consistency
+    column_order = [
+        'run_id', 'timestamp', 'phase', 'split', 'scenario', 'model',
+        'metric', 'value', 'step', 'bucket', 'series_id', 'extra'
+    ]
+    
+    # Ensure all columns exist
+    for col in column_order:
+        if col not in df.columns:
+            df[col] = None
+    
+    df = df[column_order]
+    
+    # Write to file
+    if append and path.exists():
+        df.to_csv(path, mode='a', header=False, index=False)
+        logger.debug(f"Appended {len(records)} records to {path}")
+    else:
+        df.to_csv(path, index=False)
+        logger.info(f"Saved {len(records)} records to {path}")
+
+
+def load_metric_records(path: Path) -> pd.DataFrame:
+    """
+    Load metric records from a CSV file.
+    
+    Args:
+        path: Path to metrics CSV file
+        
+    Returns:
+        DataFrame with metric records
+    """
+    import json
+    
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Metrics file not found: {path}")
+    
+    df = pd.read_csv(path)
+    
+    # Deserialize 'extra' column from JSON
+    if 'extra' in df.columns:
+        df['extra'] = df['extra'].apply(
+            lambda x: json.loads(x) if pd.notna(x) and x != '' else None
+        )
+    
+    return df
+
+
+def get_metrics_for_run(
+    metrics_dir: Path,
+    run_id: str,
+    phase: Optional[str] = None,
+    metric: Optional[str] = None
+) -> pd.DataFrame:
+    """
+    Load and filter metrics for a specific run.
+    
+    Args:
+        metrics_dir: Directory containing metrics files
+        run_id: Run identifier
+        phase: Optional phase filter
+        metric: Optional metric name filter
+        
+    Returns:
+        Filtered DataFrame
+    """
+    metrics_path = Path(metrics_dir) / 'metrics.csv'
+    
+    df = load_metric_records(metrics_path)
+    df = df[df['run_id'] == run_id]
+    
+    if phase is not None:
+        df = df[df['phase'] == phase]
+    
+    if metric is not None:
+        df = df[df['metric'] == metric]
+    
+    return df
+
+
+def create_per_series_metrics_df(
+    per_series_errors: pd.DataFrame,
+    scenario: int,
+    run_id: Optional[str] = None,
+    model_name: str = 'unknown'
+) -> pd.DataFrame:
+    """
+    Convert per-series error DataFrame to standardized metrics format.
+    
+    Args:
+        per_series_errors: Output from compute_per_series_error()
+        scenario: 1 or 2
+        run_id: Run identifier
+        model_name: Model name
+        
+    Returns:
+        DataFrame with standardized per-series metrics
+    """
+    from datetime import datetime
+    
+    if run_id is None:
+        run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    records = []
+    
+    for _, row in per_series_errors.iterrows():
+        series_id = f"{row['country']}_{row['brand_name']}"
+        bucket = row.get('bucket')
+        
+        # Add each metric as a separate record
+        for metric_name in ['mae', 'rmse', 'mape', 'normalized_total_error']:
+            if metric_name in row:
+                records.append({
+                    'run_id': run_id,
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                    'scenario': scenario,
+                    'model': model_name,
+                    'series_id': series_id,
+                    'country': row['country'],
+                    'brand_name': row['brand_name'],
+                    'bucket': bucket,
+                    'metric': metric_name,
+                    'value': row[metric_name]
+                })
+    
+    return pd.DataFrame(records)
+
+
+def compute_diagnostic_metrics(
+    predictions: pd.DataFrame,
+    column: str = 'volume'
+) -> Dict[str, float]:
+    """
+    Compute diagnostic metrics for predictions when ground truth is not available.
+    
+    Used for test_online phase where we can't compute error metrics.
+    
+    Args:
+        predictions: DataFrame with predicted values
+        column: Column name containing predictions
+        
+    Returns:
+        Dict with pred_mean, pred_std, pred_min, pred_max, pred_median
+    """
+    values = predictions[column]
+    
+    return {
+        'pred_mean': values.mean(),
+        'pred_std': values.std(),
+        'pred_min': values.min(),
+        'pred_max': values.max(),
+        'pred_median': values.median(),
+        'pred_count': len(values),
+        'pred_null_count': values.isna().sum()
+    }

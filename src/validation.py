@@ -6,6 +6,7 @@ CRITICAL: Never mix months of the same series across train/val.
 """
 
 import logging
+from pathlib import Path
 from typing import Tuple, List, Optional, Dict, Union
 
 import numpy as np
@@ -14,6 +15,7 @@ from sklearn.model_selection import train_test_split
 
 from .utils import timer
 from .features import _normalize_scenario
+from .evaluate import make_metric_record, save_metric_records
 
 logger = logging.getLogger(__name__)
 
@@ -322,7 +324,9 @@ def adversarial_validation(
     test_features: pd.DataFrame,
     feature_cols: Optional[List[str]] = None,
     n_folds: int = 5,
-    random_state: int = 42
+    random_state: int = 42,
+    run_id: Optional[str] = None,
+    metrics_dir: Optional[Path] = None
 ) -> Dict:
     """
     Detect train/test distribution shift.
@@ -335,6 +339,8 @@ def adversarial_validation(
         feature_cols: Columns to use (if None, use all numeric)
         n_folds: Number of CV folds
         random_state: For reproducibility
+        run_id: Optional run ID for metrics logging
+        metrics_dir: Optional directory to save unified metric records
         
     Returns:
         {
@@ -400,8 +406,9 @@ def adversarial_validation(
         }).sort_values('importance', ascending=False)
         
         mean_auc = auc_scores.mean()
+        auc_std = auc_scores.std()
         
-        logger.info(f"Adversarial validation AUC: {mean_auc:.4f} (std: {auc_scores.std():.4f})")
+        logger.info(f"Adversarial validation AUC: {mean_auc:.4f} (std: {auc_std:.4f})")
         
         if mean_auc > 0.7:
             logger.warning(f"High AUC ({mean_auc:.3f}) suggests train/test distribution shift!")
@@ -410,6 +417,27 @@ def adversarial_validation(
             logger.info(f"Moderate AUC ({mean_auc:.3f}), some distribution difference detected")
         else:
             logger.info(f"Low AUC ({mean_auc:.3f}), train/test distributions appear similar")
+        
+        # Save unified metric records if metrics_dir is provided
+        if metrics_dir is not None:
+            metrics_dir = Path(metrics_dir)
+            metrics_dir.mkdir(parents=True, exist_ok=True)
+            metrics_path = metrics_dir / 'metrics.csv'
+            
+            records = [
+                make_metric_record(
+                    phase='adversarial_val', split='train_vs_test', scenario=None,
+                    model_name='random_forest', metric_name='auc_mean',
+                    value=mean_auc, run_id=run_id, step='final'
+                ),
+                make_metric_record(
+                    phase='adversarial_val', split='train_vs_test', scenario=None,
+                    model_name='random_forest', metric_name='auc_std',
+                    value=auc_std, run_id=run_id, step='final'
+                ),
+            ]
+            save_metric_records(records, metrics_path, append=True)
+            logger.debug(f"Saved {len(records)} adversarial validation metric records to {metrics_path}")
         
         return {
             'mean_auc': mean_auc,
@@ -422,7 +450,9 @@ def get_fold_series(
     panel_df: pd.DataFrame,
     n_folds: int = 5,
     stratify_by: str = 'bucket',
-    random_state: int = 42
+    random_state: int = 42,
+    save_indices: bool = False,
+    output_path: Optional[str] = None
 ) -> List[Tuple[pd.DataFrame, pd.DataFrame]]:
     """
     Generate K-fold splits at series level.
@@ -432,11 +462,14 @@ def get_fold_series(
         n_folds: Number of folds
         stratify_by: Column to stratify by
         random_state: For reproducibility
+        save_indices: Whether to save fold indices for reproducibility
+        output_path: Path to save fold indices (JSON file)
         
     Returns:
         List of (train_df, val_df) tuples
     """
     from sklearn.model_selection import StratifiedKFold
+    import json
     
     series_keys = ['country', 'brand_name']
     series_info = panel_df[series_keys + [stratify_by]].drop_duplicates()
@@ -444,7 +477,9 @@ def get_fold_series(
     skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=random_state)
     
     folds = []
-    for train_idx, val_idx in skf.split(series_info, series_info[stratify_by]):
+    fold_indices = []
+    
+    for fold_idx, (train_idx, val_idx) in enumerate(skf.split(series_info, series_info[stratify_by])):
         train_series = series_info.iloc[train_idx][series_keys]
         val_series = series_info.iloc[val_idx][series_keys]
         
@@ -452,5 +487,443 @@ def get_fold_series(
         val_df = panel_df.merge(val_series, on=series_keys, how='inner')
         
         folds.append((train_df, val_df))
+        
+        # Store indices for reproducibility
+        if save_indices:
+            fold_indices.append({
+                'fold': fold_idx,
+                'train_series': [tuple(s) for s in train_series.values.tolist()],
+                'val_series': [tuple(s) for s in val_series.values.tolist()]
+            })
+    
+    # Save fold indices if requested
+    if save_indices and output_path:
+        from pathlib import Path
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, 'w') as f:
+            json.dump({
+                'n_folds': n_folds,
+                'stratify_by': stratify_by,
+                'random_state': random_state,
+                'folds': fold_indices
+            }, f, indent=2)
+        logger.info(f"Fold indices saved to {output_path}")
     
     return folds
+
+
+def get_grouped_kfold_series(
+    panel_df: pd.DataFrame,
+    n_folds: int = 5,
+    group_by: str = 'ther_area',
+    random_state: int = 42
+) -> List[Tuple[pd.DataFrame, pd.DataFrame]]:
+    """
+    Generate grouped K-fold splits where groups are kept together.
+    
+    This ensures all series from the same group (e.g., therapeutic area)
+    are in the same fold. Useful when you want to test generalization
+    across groups rather than within.
+    
+    Args:
+        panel_df: Full panel data
+        n_folds: Number of folds
+        group_by: Column to group by (e.g., 'ther_area', 'country')
+        random_state: For reproducibility
+        
+    Returns:
+        List of (train_df, val_df) tuples
+    """
+    from sklearn.model_selection import GroupKFold
+    
+    series_keys = ['country', 'brand_name']
+    series_info = panel_df[series_keys + [group_by]].drop_duplicates()
+    
+    # GroupKFold doesn't shuffle, so we need to shuffle groups first
+    np.random.seed(random_state)
+    unique_groups = series_info[group_by].unique()
+    shuffled_groups = np.random.permutation(unique_groups)
+    group_map = {g: i for i, g in enumerate(shuffled_groups)}
+    series_info['_group_idx'] = series_info[group_by].map(group_map)
+    
+    gkf = GroupKFold(n_splits=min(n_folds, len(unique_groups)))
+    
+    folds = []
+    for train_idx, val_idx in gkf.split(series_info, groups=series_info['_group_idx']):
+        train_series = series_info.iloc[train_idx][series_keys]
+        val_series = series_info.iloc[val_idx][series_keys]
+        
+        train_df = panel_df.merge(train_series, on=series_keys, how='inner')
+        val_df = panel_df.merge(val_series, on=series_keys, how='inner')
+        
+        folds.append((train_df, val_df))
+        
+        # Log group distribution
+        train_groups = series_info.iloc[train_idx][group_by].unique()
+        val_groups = series_info.iloc[val_idx][group_by].unique()
+        logger.debug(f"Fold: train groups={len(train_groups)}, val groups={len(val_groups)}")
+    
+    return folds
+
+
+def create_purged_cv_split(
+    panel_df: pd.DataFrame,
+    n_folds: int = 5,
+    gap_months: int = 3,
+    min_train_months: int = -6,
+    stratify_by: Optional[str] = 'bucket',
+    random_state: int = 42
+) -> List[Tuple[pd.DataFrame, pd.DataFrame]]:
+    """
+    Create purged cross-validation splits with a time gap between train and val.
+    
+    This helps prevent data leakage from temporal proximity. The gap ensures
+    that recent training data doesn't overlap with validation data.
+    
+    Args:
+        panel_df: Full panel data
+        n_folds: Number of folds
+        gap_months: Number of months gap between train and val
+        min_train_months: Minimum months_postgx to include in training
+        stratify_by: Column to stratify by (if any)
+        random_state: For reproducibility
+        
+    Returns:
+        List of (train_df, val_df) tuples
+    """
+    series_keys = ['country', 'brand_name']
+    
+    # First, create series-level folds
+    if stratify_by and stratify_by in panel_df.columns:
+        series_info = panel_df[series_keys + [stratify_by]].drop_duplicates()
+        from sklearn.model_selection import StratifiedKFold
+        skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=random_state)
+        split_iter = skf.split(series_info, series_info[stratify_by])
+    else:
+        series_info = panel_df[series_keys].drop_duplicates()
+        from sklearn.model_selection import KFold
+        kf = KFold(n_splits=n_folds, shuffle=True, random_state=random_state)
+        split_iter = kf.split(series_info)
+    
+    folds = []
+    for fold_idx, (train_idx, val_idx) in enumerate(split_iter):
+        train_series = series_info.iloc[train_idx][series_keys]
+        val_series = series_info.iloc[val_idx][series_keys]
+        
+        train_panel = panel_df.merge(train_series, on=series_keys, how='inner')
+        val_panel = panel_df.merge(val_series, on=series_keys, how='inner')
+        
+        # Apply purging: use only months up to (val_min_month - gap_months) for training
+        val_min_month = val_panel['months_postgx'].min()
+        train_cutoff = val_min_month - gap_months
+        
+        # Filter training data
+        train_df = train_panel[
+            (train_panel['months_postgx'] >= min_train_months) &
+            (train_panel['months_postgx'] <= train_cutoff)
+        ].copy()
+        
+        # Validation data stays as is
+        val_df = val_panel.copy()
+        
+        if len(train_df) > 0 and len(val_df) > 0:
+            folds.append((train_df, val_df))
+            logger.info(
+                f"Fold {fold_idx + 1}: train months [{min_train_months}, {train_cutoff}], "
+                f"val starts at {val_min_month}, gap={gap_months}"
+            )
+        else:
+            logger.warning(f"Fold {fold_idx + 1}: skipped (empty train or val)")
+    
+    return folds
+
+
+def create_nested_cv(
+    panel_df: pd.DataFrame,
+    outer_folds: int = 5,
+    inner_folds: int = 3,
+    stratify_by: str = 'bucket',
+    random_state: int = 42
+) -> List[Dict]:
+    """
+    Create nested cross-validation for unbiased model selection.
+    
+    The outer loop is used for final model evaluation.
+    The inner loop is used for hyperparameter tuning.
+    
+    Args:
+        panel_df: Full panel data
+        outer_folds: Number of outer CV folds
+        inner_folds: Number of inner CV folds
+        stratify_by: Column to stratify by
+        random_state: For reproducibility
+        
+    Returns:
+        List of dicts with keys:
+            - 'outer_train': DataFrame for outer training (includes inner CV)
+            - 'outer_val': DataFrame for outer validation (held out)
+            - 'inner_folds': List of (inner_train_df, inner_val_df) tuples
+    """
+    series_keys = ['country', 'brand_name']
+    series_info = panel_df[series_keys + [stratify_by]].drop_duplicates()
+    
+    from sklearn.model_selection import StratifiedKFold
+    
+    outer_skf = StratifiedKFold(n_splits=outer_folds, shuffle=True, random_state=random_state)
+    
+    nested_folds = []
+    for outer_idx, (outer_train_idx, outer_val_idx) in enumerate(outer_skf.split(series_info, series_info[stratify_by])):
+        outer_train_series = series_info.iloc[outer_train_idx][series_keys]
+        outer_val_series = series_info.iloc[outer_val_idx][series_keys]
+        
+        outer_train_df = panel_df.merge(outer_train_series, on=series_keys, how='inner')
+        outer_val_df = panel_df.merge(outer_val_series, on=series_keys, how='inner')
+        
+        # Create inner folds within outer training data
+        inner_series_info = outer_train_df[series_keys + [stratify_by]].drop_duplicates()
+        inner_skf = StratifiedKFold(n_splits=inner_folds, shuffle=True, random_state=random_state + outer_idx)
+        
+        inner_folds_list = []
+        for inner_train_idx, inner_val_idx in inner_skf.split(inner_series_info, inner_series_info[stratify_by]):
+            inner_train_series = inner_series_info.iloc[inner_train_idx][series_keys]
+            inner_val_series = inner_series_info.iloc[inner_val_idx][series_keys]
+            
+            inner_train_df = outer_train_df.merge(inner_train_series, on=series_keys, how='inner')
+            inner_val_df = outer_train_df.merge(inner_val_series, on=series_keys, how='inner')
+            
+            inner_folds_list.append((inner_train_df, inner_val_df))
+        
+        nested_folds.append({
+            'outer_train': outer_train_df,
+            'outer_val': outer_val_df,
+            'inner_folds': inner_folds_list
+        })
+        
+        logger.info(
+            f"Outer fold {outer_idx + 1}: "
+            f"train={len(outer_train_df[series_keys].drop_duplicates())} series, "
+            f"val={len(outer_val_df[series_keys].drop_duplicates())} series, "
+            f"inner folds={len(inner_folds_list)}"
+        )
+    
+    return nested_folds
+
+
+def validate_cv_respects_scenario_constraints(
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    scenario: int
+) -> Tuple[bool, List[str]]:
+    """
+    Verify that CV split respects scenario constraints.
+    
+    Checks:
+    1. No post-forecast-window information leaks into feature computation
+    2. Respects the same history/horizon separation as competition scenarios
+    3. Series integrity is maintained (no mixing months across splits)
+    
+    Args:
+        train_df: Training DataFrame
+        val_df: Validation DataFrame  
+        scenario: 1 or 2
+        
+    Returns:
+        (is_valid, list of violation messages)
+    """
+    from .features import _normalize_scenario
+    scenario = _normalize_scenario(scenario)
+    
+    violations = []
+    series_keys = ['country', 'brand_name']
+    
+    # Check 1: No series overlap
+    train_series = set(train_df[series_keys].drop_duplicates().itertuples(index=False, name=None))
+    val_series = set(val_df[series_keys].drop_duplicates().itertuples(index=False, name=None))
+    overlap = train_series & val_series
+    if overlap:
+        violations.append(f"Series overlap between train and val: {len(overlap)} series")
+    
+    # Check 2: Scenario-specific cutoff validation
+    if scenario == 1:
+        # For S1, validation should only have months_postgx >= 0
+        if 'months_postgx' in val_df.columns:
+            val_min = val_df['months_postgx'].min()
+            if val_min < 0:
+                violations.append(f"S1 validation has pre-entry data (min month={val_min})")
+    elif scenario == 2:
+        # For S2, validation should only have months_postgx >= 6
+        if 'months_postgx' in val_df.columns:
+            val_min = val_df['months_postgx'].min()
+            if val_min < 6:
+                violations.append(f"S2 validation has months < 6 (min month={val_min})")
+    
+    # Check 3: Each series has all its months in one split
+    if 'months_postgx' in train_df.columns:
+        for country, brand in train_series:
+            train_months = set(train_df[
+                (train_df['country'] == country) & (train_df['brand_name'] == brand)
+            ]['months_postgx'])
+            val_months = set(val_df[
+                (val_df['country'] == country) & (val_df['brand_name'] == brand)
+            ]['months_postgx']) if (country, brand) in val_series else set()
+            
+            if train_months & val_months:
+                violations.append(
+                    f"Series ({country}, {brand}) has months in both splits: "
+                    f"train={sorted(train_months)[:5]}..., val={sorted(val_months)[:5]}..."
+                )
+                break  # Just report first violation
+    
+    is_valid = len(violations) == 0
+    if not is_valid:
+        for v in violations:
+            logger.warning(f"CV constraint violation: {v}")
+    else:
+        logger.info(f"CV split validated for scenario {scenario}")
+    
+    return is_valid, violations
+
+
+def aggregate_cv_scores(
+    cv_scores: List[Dict[str, float]],
+    metric_names: Optional[List[str]] = None
+) -> Dict[str, Dict[str, float]]:
+    """
+    Aggregate CV scores with confidence intervals.
+    
+    Args:
+        cv_scores: List of dicts, each containing metric scores for one fold
+        metric_names: List of metric names to aggregate (if None, use all keys)
+        
+    Returns:
+        Dict mapping metric names to {mean, std, ci_lower, ci_upper, min, max, n_folds}
+    """
+    from scipy import stats
+    
+    if not cv_scores:
+        return {}
+    
+    if metric_names is None:
+        metric_names = list(cv_scores[0].keys())
+    
+    results = {}
+    for metric in metric_names:
+        values = [score[metric] for score in cv_scores if metric in score and not np.isnan(score[metric])]
+        
+        if not values:
+            results[metric] = {'mean': np.nan, 'std': np.nan, 'n_folds': 0}
+            continue
+        
+        mean = np.mean(values)
+        std = np.std(values, ddof=1) if len(values) > 1 else 0.0
+        n_folds = len(values)
+        
+        # 95% confidence interval
+        if n_folds > 1:
+            ci = stats.t.interval(0.95, df=n_folds-1, loc=mean, scale=std/np.sqrt(n_folds))
+            ci_lower, ci_upper = ci
+        else:
+            ci_lower, ci_upper = mean, mean
+        
+        results[metric] = {
+            'mean': mean,
+            'std': std,
+            'ci_lower': ci_lower,
+            'ci_upper': ci_upper,
+            'min': min(values),
+            'max': max(values),
+            'n_folds': n_folds
+        }
+    
+    return results
+
+
+def create_cv_comparison_table(
+    cv_results: Dict[str, List[Dict[str, float]]],
+    primary_metric: str = 'metric1_official'
+) -> pd.DataFrame:
+    """
+    Create a comparison table for different models across CV folds.
+    
+    Args:
+        cv_results: Dict mapping model names to list of fold scores
+        primary_metric: Primary metric for ranking
+        
+    Returns:
+        DataFrame with model comparison statistics
+    """
+    rows = []
+    for model_name, fold_scores in cv_results.items():
+        agg = aggregate_cv_scores(fold_scores, [primary_metric])
+        
+        if primary_metric in agg:
+            stats = agg[primary_metric]
+            rows.append({
+                'model': model_name,
+                'mean': stats['mean'],
+                'std': stats['std'],
+                'ci_lower': stats['ci_lower'],
+                'ci_upper': stats['ci_upper'],
+                'min': stats['min'],
+                'max': stats['max'],
+                'n_folds': stats['n_folds']
+            })
+    
+    df = pd.DataFrame(rows)
+    if len(df) > 0:
+        df = df.sort_values('mean', ascending=True)  # Lower is better for error metrics
+        df['rank'] = range(1, len(df) + 1)
+    
+    return df
+
+
+def paired_t_test(
+    scores_a: List[float],
+    scores_b: List[float]
+) -> Dict[str, float]:
+    """
+    Perform paired t-test to compare two models.
+    
+    Args:
+        scores_a: CV scores for model A
+        scores_b: CV scores for model B (same folds)
+        
+    Returns:
+        Dict with t_statistic, p_value, mean_diff, ci_diff_lower, ci_diff_upper
+    """
+    from scipy import stats
+    
+    if len(scores_a) != len(scores_b):
+        raise ValueError("Score lists must have same length (same number of folds)")
+    
+    if len(scores_a) < 2:
+        return {
+            't_statistic': np.nan,
+            'p_value': np.nan,
+            'mean_diff': np.nan,
+            'is_significant': False
+        }
+    
+    scores_a = np.array(scores_a)
+    scores_b = np.array(scores_b)
+    
+    # Paired t-test
+    t_stat, p_value = stats.ttest_rel(scores_a, scores_b)
+    
+    # Mean difference
+    diff = scores_a - scores_b
+    mean_diff = np.mean(diff)
+    std_diff = np.std(diff, ddof=1)
+    n = len(diff)
+    
+    # 95% CI for difference
+    ci = stats.t.interval(0.95, df=n-1, loc=mean_diff, scale=std_diff/np.sqrt(n))
+    
+    return {
+        't_statistic': t_stat,
+        'p_value': p_value,
+        'mean_diff': mean_diff,
+        'ci_diff_lower': ci[0],
+        'ci_diff_upper': ci[1],
+        'is_significant': p_value < 0.05
+    }

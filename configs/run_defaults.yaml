@@ -84,6 +84,7 @@ paths:
   artifacts_dir: "artifacts"
   submissions_dir: "submissions"
   logs_dir: "artifacts/logs"
+  metrics_dir: "artifacts/metrics"
 
 # Output settings
 output:
@@ -93,13 +94,30 @@ output:
   save_training_curves: true
   save_config_snapshot: true
   
-# Metrics to track (in addition to official metrics)
+# Metrics configuration (Section 6.7)
 metrics:
-  primary: "official_metric"          # Use official metric for model selection
+  # Primary metric for model selection
+  primary: "metric1_official"
+  
+  # Secondary metrics to track
   secondary:
-    - rmse
-    - mae
-    - r2
+    - rmse_y_norm
+    - mae_y_norm
+    - mape_y_norm
+  
+  # Per-series metrics logging
+  log_per_series: true
+  
+  # Directory pattern for metrics output
+  log_dir_pattern: "artifacts/{run_id}/metrics"
+  
+  # Canonical metric names (used throughout codebase)
+  names:
+    scenario1: "metric1_official"
+    scenario2: "metric2_official"
+    rmse: "rmse_y_norm"
+    mae: "mae_y_norm"
+    mape: "mape_y_norm"
 
 # Logging configuration
 logging:

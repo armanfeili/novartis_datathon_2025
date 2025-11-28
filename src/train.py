@@ -26,7 +26,11 @@ from .data import (
 )
 from .features import make_features, select_training_rows, _normalize_scenario, get_features
 from .validation import create_validation_split, get_fold_series
-from .evaluate import compute_metric1, compute_metric2, create_aux_file
+from .evaluate import (
+    compute_metric1, compute_metric2, create_aux_file,
+    make_metric_record, save_metric_records,
+    METRIC_NAME_S1, METRIC_NAME_S2, METRIC_NAME_RMSE, METRIC_NAME_MAE
+)
 
 logger = logging.getLogger(__name__)
 
@@ -276,12 +280,16 @@ def train_scenario_model(
     scenario,
     model_type: str = 'catboost',
     model_config: Optional[dict] = None,
-    run_config: Optional[dict] = None
+    run_config: Optional[dict] = None,
+    run_id: Optional[str] = None,
+    metrics_dir: Optional[Path] = None,
+    fold_idx: Optional[int] = None
 ) -> Tuple[Any, Dict]:
     """
     Train model for specific scenario with early stopping.
     
     Uses sample weights from META to align with official metric.
+    Optionally saves unified metric records for training/validation.
     
     Args:
         X_train, y_train, meta_train: Training data
@@ -290,6 +298,9 @@ def train_scenario_model(
         model_type: 'catboost', 'lightgbm', 'xgboost', 'linear'
         model_config: Model configuration dict
         run_config: Run configuration dict (for sample weights)
+        run_id: Optional run ID for metrics logging
+        metrics_dir: Optional directory to save metrics
+        fold_idx: Optional fold index for CV logging
         
     Returns:
         (trained_model, metrics_dict)
@@ -358,6 +369,40 @@ def train_scenario_model(
         'n_features': len(X_train.columns),
     }
     
+    # Save unified metric records if metrics_dir is provided
+    if metrics_dir is not None:
+        metrics_dir = Path(metrics_dir)
+        metrics_dir.mkdir(parents=True, exist_ok=True)
+        metrics_path = metrics_dir / 'metrics.csv'
+        
+        # Determine phase and split based on fold_idx
+        phase = 'cv' if fold_idx is not None else 'train'
+        split_name = f'fold_{fold_idx}' if fold_idx is not None else 'val'
+        step = fold_idx if fold_idx is not None else 'final'
+        
+        # Create metric records
+        official_metric_name = METRIC_NAME_S1 if scenario == 1 else METRIC_NAME_S2
+        records = [
+            make_metric_record(
+                phase=phase, split=split_name, scenario=scenario,
+                model_name=model_type, metric_name=official_metric_name,
+                value=official_metric, run_id=run_id, step=step
+            ),
+            make_metric_record(
+                phase=phase, split=split_name, scenario=scenario,
+                model_name=model_type, metric_name=METRIC_NAME_RMSE,
+                value=rmse, run_id=run_id, step=step
+            ),
+            make_metric_record(
+                phase=phase, split=split_name, scenario=scenario,
+                model_name=model_type, metric_name=METRIC_NAME_MAE,
+                value=mae, run_id=run_id, step=step
+            ),
+        ]
+        
+        save_metric_records(records, metrics_path, append=True)
+        logger.debug(f"Saved {len(records)} metric records to {metrics_path}")
+    
     logger.info(f"Validation metrics: Official={official_metric:.4f}, RMSE={rmse:.4f}, MAE={mae:.4f}")
     logger.info(f"Training time: {train_time:.2f} seconds")
     
@@ -396,7 +441,9 @@ def run_cross_validation(
     run_config: Optional[dict] = None,
     n_folds: int = 5,
     save_oof: bool = True,
-    artifacts_dir: Optional[Path] = None
+    artifacts_dir: Optional[Path] = None,
+    run_id: Optional[str] = None,
+    metrics_dir: Optional[Path] = None
 ) -> Tuple[List[Any], Dict, pd.DataFrame]:
     """
     Run K-fold cross-validation at series level.
@@ -410,6 +457,8 @@ def run_cross_validation(
         n_folds: Number of folds
         save_oof: Whether to save out-of-fold predictions
         artifacts_dir: Directory to save artifacts
+        run_id: Optional run ID for metrics logging
+        metrics_dir: Optional directory to save unified metric records
         
     Returns:
         (list of models, aggregated metrics dict, OOF predictions DataFrame)
@@ -433,14 +482,17 @@ def run_cross_validation(
         X_train, y_train, meta_train = split_features_target_meta(train_df)
         X_val, y_val, meta_val = split_features_target_meta(val_df)
         
-        # Train model
+        # Train model (with unified logging if metrics_dir provided)
         model, metrics = train_scenario_model(
             X_train, y_train, meta_train,
             X_val, y_val, meta_val,
             scenario=scenario,
             model_type=model_type,
             model_config=model_config,
-            run_config=run_config
+            run_config=run_config,
+            run_id=run_id,
+            metrics_dir=metrics_dir,
+            fold_idx=fold_idx
         )
         
         metrics['fold'] = fold_idx + 1
@@ -475,6 +527,48 @@ def run_cross_validation(
         'scenario': scenario,
         'model_type': model_type,
     }
+    
+    # Save aggregated CV metrics using unified logging
+    if metrics_dir is not None:
+        metrics_dir = Path(metrics_dir)
+        metrics_dir.mkdir(parents=True, exist_ok=True)
+        metrics_path = metrics_dir / 'metrics.csv'
+        
+        official_metric_name = METRIC_NAME_S1 if scenario == 1 else METRIC_NAME_S2
+        agg_records = [
+            make_metric_record(
+                phase='cv', split='cv_agg', scenario=scenario,
+                model_name=model_type, metric_name=f'{official_metric_name}_mean',
+                value=agg_metrics['cv_official_mean'], run_id=run_id, step='cv_agg'
+            ),
+            make_metric_record(
+                phase='cv', split='cv_agg', scenario=scenario,
+                model_name=model_type, metric_name=f'{official_metric_name}_std',
+                value=agg_metrics['cv_official_std'], run_id=run_id, step='cv_agg'
+            ),
+            make_metric_record(
+                phase='cv', split='cv_agg', scenario=scenario,
+                model_name=model_type, metric_name=f'{METRIC_NAME_RMSE}_mean',
+                value=agg_metrics['cv_rmse_mean'], run_id=run_id, step='cv_agg'
+            ),
+            make_metric_record(
+                phase='cv', split='cv_agg', scenario=scenario,
+                model_name=model_type, metric_name=f'{METRIC_NAME_RMSE}_std',
+                value=agg_metrics['cv_rmse_std'], run_id=run_id, step='cv_agg'
+            ),
+            make_metric_record(
+                phase='cv', split='cv_agg', scenario=scenario,
+                model_name=model_type, metric_name=f'{METRIC_NAME_MAE}_mean',
+                value=agg_metrics['cv_mae_mean'], run_id=run_id, step='cv_agg'
+            ),
+            make_metric_record(
+                phase='cv', split='cv_agg', scenario=scenario,
+                model_name=model_type, metric_name=f'{METRIC_NAME_MAE}_std',
+                value=agg_metrics['cv_mae_std'], run_id=run_id, step='cv_agg'
+            ),
+        ]
+        save_metric_records(agg_records, metrics_path, append=True)
+        logger.debug(f"Saved {len(agg_records)} CV aggregate metric records to {metrics_path}")
     
     logger.info(f"CV Complete - Official: {agg_metrics['cv_official_mean']:.4f} ± {agg_metrics['cv_official_std']:.4f}")
     logger.info(f"CV Complete - RMSE: {agg_metrics['cv_rmse_mean']:.4f} ± {agg_metrics['cv_rmse_std']:.4f}")
