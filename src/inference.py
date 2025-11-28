@@ -17,14 +17,14 @@ import numpy as np
 import pandas as pd
 
 from .utils import load_config, setup_logging, timer, get_project_root
-from .data import load_raw_data, prepare_base_panel, compute_pre_entry_stats, handle_missing_values
-from .features import make_features, get_feature_columns
+from .data import load_raw_data, prepare_base_panel, compute_pre_entry_stats, handle_missing_values, get_panel
+from .features import make_features, get_feature_columns, get_features
 from .train import get_feature_matrix_and_meta
 
 logger = logging.getLogger(__name__)
 
 
-def detect_test_scenarios(test_volume: pd.DataFrame) -> Dict[str, List[Tuple[str, str]]]:
+def detect_test_scenarios(test_volume: pd.DataFrame) -> Dict[int, List[Tuple[str, str]]]:
     """
     Identify which test series belong to Scenario 1 vs 2.
     
@@ -37,8 +37,8 @@ def detect_test_scenarios(test_volume: pd.DataFrame) -> Dict[str, List[Tuple[str
         test_volume: Test volume DataFrame with columns [country, brand_name, months_postgx, ...]
         
     Returns:
-        {'scenario1': list of (country, brand_name) tuples,
-         'scenario2': list of (country, brand_name) tuples}
+        {1: list of (country, brand_name) tuples,
+         2: list of (country, brand_name) tuples}
     """
     series_keys = ['country', 'brand_name']
     
@@ -66,7 +66,8 @@ def detect_test_scenarios(test_volume: pd.DataFrame) -> Dict[str, List[Tuple[str
     series_with_early['has_early'] = True
     
     series_info = series_info.merge(series_with_early, on=series_keys, how='left')
-    series_info['has_early'] = series_info['has_early'].fillna(False)
+    # Convert NaN to False properly without FutureWarning
+    series_info['has_early'] = series_info['has_early'].isna().apply(lambda x: not x)
     
     # Scenario 2: has months 0-5 data
     # Scenario 1: does not have months 0-5 data
@@ -74,12 +75,12 @@ def detect_test_scenarios(test_volume: pd.DataFrame) -> Dict[str, List[Tuple[str
     scenario1_series = series_info[~series_info['has_early']][series_keys]
     
     result = {
-        'scenario1': list(scenario1_series.itertuples(index=False, name=None)),
-        'scenario2': list(scenario2_series.itertuples(index=False, name=None))
+        1: list(scenario1_series.itertuples(index=False, name=None)),
+        2: list(scenario2_series.itertuples(index=False, name=None))
     }
     
-    logger.info(f"Detected {len(result['scenario1'])} Scenario 1 series")
-    logger.info(f"Detected {len(result['scenario2'])} Scenario 2 series")
+    logger.info(f"Detected {len(result[1])} Scenario 1 series")
+    logger.info(f"Detected {len(result[2])} Scenario 2 series")
     
     return result
 
@@ -116,12 +117,12 @@ def generate_submission(
         predictions = []
         
         # Process Scenario 1 series
-        if len(scenario_split['scenario1']) > 0:
-            s1_series = pd.DataFrame(scenario_split['scenario1'], columns=['country', 'brand_name'])
+        if len(scenario_split[1]) > 0:
+            s1_series = pd.DataFrame(scenario_split[1], columns=['country', 'brand_name'])
             s1_panel = test_panel.merge(s1_series, on=['country', 'brand_name'])
             
             # Build features for Scenario 1
-            s1_features = make_features(s1_panel, scenario='scenario1', mode='test')
+            s1_features = make_features(s1_panel, scenario=1, mode='test')
             
             # Filter to prediction rows (months 0-23)
             s1_pred_rows = s1_features[
@@ -150,12 +151,12 @@ def generate_submission(
                 logger.info(f"Scenario 1: {len(pred_df)} predictions generated")
         
         # Process Scenario 2 series
-        if len(scenario_split['scenario2']) > 0:
-            s2_series = pd.DataFrame(scenario_split['scenario2'], columns=['country', 'brand_name'])
+        if len(scenario_split[2]) > 0:
+            s2_series = pd.DataFrame(scenario_split[2], columns=['country', 'brand_name'])
             s2_panel = test_panel.merge(s2_series, on=['country', 'brand_name'])
             
             # Build features for Scenario 2
-            s2_features = make_features(s2_panel, scenario='scenario2', mode='test')
+            s2_features = make_features(s2_panel, scenario=2, mode='test')
             
             # Filter to prediction rows (months 6-23)
             s2_pred_rows = s2_features[
@@ -363,6 +364,8 @@ def main():
                         help="Output submission file path")
     parser.add_argument('--data-config', type=str, default='configs/data.yaml',
                         help="Path to data config")
+    parser.add_argument('--force-rebuild', action='store_true',
+                        help="Force rebuild of cached test panel")
     
     args = parser.parse_args()
     
@@ -371,17 +374,14 @@ def main():
     # Load config
     data_config = load_config(args.data_config)
     
-    # Load test data
+    # Load test data using cached panel
     with timer("Load test data"):
-        test_data = load_raw_data(data_config, split='test')
-        
-        test_panel = prepare_base_panel(
-            test_data['volume'],
-            test_data['generics'],
-            test_data['medicine_info']
+        test_panel = get_panel(
+            split='test',
+            config=data_config,
+            use_cache=True,
+            force_rebuild=args.force_rebuild
         )
-        test_panel = handle_missing_values(test_panel)
-        test_panel = compute_pre_entry_stats(test_panel, is_train=False)
     
     # Load submission template
     template_path = get_project_root() / data_config['files']['submission_template']

@@ -8,25 +8,31 @@ Handles feature/target/meta separation to prevent leakage.
 import argparse
 import logging
 import json
+import subprocess
+import time
 from pathlib import Path
 from datetime import datetime
-from typing import Tuple, Optional, Dict, Any
+from typing import Tuple, Optional, Dict, Any, List
 
 import numpy as np
 import pandas as pd
 import yaml
 
 from .utils import setup_logging, load_config, set_seed, timer, get_project_root
-from .data import load_raw_data, prepare_base_panel, compute_pre_entry_stats, handle_missing_values
-from .features import make_features, select_training_rows
-from .validation import create_validation_split
+from .data import (
+    load_raw_data, prepare_base_panel, compute_pre_entry_stats, 
+    handle_missing_values, META_COLS, ID_COLS, TIME_COL,
+    get_panel, verify_no_future_leakage
+)
+from .features import make_features, select_training_rows, _normalize_scenario, get_features
+from .validation import create_validation_split, get_fold_series
 from .evaluate import compute_metric1, compute_metric2, create_aux_file
 
 logger = logging.getLogger(__name__)
 
-# Define column groups to prevent leakage
+# Re-export META_COLS from data.py for backward compatibility
 # These columns are NEVER used as model features
-META_COLS = ['country', 'brand_name', 'months_postgx', 'bucket', 'avg_vol_12m', 'y_norm', 'volume', 'mean_erosion', 'month']
+# Canonical definition is in src/data.py
 TARGET_COL = 'y_norm'
 
 
@@ -96,9 +102,92 @@ def get_feature_matrix_and_meta(
     return X, meta
 
 
-def compute_sample_weights(meta_df: pd.DataFrame, scenario: str) -> pd.Series:
+def get_git_commit_hash() -> Optional[str]:
+    """Get current git commit hash if in a git repository."""
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', 'HEAD'],
+            capture_output=True,
+            text=True,
+            cwd=get_project_root(),
+            timeout=5
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()[:8]  # Short hash
+    except Exception:
+        pass
+    return None
+
+
+def get_experiment_metadata(
+    scenario: int,
+    model_type: str,
+    run_config: dict,
+    data_config: dict,
+    model_config: dict,
+    panel_df: pd.DataFrame,
+    train_df: pd.DataFrame,
+    val_df: Optional[pd.DataFrame] = None
+) -> Dict[str, Any]:
+    """
+    Collect experiment metadata for logging.
+    
+    Args:
+        scenario: Scenario number (1 or 2)
+        model_type: Type of model being trained
+        run_config: Run configuration dictionary
+        data_config: Data configuration dictionary
+        model_config: Model configuration dictionary
+        panel_df: Full panel DataFrame
+        train_df: Training DataFrame
+        val_df: Validation DataFrame (optional)
+        
+    Returns:
+        Dictionary with experiment metadata
+    """
+    # Get unique series counts
+    n_total_series = panel_df[['country', 'brand_name']].drop_duplicates().shape[0]
+    n_train_series = train_df[['country', 'brand_name']].drop_duplicates().shape[0]
+    n_val_series = val_df[['country', 'brand_name']].drop_duplicates().shape[0] if val_df is not None else 0
+    
+    metadata = {
+        'timestamp': datetime.now().isoformat(),
+        'git_commit': get_git_commit_hash(),
+        'scenario': scenario,
+        'model_type': model_type,
+        'random_seed': run_config.get('reproducibility', {}).get('seed', 42),
+        'dataset': {
+            'total_rows': len(panel_df),
+            'total_series': n_total_series,
+            'train_rows': len(train_df),
+            'train_series': n_train_series,
+            'val_rows': len(val_df) if val_df is not None else 0,
+            'val_series': n_val_series,
+        },
+        'validation': {
+            'val_fraction': run_config.get('validation', {}).get('val_fraction', 0.2),
+            'stratify_by': run_config.get('validation', {}).get('stratify_by', 'bucket'),
+            'split_level': run_config.get('validation', {}).get('split_level', 'series'),
+        },
+        'configs': {
+            'run_config': run_config,
+            'data_config': data_config,
+            'model_config': model_config,
+        }
+    }
+    
+    return metadata
+
+
+def compute_sample_weights(
+    meta_df: pd.DataFrame, 
+    scenario,
+    config: Optional[dict] = None
+) -> pd.Series:
     """
     Compute sample weights that approximate official metric weighting.
+    
+    Default weights (can be overridden via config):
     
     Scenario 1:
         - Months 0-5: weight 3.0 (highest priority)
@@ -115,31 +204,58 @@ def compute_sample_weights(meta_df: pd.DataFrame, scenario: str) -> pd.Series:
     
     Args:
         meta_df: DataFrame with months_postgx and bucket columns
-        scenario: "scenario1" or "scenario2"
+        scenario: 1, 2, "scenario1", or "scenario2"
+        config: Optional config dict with 'sample_weights' section
         
     Returns:
         Series of sample weights aligned with meta_df index
     """
+    scenario = _normalize_scenario(scenario)
     weights = pd.Series(1.0, index=meta_df.index)
+    
+    # Get weights from config or use defaults
+    if config and 'sample_weights' in config:
+        sw_config = config['sample_weights']
+        if scenario == 1:
+            s1_config = sw_config.get('scenario1', {})
+            w_0_5 = s1_config.get('months_0_5', 3.0)
+            w_6_11 = s1_config.get('months_6_11', 1.5)
+            w_12_23 = s1_config.get('months_12_23', 1.0)
+        else:
+            s2_config = sw_config.get('scenario2', {})
+            w_6_11 = s2_config.get('months_6_11', 2.5)
+            w_12_23 = s2_config.get('months_12_23', 1.0)
+            w_0_5 = 1.0  # Not used in S2
+        
+        bucket_weights = sw_config.get('bucket_weights', {})
+        bucket1_w = bucket_weights.get('bucket1', 2.0)
+        bucket2_w = bucket_weights.get('bucket2', 1.0)
+    else:
+        # Default weights
+        if scenario == 1:
+            w_0_5, w_6_11, w_12_23 = 3.0, 1.5, 1.0
+        else:
+            w_0_5, w_6_11, w_12_23 = 1.0, 2.5, 1.0
+        bucket1_w, bucket2_w = 2.0, 1.0
     
     # Time-based weights
     months = meta_df['months_postgx']
     
-    if scenario == 'scenario1':
+    if scenario == 1:
         # Phase 1A: 50% months 0-5, 20% months 6-11, 10% months 12-23
-        weights = np.where(months <= 5, 3.0, weights)
-        weights = np.where((months >= 6) & (months <= 11), 1.5, weights)
-        weights = np.where(months >= 12, 1.0, weights)
-    elif scenario == 'scenario2':
+        weights = np.where(months <= 5, w_0_5, weights)
+        weights = np.where((months >= 6) & (months <= 11), w_6_11, weights)
+        weights = np.where(months >= 12, w_12_23, weights)
+    elif scenario == 2:
         # Phase 1B: 50% months 6-11, 30% months 12-23
-        weights = np.where((months >= 6) & (months <= 11), 2.5, weights)
-        weights = np.where(months >= 12, 1.0, weights)
+        weights = np.where((months >= 6) & (months <= 11), w_6_11, weights)
+        weights = np.where(months >= 12, w_12_23, weights)
     
     weights = pd.Series(weights, index=meta_df.index)
     
     # Bucket weights
     if 'bucket' in meta_df.columns:
-        bucket_weight = meta_df['bucket'].map({1: 2.0, 2: 1.0}).fillna(1.0)
+        bucket_weight = meta_df['bucket'].map({1: bucket1_w, 2: bucket2_w}).fillna(1.0)
         weights = weights * bucket_weight
     
     # Normalize so weights sum to len(weights) (optional, helps with loss scale)
@@ -157,9 +273,10 @@ def train_scenario_model(
     X_val: pd.DataFrame,
     y_val: pd.Series,
     meta_val: pd.DataFrame,
-    scenario: str,
+    scenario,
     model_type: str = 'catboost',
-    config: Optional[dict] = None
+    model_config: Optional[dict] = None,
+    run_config: Optional[dict] = None
 ) -> Tuple[Any, Dict]:
     """
     Train model for specific scenario with early stopping.
@@ -169,25 +286,32 @@ def train_scenario_model(
     Args:
         X_train, y_train, meta_train: Training data
         X_val, y_val, meta_val: Validation data
-        scenario: "scenario1" or "scenario2"
+        scenario: 1, 2, "scenario1", or "scenario2"
         model_type: 'catboost', 'lightgbm', 'xgboost', 'linear'
-        config: Model configuration dict
+        model_config: Model configuration dict
+        run_config: Run configuration dict (for sample weights)
         
     Returns:
         (trained_model, metrics_dict)
     """
+    scenario = _normalize_scenario(scenario)
     # Import model class
-    model = _get_model(model_type, config)
+    model = _get_model(model_type, model_config)
     
-    # Compute sample weights
-    sample_weights = compute_sample_weights(meta_train, scenario)
+    # Compute sample weights (using run_config if available)
+    sample_weights = compute_sample_weights(meta_train, scenario, config=run_config)
     
-    with timer(f"Train {model_type} for {scenario}"):
+    # Track training time
+    train_start = time.time()
+    
+    with timer(f"Train {model_type} for scenario {scenario}"):
         model.fit(
             X_train, y_train,
             X_val=X_val, y_val=y_val,
             sample_weight=sample_weights
         )
+    
+    train_time = time.time() - train_start
     
     # Compute validation metrics
     val_preds_norm = model.predict(X_val)
@@ -210,7 +334,7 @@ def train_scenario_model(
     
     # Compute official metric
     try:
-        if scenario == 'scenario1':
+        if scenario == 1:
             official_metric = compute_metric1(df_actual, df_pred, val_with_bucket)
         else:
             official_metric = compute_metric2(df_actual, df_pred, val_with_bucket)
@@ -228,9 +352,14 @@ def train_scenario_model(
         'mae_norm': mae,
         'scenario': scenario,
         'model_type': model_type,
+        'train_time_seconds': train_time,
+        'n_train_samples': len(X_train),
+        'n_val_samples': len(X_val),
+        'n_features': len(X_train.columns),
     }
     
     logger.info(f"Validation metrics: Official={official_metric:.4f}, RMSE={rmse:.4f}, MAE={mae:.4f}")
+    logger.info(f"Training time: {train_time:.2f} seconds")
     
     return model, metrics
 
@@ -259,38 +388,164 @@ def _get_model(model_type: str, config: Optional[dict] = None):
         raise ValueError(f"Unknown model type: {model_type}")
 
 
+def run_cross_validation(
+    panel_features: pd.DataFrame,
+    scenario,
+    model_type: str = 'catboost',
+    model_config: Optional[dict] = None,
+    run_config: Optional[dict] = None,
+    n_folds: int = 5,
+    save_oof: bool = True,
+    artifacts_dir: Optional[Path] = None
+) -> Tuple[List[Any], Dict, pd.DataFrame]:
+    """
+    Run K-fold cross-validation at series level.
+    
+    Args:
+        panel_features: DataFrame with features already built
+        scenario: 1 or 2
+        model_type: Model type to train
+        model_config: Model configuration dict
+        run_config: Run configuration dict
+        n_folds: Number of folds
+        save_oof: Whether to save out-of-fold predictions
+        artifacts_dir: Directory to save artifacts
+        
+    Returns:
+        (list of models, aggregated metrics dict, OOF predictions DataFrame)
+    """
+    scenario = _normalize_scenario(scenario)
+    seed = run_config.get('reproducibility', {}).get('seed', 42) if run_config else 42
+    
+    # Get folds
+    folds = get_fold_series(panel_features, n_folds=n_folds, random_state=seed)
+    
+    fold_metrics = []
+    models = []
+    oof_predictions = []
+    
+    logger.info(f"Starting {n_folds}-fold cross-validation for scenario {scenario}")
+    
+    for fold_idx, (train_df, val_df) in enumerate(folds):
+        logger.info(f"=== Fold {fold_idx + 1}/{n_folds} ===")
+        
+        # Split features/target/meta
+        X_train, y_train, meta_train = split_features_target_meta(train_df)
+        X_val, y_val, meta_val = split_features_target_meta(val_df)
+        
+        # Train model
+        model, metrics = train_scenario_model(
+            X_train, y_train, meta_train,
+            X_val, y_val, meta_val,
+            scenario=scenario,
+            model_type=model_type,
+            model_config=model_config,
+            run_config=run_config
+        )
+        
+        metrics['fold'] = fold_idx + 1
+        fold_metrics.append(metrics)
+        models.append(model)
+        
+        # Collect OOF predictions
+        if save_oof:
+            val_preds = model.predict(X_val)
+            oof_df = meta_val[['country', 'brand_name', 'months_postgx']].copy()
+            oof_df['y_true'] = y_val.values
+            oof_df['y_pred'] = val_preds
+            oof_df['fold'] = fold_idx + 1
+            oof_predictions.append(oof_df)
+        
+        logger.info(f"Fold {fold_idx + 1} - Official metric: {metrics['official_metric']:.4f}")
+    
+    # Aggregate metrics
+    official_scores = [m['official_metric'] for m in fold_metrics if not np.isnan(m['official_metric'])]
+    rmse_scores = [m['rmse_norm'] for m in fold_metrics]
+    mae_scores = [m['mae_norm'] for m in fold_metrics]
+    
+    agg_metrics = {
+        'cv_official_mean': np.mean(official_scores) if official_scores else np.nan,
+        'cv_official_std': np.std(official_scores) if official_scores else np.nan,
+        'cv_rmse_mean': np.mean(rmse_scores),
+        'cv_rmse_std': np.std(rmse_scores),
+        'cv_mae_mean': np.mean(mae_scores),
+        'cv_mae_std': np.std(mae_scores),
+        'n_folds': n_folds,
+        'fold_metrics': fold_metrics,
+        'scenario': scenario,
+        'model_type': model_type,
+    }
+    
+    logger.info(f"CV Complete - Official: {agg_metrics['cv_official_mean']:.4f} ± {agg_metrics['cv_official_std']:.4f}")
+    logger.info(f"CV Complete - RMSE: {agg_metrics['cv_rmse_mean']:.4f} ± {agg_metrics['cv_rmse_std']:.4f}")
+    
+    # Combine OOF predictions
+    oof_df = pd.concat(oof_predictions, ignore_index=True) if oof_predictions else pd.DataFrame()
+    
+    # Save artifacts if directory provided
+    if artifacts_dir:
+        artifacts_dir = Path(artifacts_dir)
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save CV metrics
+        with open(artifacts_dir / "cv_metrics.json", "w") as f:
+            json.dump(agg_metrics, f, indent=2, default=str)
+        
+        # Save OOF predictions
+        if len(oof_df) > 0:
+            oof_df.to_csv(artifacts_dir / "oof_predictions.csv", index=False)
+            logger.info(f"OOF predictions saved to {artifacts_dir / 'oof_predictions.csv'}")
+        
+        # Save each fold's model
+        for fold_idx, model in enumerate(models):
+            model_path = artifacts_dir / f"model_fold{fold_idx + 1}.bin"
+            model.save(str(model_path))
+    
+    return models, agg_metrics, oof_df
+
+
 def run_experiment(
-    scenario: str,
+    scenario,
     model_type: str = 'catboost',
     model_config_path: Optional[str] = None,
     run_config_path: str = 'configs/run_defaults.yaml',
     data_config_path: str = 'configs/data.yaml',
-    run_name: Optional[str] = None
+    features_config_path: str = 'configs/features.yaml',
+    run_name: Optional[str] = None,
+    use_cached_features: bool = True,
+    force_rebuild: bool = False
 ) -> Tuple[Any, Dict]:
     """
     Run a full experiment: load data, train model, evaluate.
     
+    Uses get_features() for cached feature loading when use_cached_features=True.
+    
     Args:
-        scenario: "scenario1" or "scenario2"
+        scenario: 1, 2, "scenario1", or "scenario2"
         model_type: Model type to train
         model_config_path: Path to model config
         run_config_path: Path to run defaults config
         data_config_path: Path to data config
+        features_config_path: Path to features config
         run_name: Optional custom run name
+        use_cached_features: If True, use get_features() with caching
+        force_rebuild: If True, rebuild features even if cached
         
     Returns:
         (trained_model, metrics_dict)
     """
+    scenario = _normalize_scenario(scenario)
     # Load configs
     run_config = load_config(run_config_path)
     data_config = load_config(data_config_path)
+    features_config = load_config(features_config_path) if features_config_path else {}
     model_config = load_config(model_config_path) if model_config_path else {}
     
     # Setup
     set_seed(run_config['reproducibility']['seed'])
     
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    run_id = run_name or f"{timestamp}_{model_type}_{scenario}"
+    run_id = run_name or f"{timestamp}_{model_type}_scenario{scenario}"
     
     # Setup artifacts directory
     artifacts_dir = get_project_root() / run_config['paths']['artifacts_dir'] / run_id
@@ -304,27 +559,46 @@ def run_experiment(
         yaml.dump({
             'run_config': run_config,
             'data_config': data_config,
+            'features_config': features_config,
             'model_config': model_config,
             'scenario': scenario,
             'model_type': model_type
         }, f)
     
-    # Load and prepare data
-    with timer("Load and prepare data"):
-        train_data = load_raw_data(data_config, split='train')
+    # Load and prepare data using cached features if enabled
+    if use_cached_features:
+        with timer("Load features (cached)"):
+            X_full, y_full, meta_full = get_features(
+                split='train',
+                scenario=scenario,
+                mode='train',
+                data_config=data_config,
+                features_config=features_config,
+                use_cache=True,
+                force_rebuild=force_rebuild
+            )
+            # Combine for validation split
+            train_rows = pd.concat([X_full, meta_full], axis=1)
+            train_rows['y_norm'] = y_full
+            
+            # Get panel for metadata (load cached)
+            panel = get_panel('train', data_config, use_cache=True, force_rebuild=force_rebuild)
+    else:
+        # Legacy path: build features manually
+        with timer("Load and prepare data"):
+            train_data = load_raw_data(data_config, split='train')
+            
+            panel = prepare_base_panel(
+                train_data['volume'],
+                train_data['generics'],
+                train_data['medicine_info']
+            )
+            panel = handle_missing_values(panel)
+            panel = compute_pre_entry_stats(panel, is_train=True)
         
-        panel = prepare_base_panel(
-            train_data['volume'],
-            train_data['generics'],
-            train_data['medicine_info']
-        )
-        panel = handle_missing_values(panel)
-        panel = compute_pre_entry_stats(panel, is_train=True)
-    
-    # Build features
-    with timer("Feature engineering"):
-        panel_features = make_features(panel, scenario=scenario, mode='train')
-        train_rows = select_training_rows(panel_features, scenario=scenario)
+        with timer("Feature engineering"):
+            panel_features = make_features(panel, scenario=scenario, mode='train', config=features_config)
+            train_rows = select_training_rows(panel_features, scenario=scenario)
     
     # Create validation split
     train_df, val_df = create_validation_split(
@@ -338,13 +612,28 @@ def run_experiment(
     X_train, y_train, meta_train = split_features_target_meta(train_df)
     X_val, y_val, meta_val = split_features_target_meta(val_df)
     
+    # Save experiment metadata
+    metadata = get_experiment_metadata(
+        scenario=scenario,
+        model_type=model_type,
+        run_config=run_config,
+        data_config=data_config,
+        model_config=model_config,
+        panel_df=panel,
+        train_df=train_df,
+        val_df=val_df
+    )
+    with open(artifacts_dir / "metadata.json", "w") as f:
+        json.dump(metadata, f, indent=2, default=str)
+    
     # Train model
     model, metrics = train_scenario_model(
         X_train, y_train, meta_train,
         X_val, y_val, meta_val,
         scenario=scenario,
         model_type=model_type,
-        config=model_config
+        model_config=model_config,
+        run_config=run_config
     )
     
     # Save model
@@ -368,34 +657,119 @@ def run_experiment(
 
 
 def main():
-    """CLI entry point."""
-    parser = argparse.ArgumentParser(description="Train models for Novartis Datathon 2025")
-    parser.add_argument('--scenario', type=str, required=True,
-                        choices=['scenario1', 'scenario2'],
-                        help="Forecasting scenario")
+    """CLI entry point for training models.
+    
+    Examples:
+        # Train a single model with hold-out validation
+        python -m src.train --scenario 1 --model catboost
+        
+        # Train with cross-validation
+        python -m src.train --scenario 1 --model catboost --cv --n-folds 5
+        
+        # Use custom configs
+        python -m src.train --scenario 2 --model lightgbm \\
+            --model-config configs/model_lgbm.yaml \\
+            --run-config configs/run_defaults.yaml
+    """
+    parser = argparse.ArgumentParser(
+        description="Train models for Novartis Datathon 2025",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python -m src.train --scenario 1 --model catboost
+  python -m src.train --scenario 1 --model catboost --cv --n-folds 5
+  python -m src.train --scenario 2 --model lightgbm --model-config configs/model_lgbm.yaml
+        """
+    )
+    parser.add_argument('--scenario', type=int, required=True,
+                        choices=[1, 2],
+                        help="Forecasting scenario: 1 (no actuals) or 2 (6 months actuals)")
     parser.add_argument('--model', type=str, default='catboost',
                         choices=['catboost', 'lightgbm', 'xgboost', 'linear', 
                                 'baseline_global_mean', 'baseline_flat'],
-                        help="Model type to train")
+                        help="Model type to train (default: catboost)")
     parser.add_argument('--model-config', type=str, default=None,
-                        help="Path to model config YAML")
+                        help="Path to model config YAML (e.g., configs/model_cat.yaml)")
     parser.add_argument('--run-config', type=str, default='configs/run_defaults.yaml',
-                        help="Path to run defaults YAML")
+                        help="Path to run defaults YAML (default: configs/run_defaults.yaml)")
     parser.add_argument('--data-config', type=str, default='configs/data.yaml',
-                        help="Path to data config YAML")
+                        help="Path to data config YAML (default: configs/data.yaml)")
+    parser.add_argument('--features-config', type=str, default='configs/features.yaml',
+                        help="Path to features config YAML (default: configs/features.yaml)")
     parser.add_argument('--run-name', type=str, default=None,
-                        help="Custom run name")
+                        help="Custom run name for artifacts directory")
+    parser.add_argument('--cv', action='store_true',
+                        help="Run cross-validation instead of single train/val split")
+    parser.add_argument('--n-folds', type=int, default=5,
+                        help="Number of CV folds (default: 5, only used with --cv)")
+    parser.add_argument('--force-rebuild', action='store_true',
+                        help="Force rebuild of cached panels and features")
+    parser.add_argument('--no-cache', action='store_true',
+                        help="Disable feature caching (build features from scratch)")
     
     args = parser.parse_args()
     
-    run_experiment(
-        scenario=args.scenario,
-        model_type=args.model,
-        model_config_path=args.model_config,
-        run_config_path=args.run_config,
-        data_config_path=args.data_config,
-        run_name=args.run_name
-    )
+    if args.cv:
+        # Cross-validation mode
+        run_config = load_config(args.run_config)
+        data_config = load_config(args.data_config)
+        model_config = load_config(args.model_config) if args.model_config else {}
+        
+        # Setup
+        set_seed(run_config['reproducibility']['seed'])
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        run_id = args.run_name or f"{timestamp}_{args.model}_scenario{args.scenario}_cv{args.n_folds}"
+        
+        artifacts_dir = get_project_root() / run_config['paths']['artifacts_dir'] / run_id
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        
+        setup_logging(log_file=str(artifacts_dir / "train.log"))
+        logger.info(f"Starting CV experiment: {run_id}")
+        
+        # Load and prepare data
+        from .data import load_raw_data, prepare_base_panel, compute_pre_entry_stats, handle_missing_values
+        from .features import make_features, select_training_rows
+        
+        with timer("Load and prepare data"):
+            train_data = load_raw_data(data_config, split='train')
+            panel = prepare_base_panel(
+                train_data['volume'],
+                train_data['generics'],
+                train_data['medicine_info']
+            )
+            panel = handle_missing_values(panel)
+            panel = compute_pre_entry_stats(panel, is_train=True)
+        
+        with timer("Feature engineering"):
+            panel_features = make_features(panel, scenario=args.scenario, mode='train')
+            train_rows = select_training_rows(panel_features, scenario=args.scenario)
+        
+        # Run CV
+        models, cv_metrics, oof_df = run_cross_validation(
+            train_rows,
+            scenario=args.scenario,
+            model_type=args.model,
+            model_config=model_config,
+            run_config=run_config,
+            n_folds=args.n_folds,
+            save_oof=True,
+            artifacts_dir=artifacts_dir
+        )
+        
+        logger.info(f"CV experiment {run_id} completed. Artifacts saved to {artifacts_dir}")
+    else:
+        # Single train/val split
+        run_experiment(
+            scenario=args.scenario,
+            model_type=args.model,
+            model_config_path=args.model_config,
+            run_config_path=args.run_config,
+            data_config_path=args.data_config,
+            features_config_path=args.features_config,
+            run_name=args.run_name,
+            use_cached_features=not args.no_cache,
+            force_rebuild=args.force_rebuild
+        )
 
 
 if __name__ == "__main__":

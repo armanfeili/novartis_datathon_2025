@@ -10,22 +10,55 @@ All models follow the BaseModel interface:
 """
 
 from .base import BaseModel
-from .cat_model import CatBoostModel
-from .lgbm_model import LGBMModel
-from .xgb_model import XGBModel
 from .linear import LinearModel, GlobalMeanBaseline, FlatBaseline, TrendBaseline
-from .nn import NNModel
+
+# Lazy imports for models that require native libraries
+# These will only fail when actually used, not on package import
+_CatBoostModel = None
+_LGBMModel = None
+_XGBModel = None
+_NNModel = None
+
+
+def _import_catboost():
+    global _CatBoostModel
+    if _CatBoostModel is None:
+        from .cat_model import CatBoostModel
+        _CatBoostModel = CatBoostModel
+    return _CatBoostModel
+
+
+def _import_lgbm():
+    global _LGBMModel
+    if _LGBMModel is None:
+        from .lgbm_model import LGBMModel
+        _LGBMModel = LGBMModel
+    return _LGBMModel
+
+
+def _import_xgb():
+    global _XGBModel
+    if _XGBModel is None:
+        from .xgb_model import XGBModel
+        _XGBModel = XGBModel
+    return _XGBModel
+
+
+def _import_nn():
+    global _NNModel
+    if _NNModel is None:
+        from .nn import NNModel
+        _NNModel = NNModel
+    return _NNModel
+
 
 __all__ = [
     'BaseModel',
-    'CatBoostModel',
-    'LGBMModel',
-    'XGBModel',
     'LinearModel',
     'GlobalMeanBaseline',
     'FlatBaseline',
     'TrendBaseline',
-    'NNModel',
+    'get_model_class',
 ]
 
 
@@ -41,21 +74,22 @@ def get_model_class(name: str):
         Model class
     """
     mapping = {
-        'catboost': CatBoostModel,
-        'lightgbm': LGBMModel,
-        'lgbm': LGBMModel,
-        'xgboost': XGBModel,
-        'xgb': XGBModel,
-        'linear': LinearModel,
-        'nn': NNModel,
-        'neural': NNModel,
-        'global_mean': GlobalMeanBaseline,
-        'flat': FlatBaseline,
-        'trend': TrendBaseline,
+        'catboost': _import_catboost,
+        'cat': _import_catboost,
+        'lightgbm': _import_lgbm,
+        'lgbm': _import_lgbm,
+        'xgboost': _import_xgb,
+        'xgb': _import_xgb,
+        'linear': lambda: LinearModel,
+        'nn': _import_nn,
+        'neural': _import_nn,
+        'global_mean': lambda: GlobalMeanBaseline,
+        'flat': lambda: FlatBaseline,
+        'trend': lambda: TrendBaseline,
     }
     
     name_lower = name.lower()
     if name_lower not in mapping:
         raise ValueError(f"Unknown model: {name}. Available: {list(mapping.keys())}")
     
-    return mapping[name_lower]
+    return mapping[name_lower]()

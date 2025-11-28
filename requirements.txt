@@ -5,6 +5,7 @@ torchvision
 # Data processing
 numpy
 pandas
+pyarrow
 
 # Visualization
 matplotlib
@@ -30,6 +31,9 @@ ipywidgets
 # Configuration
 pyyaml
 omegaconf
+
+# Testing
+pytest
 
 # Experiment tracking (optional)
 # wandb

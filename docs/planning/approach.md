@@ -1029,6 +1029,94 @@ Adversarial validation detects **distribution shift** between train and test, wh
 
 See Section 15.1 for the full adversarial validation implementation and interpretation details, which can be activated after the core pipeline is stable.
 
+### 8.7 Data Split Rationale
+
+This section documents the rationale behind our data splitting strategies, as implemented in `src/validation.py`.
+
+#### Why Series-Level Splits?
+
+The fundamental principle is **series-level splitting**: entire `(country, brand_name)` combinations are held out together, never individual months of the same series.
+
+**Rationale:**
+- **Real-world simulation**: In production, we forecast new brands we've never seen, not fill gaps in known series
+- **Prevents information leakage**: Row-level splits allow the model to "peek" at a series' behavior through other months in training
+- **Matches competition setup**: Test data contains entirely new brands, not partial series from training
+
+#### Three Split Strategies Implemented
+
+| Strategy | Function | Purpose | Use Case |
+|----------|----------|---------|----------|
+| **Standard Validation** | `create_validation_split()` | Quick iteration | Model development, hyperparameter tuning |
+| **Temporal CV** | `create_temporal_cv_split()` | Realistic validation | Final model selection, robustness checking |
+| **Holdout Set** | `create_holdout_set()` | Untouched final evaluation | Pre-submission confidence check |
+
+#### 1. Standard Validation Split (`create_validation_split`)
+
+**Implementation**:
+- 80% of series for training, 20% for validation
+- Stratified by bucket to maintain B1/B2 ratio (~30%/70%)
+- Optional secondary stratification by therapeutic area (supports list of columns)
+- Single random seed for reproducibility
+
+**When to use**: Initial model training and hyperparameter tuning; fast feedback loop during development.
+
+#### 2. Temporal CV Split (`create_temporal_cv_split`)
+
+**Implementation**:
+- Groups series by their first observation month
+- Earlier series form training set, later series form validation
+- Mimics temporal aspect of real forecasting
+
+**Rationale**:
+- Drugs entering the market later may have different characteristics
+- Tests model generalization to "future" brands
+- More pessimistic but realistic estimate of test performance
+
+**When to use**: Final model selection; robustness checking; when temporal patterns are suspected.
+
+#### 3. Holdout Set (`create_holdout_set`)
+
+**Implementation**:
+- 10-15% of series permanently held out
+- Never used during model development
+- Only evaluated once before final submission
+
+**Rationale**:
+- Prevents overfitting to validation set through repeated evaluation
+- Provides unbiased estimate of true performance
+- Mimics private leaderboard behavior
+
+**When to use**: Final model comparison before submission; confidence check on top 2-3 candidate models.
+
+#### Stratification Strategy
+
+**Primary stratification: Bucket**
+- Bucket 1 (high erosion): ~30% of series, 2x metric weight
+- Bucket 2 (low erosion): ~70% of series, 1x metric weight
+- Critical to maintain ratio for proper sample weighting
+
+**Secondary stratification: Therapeutic Area**
+- Different therapeutic areas have distinct erosion patterns
+- Ensures each fold sees examples from all therapy classes
+- Prevents validation set from missing rare categories
+
+#### Sample Weights Alignment
+
+After splitting, sample weights in training approximate the official metric:
+
+| Time Window (Scenario 1) | Weight | Rationale |
+|--------------------------|--------|-----------|
+| Months 0-5 | 3.0 | 50% of metric weight |
+| Months 6-11 | 1.5 | 20% of metric weight |
+| Months 12-23 | 1.0 | 10% of metric weight |
+
+| Time Window (Scenario 2) | Weight | Rationale |
+|--------------------------|--------|-----------|
+| Months 6-11 | 2.5 | 50% of metric weight |
+| Months 12-23 | 1.0 | 30% of metric weight |
+
+Bucket weights are multiplicative: Bucket 1 series get 2x the base weight.
+
 ---
 
 ## 9. Experiment Tracking
@@ -2097,6 +2185,58 @@ The following valuable concepts were incorporated from our initial strategy docu
     - Explicit drop from feature matrices
 
 The original `approach_old.md` is archived for reference but this document (`approach.md`) is the **single source of truth** for the competition.
+
+---
+
+## Appendix D.1: External Data & Constraints Rule-Check
+
+> **Rule Check Date**: Updated November 2025  
+> **Source**: NOVARTIS_DATATHON_2025_COMPLETE_GUIDE_FINAL.md
+
+### Official Rules Summary
+
+| Constraint | Official Statement | Our Decision |
+|-----------|-------------------|--------------|
+| **External Data** | Not explicitly prohibited. Guide states: "Modeling Freedom: Any approach/model allowed" | **NOT USED** - We use only provided data (volume, generics, medicine_info). Adding external data (GDP, healthcare spending) would increase complexity without guaranteed benefit and complicate reproducibility. |
+| **Model Types** | "Any approach/model allowed; explainability and simplicity valued" | **GBM-based** (CatBoost primary). Deep learning is allowed but simplicity is valued for jury presentation. |
+| **Ensembles** | No restrictions mentioned | **ALLOWED** but we focus on single strong model first. Simple weighted average of 2-3 models if time permits. |
+| **Reproducibility** | Required for finalists: "Upload the code used to generate your final submission results" | **FULLY REPRODUCIBLE** - Fixed seeds (42), deterministic settings, all code in repository. |
+
+### External Data Decision Rationale
+
+**Decision: Do NOT use external data**
+
+| Factor | Consideration |
+|--------|---------------|
+| **Time Investment** | Sourcing, cleaning, aligning external data takes significant time |
+| **ROI Uncertainty** | Country anonymization limits usefulness of country-level externals |
+| **Complexity** | Adds failure modes, harder to debug, complicates reproducibility |
+| **Jury Preference** | "Simplicity valued" - complex external data pipelines may raise questions |
+| **Sufficient Signal** | Provided data (pre-entry volumes, n_gxs, drug characteristics) likely contains most predictive signal |
+
+**If we were to add external data** (Future Work):
+1. Country-level GDP per capita (normalized proxy for purchasing power)
+2. Healthcare expenditure as % of GDP (market maturity proxy)
+3. Generic penetration rate by country (competitive dynamics proxy)
+
+### Code Handover Requirements
+
+For finalists, the following must be ready by Sunday 12:00 PM:
+
+1. **Complete code package** - All files needed to reproduce final submission
+2. **README with instructions** - How to install dependencies and run
+3. **requirements.txt** - Exact package versions
+4. **Deterministic outputs** - Same code + same seed = same predictions
+
+Our repository structure already satisfies these requirements.
+
+### Constraints Checklist
+
+- [x] No use of test target data (only test features used)
+- [x] No manual labeling or hand-crafted per-series rules
+- [x] Random seed fixed for reproducibility
+- [x] Code organized for review and handover
+- [x] All preprocessing documented and reproducible
 
 ---
 
