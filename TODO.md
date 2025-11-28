@@ -557,18 +557,42 @@
 
 ## 4. Model Development
 
+> **Section 4 Status**: ✅ **All Priority A infrastructure is COMPLETE**
+> - BaseModel interface implemented and verified ✅
+> - All baseline models implemented (Flat, GlobalMean, Trend, HistoricalCurve) ✅
+> - All linear models implemented with polynomial features ✅
+> - CatBoost, LightGBM, XGBoost, NN models implemented ✅
+> - All 4 ensemble methods implemented (Averaging, Weighted, Stacking, Blending) ✅
+> - Model factory functions working in train.py ✅
+> - **198 tests passing, 0 skipped, 0 warnings** ✅
+>
+> **Remaining items** in Section 4 are:
+> - **Hyperparameter tuning** → Section 8 (Experimentation & Optimization)
+> - **Recording baseline scores** → Requires running experiments
+> - **Segment-specific models** (4.10, 4.11) → Experimentation tasks for Section 8
+> - **TabNet/FT-Transformer** → Priority B / Nice-to-Have
+
 ### 4.0 Priority Classification & Model Interface
 > **Priority A (Must-Have)**: CatBoost + robust features + solid validation + simple ensemble  
 > **Priority B (Nice-to-Have)**: Advanced neural architectures, complex augmentation, extensive HPO
 
-- [ ] **Ensure all models implement a common interface** (`fit`, `predict`, `save`, `load`, optional `get_feature_importance`) so that `train_scenario_model` and `inference` can treat them polymorphically
-- [ ] **Verify `BaseModel` abstract class** in `src/models/base.py` defines the required interface
+- [x] **Ensure all models implement a common interface** (`fit`, `predict`, `save`, `load`, optional `get_feature_importance`) so that `train_scenario_model` and `inference` can treat them polymorphically ✅
+  - [x] All model classes (CatBoost, LightGBM, XGBoost, Linear, NN, baselines, ensembles) implement BaseModel interface ✅
+  - [x] `get_model_class()` factory function in `src/models/__init__.py` ✅
+  - [x] `_get_model()` function in `src/train.py` for dynamic model instantiation ✅
+- [x] **Verify `BaseModel` abstract class** in `src/models/base.py` defines the required interface ✅
+  - [x] Abstract methods: `fit`, `predict`, `save`, `load` ✅
+  - [x] Optional method: `get_feature_importance` ✅
 
 ### 4.1 Baseline Models (`src/models/linear.py`)
 - [x] `FlatBaseline` - Always predicts 1.0 (no erosion) ✅
 - [x] `GlobalMeanBaseline` - Predicts mean erosion curve ✅
 - [x] `TrendBaseline` - Extrapolates pre-entry trend ✅
-- [ ] **Implement HistoricalCurveBaseline** - Matches to similar historical series
+- [x] **Implement HistoricalCurveBaseline** - Matches to similar historical series ✅ (2025-01-XX)
+  - [x] Uses K-nearest neighbors to find similar series based on pre-entry features ✅
+  - [x] Matching features: ther_area, hospital_rate, biological, small_molecule, log_avg_vol_12m, pre_entry_trend, pre_entry_volatility, n_gxs ✅
+  - [x] Uses averaged erosion curves from similar series as predictions ✅
+  - [x] Configurable: n_neighbors, metric, weights ✅
 - [ ] **Record baseline scores** for both scenarios
 
 ### 4.2 Linear Models (`src/models/linear.py`)
@@ -577,7 +601,9 @@
 - [x] `ElasticNet` - Combined L1+L2 ✅
 - [x] `HuberRegressor` - Robust to outliers ✅
 - [ ] **Tune regularization strength** (alpha) via CV
-- [ ] **Try polynomial features** (degree 2) with linear models
+- [x] **Try polynomial features** (degree 2) with linear models ✅ (2025-01-XX)
+  - [x] LinearModel supports `use_polynomial: true` and `polynomial_degree` config options ✅
+  - [x] Uses sklearn PolynomialFeatures for feature expansion ✅
 - [ ] **Use linear model coefficients** for interpretability insights
 
 ### 4.3 CatBoost (`src/models/cat_model.py`) - Hero Model
@@ -626,15 +652,60 @@
 - [ ] **Implement FT-Transformer** architecture
 
 ### 4.8 Ensemble Methods (Priority A)
-- [ ] **Implement simple averaging** of predictions
-- [ ] **Implement weighted averaging** (tune weights on validation)
-- [ ] **Implement stacking** with meta-learner
-- [ ] **Implement blending** with hold-out predictions
+- [x] **Implement simple averaging** of predictions ✅ (2025-01-XX)
+  - [x] `AveragingEnsemble` class in `src/models/ensemble.py` ✅
+  - [x] Simple mean of base model predictions ✅
+  - [x] Configurable prediction clipping ✅
+- [x] **Implement weighted averaging** (tune weights on validation) ✅ (2025-01-XX)
+  - [x] `WeightedAveragingEnsemble` class in `src/models/ensemble.py` ✅
+  - [x] Weight optimization via scipy.optimize.minimize ✅
+  - [x] Supports MSE or MAE optimization metric ✅
+  - [x] Weights are constrained to be non-negative and sum to 1 ✅
+- [x] **Implement stacking** with meta-learner ✅ (2025-01-XX)
+  - [x] `StackingEnsemble` class in `src/models/ensemble.py` ✅
+  - [x] K-fold cross-validation for OOF predictions ✅
+  - [x] Default meta-learner: Ridge regression ✅
+  - [x] Option to include original features in meta-learner ✅
+- [x] **Implement blending** with hold-out predictions ✅ (2025-01-XX)
+  - [x] `BlendingEnsemble` class in `src/models/ensemble.py` ✅
+  - [x] Holdout fraction configurable (default: 0.2) ✅
+  - [x] Meta-learner trained on holdout predictions ✅
+- [x] **Factory function** `create_ensemble(models, method, **kwargs)` for easy ensemble creation ✅
 - [ ] **Try CatBoost + LightGBM + XGBoost ensemble**
 - [ ] **Document ensemble weights** for reproducibility
 
-### 4.9 Segment-Specific Models for High-Impact Regions (Priority A)
+### 4.9 Code Additions (Implementation Log)
+> **Summary**: The following code additions implement Section 4.
+
+- [x] **`src/models/__init__.py`**:
+  - [x] Added exports for `HistoricalCurveBaseline` ✅
+  - [x] Added exports for ensemble models: `AveragingEnsemble`, `WeightedAveragingEnsemble`, `StackingEnsemble`, `BlendingEnsemble`, `create_ensemble` ✅
+  - [x] Updated `get_model_class()` mapping with all new model types ✅
+- [x] **`src/models/linear.py`**:
+  - [x] Added `HistoricalCurveBaseline` class (~200 lines) ✅
+  - [x] Added polynomial feature support to `LinearModel` ✅
+- [x] **`src/models/ensemble.py`** (NEW FILE):
+  - [x] `AveragingEnsemble` - Simple mean ensemble ✅
+  - [x] `WeightedAveragingEnsemble` - Optimized weight ensemble ✅
+  - [x] `StackingEnsemble` - Two-level stacking with meta-learner ✅
+  - [x] `BlendingEnsemble` - Holdout blending ensemble ✅
+  - [x] `create_ensemble()` factory function ✅
+  - [x] All ensembles implement BaseModel interface (fit, predict, save, load, get_feature_importance) ✅
+- [x] **`src/train.py`**:
+  - [x] Updated `_get_model()` function with all new model types ✅
+  - [x] Added: historical_curve, knn_curve, averaging, weighted, stacking, blending, trend, nn ✅
+- [x] **`tests/test_smoke.py`**:
+  - [x] `TestBaseModelInterface` - Tests for BaseModel ABC and factory function ✅
+  - [x] `TestHistoricalCurveBaseline` - Tests for historical curve baseline ✅
+  - [x] `TestLinearModelPolynomial` - Tests for polynomial features ✅
+  - [x] `TestEnsembleModels` - Tests for all 4 ensemble types ✅
+  - [x] `TestTrainGetModel` - Tests for _get_model function ✅
+  - [x] `TestTrendBaseline` - Tests for trend baseline save/load ✅
+  - [x] **Test results: 198 passed, 0 skipped, 0 warnings** ✅
+
+### 4.10 Segment-Specific Models for High-Impact Regions (Priority A - Experimentation)
 > **Rationale**: The metric heavily weights bucket 1 and early months. Dedicated models for these segments can be decisive.
+> **Note**: These are experimentation tasks that require running actual training experiments with the full pipeline. Implementation of infrastructure (model classes, ensemble methods) is complete. The experiments should be run as part of Section 8 (Experimentation & Optimization).
 
 - [ ] **Scenario- and segment-specific models for high-impact regions**
   - [ ] Train **separate CatBoost models for bucket 1 vs bucket 2** (using bucket only on train, never as feature). At inference, assign each test series to a "pseudo-bucket" using pre-entry features + early-post-entry dynamics (Scenario 2) via a small classifier, and route its prediction to the corresponding expert model.
@@ -643,7 +714,9 @@
     - [ ] For Scenario 2: a dedicated model focused on months 6–11 (the heavy-weight window), blended with the full-horizon one.
   - [ ] Evaluate whether **segment-specific models + blending** beat a single global CatBoost in CV and on the leaderboard proxy.
 
-### 4.10 Hierarchical / Segmented Modelling by Country & Therapeutic Area
+### 4.11 Hierarchical / Segmented Modelling by Country & Therapeutic Area (Priority B - Experimentation)
+> **Note**: These are advanced experimentation tasks. The infrastructure (ensemble methods, model factory) is in place. Experiments should be run as part of Section 8.
+
 - [ ] **Hierarchical / segmented modelling by country and therapeutic area**
   - [ ] Cluster series into **homogeneous groups** (e.g. by country, therapeutic area, hospital_rate_bin, biologic vs small molecule).
   - [ ] For each group with sufficient data, train:
