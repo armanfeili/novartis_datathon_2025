@@ -38,6 +38,7 @@ columns:
   model_target: "y_norm"
   
   # Meta columns to exclude from features (NEVER use as model features)
+  # Must stay in sync with META_COLS in src/data.py and src/train.py
   meta_cols:
     - "country"
     - "brand_name"
@@ -46,6 +47,8 @@ columns:
     - "avg_vol_12m"
     - "y_norm"
     - "volume"
+    - "mean_erosion"
+    - "month"
   
   # Generics data columns
   generics_cols:

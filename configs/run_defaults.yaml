@@ -28,6 +28,40 @@ scenarios:
     feature_cutoff: 6                 # months_postgx < 6 allowed for features
     target_months: [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
 
+# Official competition metric weights (from metric_calculation.py)
+# IMPORTANT: These are the EXACT values from the official metric script
+# Do NOT modify unless the competition rules change
+official_metric:
+  # Bucket classification threshold
+  bucket_threshold: 0.25              # Bucket 1 if mean_erosion <= 0.25, else Bucket 2
+  
+  # Bucket weights in final PE score
+  bucket_weights:
+    bucket1: 2.0                      # High erosion - 2x weight (2/n1)
+    bucket2: 1.0                      # Low erosion - 1x weight (1/n2)
+  
+  # Metric 1 (Scenario 1 / Phase 1A) weights
+  metric1:
+    monthly_weight: 0.2               # term1: 0.2 * sum_abs_diff(0,23) / (24 * avg_vol)
+    accumulated_0_5_weight: 0.5       # term2: 0.5 * abs_sum_diff(0,5) / (6 * avg_vol)
+    accumulated_6_11_weight: 0.2      # term3: 0.2 * abs_sum_diff(6,11) / (6 * avg_vol)
+    accumulated_12_23_weight: 0.1     # term4: 0.1 * abs_sum_diff(12,23) / (12 * avg_vol)
+    # Time windows
+    monthly_range: [0, 23]
+    early_range: [0, 5]
+    mid_range: [6, 11]
+    late_range: [12, 23]
+  
+  # Metric 2 (Scenario 2 / Phase 1B) weights
+  metric2:
+    monthly_weight: 0.2               # term1: 0.2 * sum_abs_diff(6,23) / (18 * avg_vol)
+    accumulated_6_11_weight: 0.5      # term2: 0.5 * abs_sum_diff(6,11) / (6 * avg_vol)
+    accumulated_12_23_weight: 0.3     # term3: 0.3 * abs_sum_diff(12,23) / (12 * avg_vol)
+    # Time windows
+    monthly_range: [6, 23]
+    early_range: [6, 11]
+    late_range: [12, 23]
+
 # Sample weights to align training loss with official metric
 sample_weights:
   scenario1:

@@ -6,13 +6,14 @@ CRITICAL: Never mix months of the same series across train/val.
 """
 
 import logging
-from typing import Tuple, List, Optional, Dict
+from typing import Tuple, List, Optional, Dict, Union
 
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
 from .utils import timer
+from .features import _normalize_scenario
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 def create_validation_split(
     panel_df: pd.DataFrame,
     val_fraction: float = 0.2,
-    stratify_by: str = 'bucket',
+    stratify_by: Union[str, List[str]] = 'bucket',
     random_state: int = 42
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
@@ -31,7 +32,9 @@ def create_validation_split(
     Args:
         panel_df: Full training panel
         val_fraction: Fraction of series for validation
-        stratify_by: Column to stratify by (usually 'bucket')
+        stratify_by: Column(s) to stratify by. Can be:
+            - Single string: 'bucket' or 'ther_area'
+            - List of strings: ['bucket', 'ther_area'] for multi-column stratification
         random_state: For reproducibility
     
     Returns:
@@ -40,23 +43,62 @@ def create_validation_split(
     with timer("Create validation split"):
         series_keys = ['country', 'brand_name']
         
+        # Handle stratify_by as string or list
+        if isinstance(stratify_by, str):
+            stratify_cols = [stratify_by]
+        else:
+            stratify_cols = list(stratify_by)
+        
         # Get unique series with their stratification labels
-        series_info = panel_df[series_keys + [stratify_by]].drop_duplicates()
+        required_cols = series_keys + stratify_cols
+        available_cols = [c for c in required_cols if c in panel_df.columns]
+        series_info = panel_df[available_cols].drop_duplicates()
         
-        # Check for series with multiple bucket values (shouldn't happen)
-        bucket_counts = series_info.groupby(series_keys)[stratify_by].nunique()
-        if (bucket_counts > 1).any():
-            logger.warning("Some series have multiple bucket values!")
+        # Check for series with multiple values for stratification columns (shouldn't happen)
+        for col in stratify_cols:
+            if col in series_info.columns:
+                counts = series_info.groupby(series_keys)[col].nunique()
+                if (counts > 1).any():
+                    logger.warning(f"Some series have multiple {col} values!")
         
-        # Stratified split at series level
-        if stratify_by in series_info.columns:
+        # Create combined stratification column for multi-column stratification
+        stratify_available = [c for c in stratify_cols if c in series_info.columns]
+        
+        if len(stratify_available) > 0:
+            if len(stratify_available) == 1:
+                stratify_values = series_info[stratify_available[0]]
+            else:
+                # Multi-column stratification: combine columns
+                series_info['_stratify_combined'] = series_info[stratify_available].astype(str).agg('_'.join, axis=1)
+                stratify_values = series_info['_stratify_combined']
+                
+                # Log combined stratification distribution
+                combined_dist = stratify_values.value_counts()
+                logger.info(f"Combined stratification groups ({len(combined_dist)} unique):")
+                for group, count in combined_dist.head(10).items():
+                    logger.info(f"  {group}: {count} series")
+            
+            # Handle rare classes by grouping them
+            value_counts = stratify_values.value_counts()
+            min_class_size = max(2, int(len(series_info) * val_fraction * 0.5))
+            
+            rare_classes = value_counts[value_counts < min_class_size].index
+            if len(rare_classes) > 0:
+                logger.warning(
+                    f"Grouping {len(rare_classes)} rare stratification classes "
+                    f"(< {min_class_size} series) into 'OTHER'"
+                )
+                stratify_values = stratify_values.copy()
+                stratify_values[stratify_values.isin(rare_classes)] = 'OTHER'
+            
             train_series, val_series = train_test_split(
                 series_info,
                 test_size=val_fraction,
-                stratify=series_info[stratify_by],
+                stratify=stratify_values,
                 random_state=random_state
             )
         else:
+            logger.warning(f"No stratification columns available, using random split")
             train_series, val_series = train_test_split(
                 series_info,
                 test_size=val_fraction,
@@ -82,18 +124,149 @@ def create_validation_split(
         logger.info(f"Train series: {n_train_series}, Val series: {n_val_series}")
         logger.info(f"Train rows: {len(train_df):,}, Val rows: {len(val_df):,}")
         
-        if stratify_by in train_series.columns:
-            train_bucket_dist = train_series[stratify_by].value_counts(normalize=True)
-            val_bucket_dist = val_series[stratify_by].value_counts(normalize=True)
-            logger.info(f"Train bucket distribution:\n{train_bucket_dist.to_string()}")
-            logger.info(f"Val bucket distribution:\n{val_bucket_dist.to_string()}")
+        # Log stratification distribution for each column
+        for col in stratify_available:
+            train_dist = train_series[col].value_counts(normalize=True)
+            val_dist = val_series[col].value_counts(normalize=True)
+            logger.info(f"Train {col} distribution:\n{train_dist.to_string()}")
+            logger.info(f"Val {col} distribution:\n{val_dist.to_string()}")
     
     return train_df, val_df
 
 
+def create_temporal_cv_split(
+    panel_df: pd.DataFrame,
+    n_folds: int = 5,
+    min_train_months: int = 12,
+    gap_months: int = 0,
+    stratify_by: Union[str, List[str], None] = 'bucket'
+) -> List[Tuple[pd.DataFrame, pd.DataFrame]]:
+    """
+    Create time-based cross-validation splits.
+    
+    This implements a temporal CV where:
+    - Each fold uses progressively more historical data for training
+    - Validation is always on later time periods
+    - Series are kept intact (no leakage across time for same series)
+    
+    Strategy: For each fold, we use a different temporal cutoff to simulate
+    having data up to month T and validating on months > T.
+    
+    Args:
+        panel_df: Full training panel with months_postgx column
+        n_folds: Number of temporal folds
+        min_train_months: Minimum months_postgx value to include in first training fold
+        gap_months: Gap between train and val (purged CV)
+        stratify_by: Column(s) to stratify series selection within temporal windows
+        
+    Returns:
+        List of (train_df, val_df) tuples
+    """
+    series_keys = ['country', 'brand_name']
+    
+    # Get the range of months_postgx
+    min_month = panel_df['months_postgx'].min()
+    max_month = panel_df['months_postgx'].max()
+    
+    logger.info(f"Temporal CV: months_postgx range [{min_month}, {max_month}]")
+    
+    # Calculate fold boundaries (cutoff months)
+    # We want validation windows that cover the target months (0-23 for S1, 6-23 for S2)
+    # Each fold has a different cutoff
+    post_entry_months = panel_df[panel_df['months_postgx'] >= 0]['months_postgx'].unique()
+    post_entry_months = sorted(post_entry_months)
+    
+    if len(post_entry_months) < n_folds:
+        logger.warning(f"Not enough post-entry months for {n_folds} folds, reducing to {len(post_entry_months)}")
+        n_folds = max(1, len(post_entry_months))
+    
+    # Create cutoffs: evenly spaced through post-entry period
+    cutoff_indices = np.linspace(0, len(post_entry_months) - 1, n_folds + 1)[1:-1].astype(int)
+    cutoffs = [post_entry_months[i] for i in cutoff_indices]
+    
+    # Ensure we have reasonable cutoffs (not too early, not too late)
+    # Minimum cutoff should allow some validation data
+    min_cutoff = min_train_months if min_train_months >= 0 else 0
+    cutoffs = [max(c, min_cutoff) for c in cutoffs]
+    
+    # Add final fold that uses all data
+    if len(cutoffs) < n_folds - 1:
+        cutoffs.append(max_month - 1)
+    
+    logger.info(f"Temporal CV cutoffs: {cutoffs}")
+    
+    folds = []
+    for i, cutoff in enumerate(cutoffs):
+        # Training: all months up to cutoff - gap
+        train_cutoff = cutoff - gap_months
+        train_mask = panel_df['months_postgx'] <= train_cutoff
+        train_df = panel_df[train_mask].copy()
+        
+        # Validation: months after cutoff
+        val_mask = panel_df['months_postgx'] > cutoff
+        val_df = panel_df[val_mask].copy()
+        
+        # Ensure series in validation also have training data
+        train_series = set(zip(train_df['country'], train_df['brand_name']))
+        val_series = set(zip(val_df['country'], val_df['brand_name']))
+        common_series = train_series & val_series
+        
+        if len(common_series) < len(val_series):
+            logger.warning(
+                f"Fold {i+1}: {len(val_series) - len(common_series)} val series "
+                f"have no training data, excluding them"
+            )
+            val_df = val_df[
+                val_df.apply(lambda r: (r['country'], r['brand_name']) in common_series, axis=1)
+            ]
+        
+        logger.info(
+            f"Fold {i+1}: train months <= {train_cutoff} ({len(train_df):,} rows), "
+            f"val months > {cutoff} ({len(val_df):,} rows)"
+        )
+        
+        folds.append((train_df, val_df))
+    
+    return folds
+
+
+def create_holdout_set(
+    panel_df: pd.DataFrame,
+    holdout_fraction: float = 0.1,
+    stratify_by: Union[str, List[str]] = 'bucket',
+    random_state: int = 42
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Create a holdout set for final validation before submission.
+    
+    This holdout should be set aside at the beginning and only used once
+    for final model selection before submission.
+    
+    Args:
+        panel_df: Full training panel
+        holdout_fraction: Fraction of series for holdout (default 10%)
+        stratify_by: Column(s) to stratify by
+        random_state: For reproducibility
+        
+    Returns:
+        (main_df, holdout_df) - both contain full series
+    """
+    # Use create_validation_split with holdout fraction
+    main_df, holdout_df = create_validation_split(
+        panel_df,
+        val_fraction=holdout_fraction,
+        stratify_by=stratify_by,
+        random_state=random_state
+    )
+    
+    logger.info(f"Holdout set created: {len(holdout_df[['country', 'brand_name']].drop_duplicates())} series")
+    
+    return main_df, holdout_df
+
+
 def simulate_scenario(
     val_df: pd.DataFrame,
-    scenario: str
+    scenario
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Prepare validation data mimicking true scenario constraints.
@@ -112,16 +285,18 @@ def simulate_scenario(
     
     Args:
         val_df: Validation panel data
-        scenario: "scenario1" or "scenario2"
+        scenario: 1, 2, "scenario1", or "scenario2"
         
     Returns:
         (features_df, targets_df)
     """
-    if scenario == 'scenario1':
+    scenario = _normalize_scenario(scenario)
+    
+    if scenario == 1:
         cutoff = 0
         target_start = 0
         target_end = 23
-    elif scenario == 'scenario2':
+    elif scenario == 2:
         cutoff = 6
         target_start = 6
         target_end = 23

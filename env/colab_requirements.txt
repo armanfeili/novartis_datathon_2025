@@ -1,5 +1,6 @@
 numpy
 pandas
+pyarrow
 scikit-learn
 matplotlib
 seaborn
@@ -9,3 +10,4 @@ lightgbm
 xgboost
 catboost
 joblib
+pytest

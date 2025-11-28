@@ -98,8 +98,8 @@ Same schema with missing `volume` for post-entry months to predict.
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  EXECUTION (Local or Colab)                                     │
-│  ├─ python -m src.train --scenario 1 --model cat                │
-│  ├─ python -m src.train --scenario 2 --model lgbm               │
+│  ├─ python -m src.train --scenario 1 --model catboost           │
+│  ├─ python -m src.train --scenario 2 --model lightgbm           │
 │  └─ Generate submission CSV                                     │
 └─────────────────────────────────────────────────────────────────┘
                              ▼
@@ -274,13 +274,15 @@ submission = generate_submission(
 ```python
 from src.evaluate import compute_metric1, compute_metric2, compute_bucket_metrics
 
-# Official metric wrappers
-metric1 = compute_metric1(df_with_preds, scenario=1)
-metric2 = compute_metric2(df_with_preds, scenario=2)
+# Official metric wrappers (require df_actual, df_pred, df_aux)
+# df_actual/df_pred: columns [country, brand_name, months_postgx, volume]
+# df_aux: columns [country, brand_name, avg_vol, bucket]
+metric1 = compute_metric1(df_actual, df_pred, df_aux)
+metric2 = compute_metric2(df_actual, df_pred, df_aux)
 
-# Bucket-wise analysis
-bucket_metrics = compute_bucket_metrics(df)
-# Returns: {'bucket_1_rmse': ..., 'bucket_2_rmse': ..., ...}
+# Bucket-wise analysis (uses integer scenario)
+bucket_metrics = compute_bucket_metrics(df_actual, df_pred, df_aux, scenario=1)
+# Returns: {'overall': ..., 'bucket1': ..., 'bucket2': ...}
 ```
 
 ### `src/validation.py` – Series-Level Validation
@@ -289,13 +291,13 @@ bucket_metrics = compute_bucket_metrics(df)
 from src.validation import create_validation_split, simulate_scenario
 
 # Split at series level (critical for time-series)
-train_idx, val_idx = create_validation_split(
+train_df, val_df = create_validation_split(
     panel, val_fraction=0.2, stratify_by='bucket', random_state=42
 )
 # Guarantees: no series appears in both train and val
 
-# Simulate scenario for validation
-val_panel = simulate_scenario(panel.loc[val_idx], scenario=2)
+# Simulate scenario for validation (uses integer scenario)
+features_df, targets_df = simulate_scenario(val_df, scenario=2)
 ```
 
 ### `src/utils.py` – Utilities
@@ -425,8 +427,8 @@ pip install -r requirements.txt
 pytest tests/test_smoke.py -v
 
 # 6. Train models
-python -m src.train --scenario 1 --model cat
-python -m src.train --scenario 2 --model cat
+python -m src.train --scenario 1 --model catboost
+python -m src.train --scenario 2 --model catboost
 ```
 
 ---
@@ -439,7 +441,7 @@ python -m src.train --scenario 2 --model cat
 # Train CatBoost for Scenario 1
 python -m src.train \
     --scenario 1 \
-    --model cat \
+    --model catboost \
     --data-config configs/data.yaml \
     --features-config configs/features.yaml \
     --run-config configs/run_defaults.yaml \
@@ -448,7 +450,7 @@ python -m src.train \
 # Train LightGBM for Scenario 2
 python -m src.train \
     --scenario 2 \
-    --model lgbm \
+    --model lightgbm \
     --model-config configs/model_lgbm.yaml
 ```
 

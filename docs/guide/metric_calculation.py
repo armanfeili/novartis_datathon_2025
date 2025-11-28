@@ -64,7 +64,7 @@ def _metric1(df_actual: pd.DataFrame, df_pred: pd.DataFrame, df_aux: pd.DataFram
 
     pe_results = (
         merged.groupby(["country", "brand_name", "bucket"])
-        .apply(_compute_pe_phase1a)
+        .apply(_compute_pe_phase1a, include_groups=False)
         .reset_index(name="PE")
     )
 
@@ -144,7 +144,7 @@ def _metric2(df_actual: pd.DataFrame, df_pred: pd.DataFrame, df_aux: pd.DataFram
 
     pe_results = (
         merged_data.groupby(["country", "brand_name", "bucket"])
-        .apply(_compute_pe_phase1b)
+        .apply(_compute_pe_phase1b, include_groups=False)
         .reset_index(name="PE")
     )
 

@@ -369,6 +369,69 @@ def compute_pre_entry_stats(
     CRITICAL: bucket is NEVER computed on test data and NEVER used as a feature.
     """
 
+# ============================================================================
+# TRAIN VS TEST BEHAVIOR DOCUMENTATION
+# ============================================================================
+#
+# The `compute_pre_entry_stats()` function behaves differently based on the
+# `is_train` parameter. This is critical for preventing data leakage.
+#
+# TRAIN MODE (is_train=True):
+# ---------------------------
+# When processing training data, the function computes:
+#   1. avg_vol_12m: Mean volume over months [-12, -1] (pre-entry baseline)
+#   2. y_norm: Normalized target = volume / avg_vol_12m (for supervised learning)
+#   3. mean_erosion: Mean of y_norm over post-entry months [0, 23]
+#   4. bucket: Classification based on mean_erosion
+#      - Bucket 1 (high erosion): mean_erosion <= 0.25
+#      - Bucket 2 (low/medium erosion): mean_erosion > 0.25
+#   5. pre_entry_months_available: Count of months used for avg_vol_12m
+#
+# These statistics are used for:
+#   - Sample weighting (bucket drives 2x weight for Bucket 1)
+#   - Stratified validation splits (maintain B1/B2 ratio)
+#   - Error analysis by bucket
+#
+# TEST MODE (is_train=False):
+# ---------------------------
+# When processing test data, the function ONLY computes:
+#   1. avg_vol_12m: Mean volume over pre-entry months
+#   2. pre_entry_months_available: Diagnostic count
+#
+# The function NEVER computes on test data:
+#   - y_norm (no target available)
+#   - mean_erosion (target-derived)
+#   - bucket (target-derived)
+#
+# This ensures no leakage of target information into test predictions.
+#
+# FALLBACK HIERARCHY FOR avg_vol_12m:
+# -----------------------------------
+# Test series may have insufficient pre-entry history. The implementation
+# uses a 3-level fallback hierarchy:
+#
+#   Level 1: Any available pre-entry months (months_postgx < 0)
+#            - Uses whatever pre-entry data exists for the series
+#            - Falls through if no pre-entry months available
+#
+#   Level 2: Therapeutic area median
+#            - Uses median avg_vol_12m from training series in same ther_area
+#            - Provides domain-aware fallback
+#            - Falls through if ther_area is unknown/missing
+#
+#   Level 3: Global median (last resort)
+#            - Uses global median avg_vol_12m from all training series
+#            - Ensures every series has a valid avg_vol_12m
+#
+# VALIDATION:
+# -----------
+# The function logs statistics after computation:
+#   - avg_vol_12m range, median, mean
+#   - Bucket distribution (train only)
+#   - Count of series using each fallback level
+#
+# ============================================================================
+
 def handle_missing_values(panel_df: pd.DataFrame) -> pd.DataFrame:
     """
     Apply missing value strategy. Must be called BEFORE compute_pre_entry_stats.
