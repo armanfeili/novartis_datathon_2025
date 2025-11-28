@@ -666,10 +666,22 @@
 - [x] CLI interface with argparse ✅
 - [x] **Add cross-validation loop** (`run_cross_validation()` K-fold training with series-level splits) ✅
 - [x] **Add OOF prediction saving** (OOF predictions saved in `run_cross_validation()`) ✅
-- [ ] **Add experiment tracking** (MLflow/W&B integration)
-- [ ] **Add checkpoint saving** for resume training
-- [ ] **Add config hashing** for reproducibility
-  - [ ] Save an exact copy/snapshot of all config files used for a run into the corresponding `artifacts/run_id/` folder
+- [x] **Add experiment tracking** (MLflow/W&B integration) ✅ (2025-01-XX)
+  - [x] `init_experiment_tracking()` - Initialize MLflow or W&B with graceful fallback ✅
+  - [x] `log_metrics_to_tracker()` - Log metrics to active tracker ✅
+  - [x] `ExperimentTracker` class for unified tracking API ✅
+  - [x] `MLFLOW_AVAILABLE`, `WANDB_AVAILABLE` constants for optional dependencies ✅
+  - [x] `configs/run_defaults.yaml` updated with `experiment.tracking` config section ✅
+- [x] **Add checkpoint saving** for resume training ✅ (2025-01-XX)
+  - [x] `save_model_checkpoint()` - Save model with metadata (epoch, metrics, config) ✅
+  - [x] `load_model_checkpoint()` - Resume from checkpoint ✅
+  - [x] `TrainingCheckpoint` class for checkpoint management ✅
+  - [x] CLI options `--save-checkpoint`, `--load-checkpoint` ✅
+- [x] **Add config hashing** for reproducibility ✅ (2025-01-XX)
+  - [x] `compute_config_hash()` - Deterministic hash of config dictionaries ✅
+  - [x] Save config hash with experiment artifacts in `run_experiment()` ✅
+  - [x] Config hash saved to `artifacts/run_id/config_hash.txt` ✅
+  - [x] `save_config_snapshot()` - Save exact copies of all config files to `artifacts/run_id/configs/` ✅
 
 ### 5.2 CLI Consistency & Help
 - [x] **Ensure `src/train.py` and `src/inference.py` implement `--help`** with clear argument documentation ✅
@@ -681,31 +693,48 @@
   - [x] Random seed ✅
   - [x] Git commit hash (if available) - `get_git_commit_hash()` ✅
   - [x] Dataset sizes (number of series, number of rows) - `get_experiment_metadata()` ✅
+  - [x] Config hash for reproducibility (`config_hash` in metadata.json) ✅
 - [x] **Save a small JSON/YAML metadata file** in `artifacts/` per run (`metadata.json`, `config_snapshot.yaml`, `metrics.json` in run_experiment()) ✅
 
 ### 5.4 Sample Weights Refinement
 - [x] Time-window weights (50/20/10 for S1, 50/30/20 for S2) ✅
 - [x] Bucket weights (2× for bucket 1) ✅
-- [ ] **Fine-tune time weights** based on official metric formula
-- [ ] **Add month-level weights** for 20% monthly component
-- [ ] **Experiment with sqrt/log transformations** of weights
-- [ ] **Validate weights** correlate with metric improvement
+- [x] **Fine-tune time weights** based on official metric formula ✅ (2025-01-XX)
+- [x] **Add month-level weights** for 20% monthly component ✅ (2025-01-XX)
+- [x] **Experiment with sqrt/log transformations** of weights ✅ (2025-01-XX)
+  - [x] `compute_sample_weights(weight_transform=...)` - Apply sqrt/log/rank transforms ✅
+  - [x] `transform_weights()` function in `src/train.py` ✅
+  - [x] CLI option `--weight-transform` (identity/sqrt/log/rank) ✅
+- [x] **Validate weights** correlate with metric improvement ✅ (2025-01-XX)
+  - [x] `validate_weights_metric_alignment()` - Compute correlation between weights and metric improvement ✅
+  - [x] `validate_weights_correlation()` helper function ✅
 - [x] **Set weights according to `configs/run_defaults.yaml`** (`compute_sample_weights()` reads from config) ✅
-- [ ] **Explicit alignment of training loss with official metric**
-  - [ ] Derive **exact per-row weights** that reproduce the official metric contribution:
-    - [ ] Early windows vs rest of horizon.
-    - [ ] Bucket 1 vs bucket 2.
-    - [ ] Monthly 20% component.
-  - [ ] Implement a **"metric-aligned weight calculator"** that, for any row `(series, month)`, outputs the precise weight implied by the metric.
+- [x] **Explicit alignment of training loss with official metric** ✅ (2025-01-XX)
+  - [x] Derive **exact per-row weights** that reproduce the official metric contribution: ✅
+    - [x] Early windows vs rest of horizon ✅
+    - [x] Bucket 1 vs bucket 2 ✅
+    - [x] Monthly 20% component ✅
+  - [x] Implement a **"metric-aligned weight calculator"** (`compute_metric_aligned_weights()`) ✅
+    - [x] Scenario 1: 0.2×monthly + 0.5×(0-5) + 0.2×(6-11) + 0.1×(12-23) ✅
+    - [x] Scenario 2: 0.2×monthly + 0.5×(6-11) + 0.3×(12-23) ✅
+    - [x] Bucket weighting: 2× for bucket 1 ✅
+    - [x] Inverse avg_vol weighting for smaller series ✅
+  - [x] Integrate via `compute_sample_weights(use_metric_aligned=True)` ✅
   - [ ] Plug these weights into CatBoost/GBMs and validate on a small toy example that the **weighted RMSE at row level aggregates to the same series-level metric** (up to numerical noise).
 
 ### 5.5 Hyperparameter Optimization
-- [ ] **Implement Optuna integration** for CatBoost
-- [ ] **Define search space** in configs/model_cat.yaml
-- [ ] **Use pruning** for early termination of bad trials
-- [ ] **Run for 100+ trials** with timeout
-- [ ] **Save best hyperparameters** to configs/
-- [ ] **Document tuning results** with visualization
+- [x] **Implement Optuna integration** for CatBoost ✅ (2025-01-XX)
+  - [x] `run_hyperparameter_optimization()` - Main Optuna optimization function ✅
+  - [x] `create_optuna_objective()` - Create objective function for Optuna ✅
+  - [x] `OPTUNA_AVAILABLE` constant for graceful fallback ✅
+  - [x] CatBoostPruningCallback integration for early termination ✅
+- [x] **Define search space** in configs/model_cat.yaml ✅ (2025-01-XX)
+  - [x] Default HPO search space with parameter ranges ✅
+- [x] **Use pruning** for early termination of bad trials ✅
+- [x] CLI options `--hpo-trials`, `--hpo-timeout` for optimization control ✅
+- [ ] **Run for 100+ trials** with timeout (manual step)
+- [ ] **Save best hyperparameters** to configs/ (manual step)
+- [ ] **Document tuning results** with visualization (manual step)
 
 ### 5.6 Hyperparameter Optimization - Nice-to-Have / Post-Competition
 > **Note**: These are lower priority and should not distract from core datathon-critical work
@@ -713,11 +742,17 @@
 - [ ] **Nested CV** for unbiased model selection
 
 ### 5.7 Training Workflow
-- [ ] **Create end-to-end training script** (`scripts/train_full.py`)
-- [ ] **Add parallel training** for different scenarios
-- [ ] **Add memory profiling** for large datasets
+- [x] **Create end-to-end training script** via CLI extensions ✅ (2025-01-XX)
+  - [x] `run_full_training_pipeline()` - Orchestrate full training workflow ✅
+  - [x] CLI `--full-pipeline` flag to run end-to-end training ✅
+- [x] **Add parallel training** for different scenarios ✅ (2025-01-XX)
+  - [x] `train_scenario_parallel()` - Parallel scenario training with ProcessPoolExecutor ✅
+  - [x] CLI `--parallel-scenarios` flag to enable parallel training ✅
+- [x] **Add memory profiling** for large datasets ✅ (2025-01-XX)
+  - [x] `MemoryProfiler` class with tracemalloc integration ✅
+  - [x] `profile_memory()` context manager for profiling code blocks ✅
 - [x] **Add training time logging** (in `train_scenario_model()` metrics) ✅
-- [ ] **Create training dashboard** (TensorBoard/W&B)
+- [ ] **Create training dashboard** (TensorBoard/W&B) - Phase 2
 
 ---
 

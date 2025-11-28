@@ -3,20 +3,59 @@ Model training pipeline for Novartis Datathon 2025.
 
 Unified training with sample weights aligned to official metric.
 Handles feature/target/meta separation to prevent leakage.
+
+Section 5 Implementation:
+- 5.1: Core training with CLI interface
+- 5.2: CLI consistency with --help documentation
+- 5.3: Experiment metadata logging (git hash, config hash)
+- 5.4: Sample weights refinement (time/bucket weights, metric-aligned)
+- 5.5: Hyperparameter optimization with Optuna integration
+- 5.7: Training workflow improvements (checkpointing, memory profiling)
 """
 
 import argparse
+import hashlib
 import logging
 import json
+import os
+import pickle
+import shutil
 import subprocess
+import sys
 import time
+import tracemalloc
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from datetime import datetime
-from typing import Tuple, Optional, Dict, Any, List
+from typing import Tuple, Optional, Dict, Any, List, Union, Callable
 
 import numpy as np
 import pandas as pd
 import yaml
+
+# Optional experiment tracking imports
+try:
+    import mlflow
+    MLFLOW_AVAILABLE = True
+except ImportError:
+    MLFLOW_AVAILABLE = False
+    mlflow = None
+
+try:
+    import wandb
+    WANDB_AVAILABLE = True
+except ImportError:
+    WANDB_AVAILABLE = False
+    wandb = None
+
+try:
+    import optuna
+    from optuna.pruners import MedianPruner
+    from optuna.samplers import TPESampler
+    OPTUNA_AVAILABLE = True
+except ImportError:
+    OPTUNA_AVAILABLE = False
+    optuna = None
 
 from .utils import setup_logging, load_config, set_seed, timer, get_project_root
 from .data import (
@@ -38,6 +77,1543 @@ logger = logging.getLogger(__name__)
 # These columns are NEVER used as model features
 # Canonical definition is in src/data.py
 TARGET_COL = 'y_norm'
+
+# ==============================================================================
+# EXPERIMENT TRACKING (Section 5.1)
+# ==============================================================================
+
+class ExperimentTracker:
+    """
+    Unified experiment tracking interface supporting MLflow and W&B.
+    
+    Provides a consistent API for logging metrics, parameters, and artifacts
+    across different tracking backends. Falls back gracefully when backends
+    are not available.
+    
+    Example usage:
+        tracker = ExperimentTracker(backend='mlflow', experiment_name='my_exp')
+        tracker.start_run(run_name='catboost_s1')
+        tracker.log_params({'lr': 0.03, 'depth': 6})
+        tracker.log_metrics({'rmse': 0.15, 'mae': 0.12})
+        tracker.log_artifact('/path/to/model.bin')
+        tracker.end_run()
+    """
+    
+    def __init__(
+        self,
+        backend: Optional[str] = None,
+        experiment_name: str = 'novartis-datathon-2025',
+        tracking_uri: Optional[str] = None,
+        project_name: Optional[str] = None,  # For W&B
+        enabled: bool = True
+    ):
+        """
+        Initialize experiment tracker.
+        
+        Args:
+            backend: 'mlflow', 'wandb', or None (disabled)
+            experiment_name: Name for MLflow experiment
+            tracking_uri: MLflow tracking URI (defaults to local ./mlruns)
+            project_name: W&B project name (defaults to experiment_name)
+            enabled: Whether tracking is enabled
+        """
+        self.backend = backend.lower() if backend else None
+        self.experiment_name = experiment_name
+        self.tracking_uri = tracking_uri
+        self.project_name = project_name or experiment_name
+        self.enabled = enabled
+        self._run_active = False
+        self._run_id = None
+        
+        if not self.enabled or self.backend is None:
+            logger.info("Experiment tracking disabled")
+            return
+        
+        if self.backend == 'mlflow':
+            if not MLFLOW_AVAILABLE:
+                logger.warning("MLflow not installed. Tracking disabled.")
+                self.enabled = False
+                return
+            if tracking_uri:
+                mlflow.set_tracking_uri(tracking_uri)
+            mlflow.set_experiment(experiment_name)
+            logger.info(f"MLflow tracking enabled for experiment: {experiment_name}")
+            
+        elif self.backend == 'wandb':
+            if not WANDB_AVAILABLE:
+                logger.warning("W&B not installed. Tracking disabled.")
+                self.enabled = False
+                return
+            logger.info(f"W&B tracking enabled for project: {self.project_name}")
+        else:
+            logger.warning(f"Unknown backend: {self.backend}. Tracking disabled.")
+            self.enabled = False
+    
+    def start_run(
+        self,
+        run_name: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
+        config: Optional[Dict[str, Any]] = None
+    ) -> Optional[str]:
+        """
+        Start a new tracking run.
+        
+        Args:
+            run_name: Name for this run
+            tags: Dictionary of tags
+            config: Configuration dictionary (logged as params in W&B)
+            
+        Returns:
+            Run ID if available
+        """
+        if not self.enabled:
+            return None
+        
+        if self.backend == 'mlflow':
+            run = mlflow.start_run(run_name=run_name, tags=tags)
+            self._run_id = run.info.run_id
+            self._run_active = True
+            logger.info(f"Started MLflow run: {run_name} (ID: {self._run_id})")
+            return self._run_id
+            
+        elif self.backend == 'wandb':
+            wandb.init(
+                project=self.project_name,
+                name=run_name,
+                tags=list(tags.values()) if tags else None,
+                config=config
+            )
+            self._run_id = wandb.run.id if wandb.run else None
+            self._run_active = True
+            logger.info(f"Started W&B run: {run_name}")
+            return self._run_id
+        
+        return None
+    
+    def log_params(self, params: Dict[str, Any]):
+        """Log parameters/hyperparameters."""
+        if not self.enabled or not self._run_active:
+            return
+        
+        if self.backend == 'mlflow':
+            # MLflow has param length limits, so truncate if needed
+            for key, value in params.items():
+                str_value = str(value)[:500]  # MLflow limit
+                mlflow.log_param(key, str_value)
+                
+        elif self.backend == 'wandb':
+            wandb.config.update(params)
+    
+    def log_metrics(
+        self,
+        metrics: Dict[str, float],
+        step: Optional[int] = None
+    ):
+        """Log metrics."""
+        if not self.enabled or not self._run_active:
+            return
+        
+        if self.backend == 'mlflow':
+            mlflow.log_metrics(metrics, step=step)
+            
+        elif self.backend == 'wandb':
+            if step is not None:
+                wandb.log(metrics, step=step)
+            else:
+                wandb.log(metrics)
+    
+    def log_artifact(self, artifact_path: str, artifact_name: Optional[str] = None):
+        """Log a file artifact."""
+        if not self.enabled or not self._run_active:
+            return
+        
+        if not Path(artifact_path).exists():
+            logger.warning(f"Artifact not found: {artifact_path}")
+            return
+        
+        if self.backend == 'mlflow':
+            mlflow.log_artifact(artifact_path)
+            
+        elif self.backend == 'wandb':
+            artifact = wandb.Artifact(
+                name=artifact_name or Path(artifact_path).stem,
+                type='model'
+            )
+            artifact.add_file(artifact_path)
+            wandb.log_artifact(artifact)
+    
+    def log_figure(self, fig, name: str):
+        """Log a matplotlib figure."""
+        if not self.enabled or not self._run_active:
+            return
+        
+        if self.backend == 'mlflow':
+            mlflow.log_figure(fig, f"{name}.png")
+            
+        elif self.backend == 'wandb':
+            wandb.log({name: wandb.Image(fig)})
+    
+    def end_run(self, status: str = 'FINISHED'):
+        """End the current run."""
+        if not self.enabled or not self._run_active:
+            return
+        
+        if self.backend == 'mlflow':
+            mlflow.end_run(status=status)
+            
+        elif self.backend == 'wandb':
+            wandb.finish()
+        
+        self._run_active = False
+        logger.info(f"Ended tracking run (status: {status})")
+    
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit."""
+        status = 'FAILED' if exc_type else 'FINISHED'
+        self.end_run(status=status)
+        return False  # Don't suppress exceptions
+
+
+def setup_experiment_tracking(
+    run_config: dict,
+    run_name: str
+) -> Optional[ExperimentTracker]:
+    """
+    Setup experiment tracking from run_config.
+    
+    Args:
+        run_config: Run configuration dictionary
+        run_name: Name for the run
+        
+    Returns:
+        ExperimentTracker instance or None
+    """
+    tracking_config = run_config.get('experiment_tracking', {})
+    
+    if not tracking_config.get('enabled', False):
+        return None
+    
+    backend = tracking_config.get('backend')
+    experiment_name = tracking_config.get('experiment_name', 'novartis-datathon-2025')
+    tracking_uri = tracking_config.get('tracking_uri')
+    project_name = tracking_config.get('project_name')
+    
+    tracker = ExperimentTracker(
+        backend=backend,
+        experiment_name=experiment_name,
+        tracking_uri=tracking_uri,
+        project_name=project_name,
+        enabled=True
+    )
+    
+    return tracker
+
+
+# ==============================================================================
+# CHECKPOINT SAVING (Section 5.1)
+# ==============================================================================
+
+class TrainingCheckpoint:
+    """
+    Checkpoint manager for saving and resuming training.
+    
+    Supports saving/loading:
+    - Model state
+    - Training state (epoch, step, best score)
+    - Optimizer state (if applicable)
+    - Sample weights
+    - Configuration
+    
+    Example usage:
+        checkpoint = TrainingCheckpoint(checkpoint_dir='artifacts/checkpoints')
+        
+        # Save during training
+        checkpoint.save(
+            model=model,
+            epoch=10,
+            step=1000,
+            metrics={'rmse': 0.15},
+            config=config_dict
+        )
+        
+        # Resume training
+        state = checkpoint.load_latest()
+        model = state['model']
+        start_epoch = state['epoch'] + 1
+    """
+    
+    def __init__(
+        self,
+        checkpoint_dir: Union[str, Path],
+        keep_best_n: int = 3,
+        metric_name: str = 'official_metric',
+        minimize: bool = True
+    ):
+        """
+        Initialize checkpoint manager.
+        
+        Args:
+            checkpoint_dir: Directory to save checkpoints
+            keep_best_n: Number of best checkpoints to keep
+            metric_name: Metric to track for best model
+            minimize: If True, lower metric is better
+        """
+        self.checkpoint_dir = Path(checkpoint_dir)
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        self.keep_best_n = keep_best_n
+        self.metric_name = metric_name
+        self.minimize = minimize
+        self._checkpoint_history: List[Dict] = []
+    
+    def save(
+        self,
+        model: Any,
+        epoch: int,
+        step: Optional[int] = None,
+        metrics: Optional[Dict[str, float]] = None,
+        config: Optional[Dict] = None,
+        sample_weights: Optional[np.ndarray] = None,
+        additional_state: Optional[Dict] = None,
+        is_best: bool = False
+    ) -> Path:
+        """
+        Save a training checkpoint.
+        
+        Args:
+            model: Model instance (must have .save() method)
+            epoch: Current epoch number
+            step: Current step number
+            metrics: Dictionary of current metrics
+            config: Training configuration
+            sample_weights: Sample weights array
+            additional_state: Any additional state to save
+            is_best: If True, also save as best checkpoint
+            
+        Returns:
+            Path to saved checkpoint
+        """
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        checkpoint_name = f"checkpoint_epoch{epoch:04d}_{timestamp}"
+        checkpoint_path = self.checkpoint_dir / checkpoint_name
+        checkpoint_path.mkdir(parents=True, exist_ok=True)
+        
+        # Save model
+        model_path = checkpoint_path / "model.bin"
+        model.save(str(model_path))
+        
+        # Save training state
+        state = {
+            'epoch': epoch,
+            'step': step,
+            'metrics': metrics or {},
+            'timestamp': timestamp,
+            'checkpoint_name': checkpoint_name
+        }
+        
+        if config:
+            state['config'] = config
+        
+        if sample_weights is not None:
+            weights_path = checkpoint_path / "sample_weights.npy"
+            np.save(weights_path, sample_weights)
+            state['sample_weights_path'] = str(weights_path)
+        
+        if additional_state:
+            state['additional'] = additional_state
+        
+        state_path = checkpoint_path / "training_state.json"
+        with open(state_path, 'w') as f:
+            json.dump(state, f, indent=2, default=str)
+        
+        # Update history
+        self._checkpoint_history.append({
+            'path': str(checkpoint_path),
+            'epoch': epoch,
+            'metrics': metrics or {},
+            'timestamp': timestamp
+        })
+        
+        # Cleanup old checkpoints
+        self._cleanup_old_checkpoints()
+        
+        # Save as best if requested
+        if is_best:
+            best_path = self.checkpoint_dir / "best"
+            if best_path.exists():
+                shutil.rmtree(best_path)
+            shutil.copytree(checkpoint_path, best_path)
+        
+        logger.info(f"Saved checkpoint: {checkpoint_path}")
+        return checkpoint_path
+    
+    def load(
+        self,
+        checkpoint_path: Union[str, Path],
+        model_class: Optional[type] = None,
+        model_config: Optional[dict] = None
+    ) -> Dict[str, Any]:
+        """
+        Load a checkpoint.
+        
+        Args:
+            checkpoint_path: Path to checkpoint directory
+            model_class: Model class to instantiate
+            model_config: Configuration for model instantiation
+            
+        Returns:
+            Dictionary with loaded state
+        """
+        checkpoint_path = Path(checkpoint_path)
+        
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+        
+        # Load training state
+        state_path = checkpoint_path / "training_state.json"
+        with open(state_path, 'r') as f:
+            state = json.load(f)
+        
+        # Load model
+        model_path = checkpoint_path / "model.bin"
+        if model_class is not None:
+            model = model_class(model_config or {})
+            model.load(str(model_path))
+            state['model'] = model
+        else:
+            state['model_path'] = str(model_path)
+        
+        # Load sample weights if available
+        if 'sample_weights_path' in state:
+            weights_path = Path(state['sample_weights_path'])
+            if weights_path.exists():
+                state['sample_weights'] = np.load(weights_path)
+        
+        logger.info(f"Loaded checkpoint from: {checkpoint_path}")
+        return state
+    
+    def load_latest(
+        self,
+        model_class: Optional[type] = None,
+        model_config: Optional[dict] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Load the most recent checkpoint."""
+        checkpoints = sorted(
+            self.checkpoint_dir.glob("checkpoint_*"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True
+        )
+        
+        if not checkpoints:
+            logger.warning("No checkpoints found")
+            return None
+        
+        return self.load(checkpoints[0], model_class, model_config)
+    
+    def load_best(
+        self,
+        model_class: Optional[type] = None,
+        model_config: Optional[dict] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Load the best checkpoint."""
+        best_path = self.checkpoint_dir / "best"
+        
+        if not best_path.exists():
+            logger.warning("No best checkpoint found")
+            return None
+        
+        return self.load(best_path, model_class, model_config)
+    
+    def get_checkpoint_history(self) -> List[Dict]:
+        """Get list of all saved checkpoints."""
+        return self._checkpoint_history.copy()
+    
+    def _cleanup_old_checkpoints(self):
+        """Remove old checkpoints, keeping only best N by metric."""
+        if self.keep_best_n <= 0:
+            return
+        
+        # Sort by metric
+        checkpoints = sorted(
+            self.checkpoint_dir.glob("checkpoint_*"),
+            key=lambda p: self._get_checkpoint_metric(p),
+            reverse=not self.minimize
+        )
+        
+        # Keep best N + best
+        to_keep = set()
+        for cp in checkpoints[:self.keep_best_n]:
+            to_keep.add(cp.name)
+        
+        # Remove old checkpoints
+        for cp in checkpoints[self.keep_best_n:]:
+            if cp.name not in to_keep and cp.name != "best":
+                shutil.rmtree(cp)
+                logger.debug(f"Removed old checkpoint: {cp}")
+    
+    def _get_checkpoint_metric(self, checkpoint_path: Path) -> float:
+        """Get metric value from checkpoint for sorting."""
+        state_path = checkpoint_path / "training_state.json"
+        if not state_path.exists():
+            return float('inf') if self.minimize else float('-inf')
+        
+        try:
+            with open(state_path, 'r') as f:
+                state = json.load(f)
+            return state.get('metrics', {}).get(self.metric_name, 
+                float('inf') if self.minimize else float('-inf'))
+        except Exception:
+            return float('inf') if self.minimize else float('-inf')
+
+
+# ==============================================================================
+# WEIGHT TRANSFORMATIONS (Section 5.4)
+# ==============================================================================
+
+def transform_weights(
+    weights: pd.Series,
+    transformation: str = 'identity',
+    clip_min: float = 0.01,
+    clip_max: float = 100.0
+) -> pd.Series:
+    """
+    Apply transformation to sample weights.
+    
+    Available transformations:
+    - 'identity': No transformation
+    - 'sqrt': Square root transformation (reduces extreme values)
+    - 'log': Log transformation (stronger reduction of extremes)
+    - 'softmax': Softmax normalization (sums to 1)
+    - 'rank': Rank-based transformation (uniform spread)
+    
+    Args:
+        weights: Input sample weights
+        transformation: Type of transformation to apply
+        clip_min: Minimum weight value after transformation
+        clip_max: Maximum weight value after transformation
+        
+    Returns:
+        Transformed weights
+    """
+    if transformation == 'identity':
+        transformed = weights.copy()
+        
+    elif transformation == 'sqrt':
+        # Square root reduces extreme values
+        transformed = np.sqrt(weights)
+        
+    elif transformation == 'log':
+        # Log transformation (add small epsilon to avoid log(0))
+        transformed = np.log1p(weights)
+        
+    elif transformation == 'softmax':
+        # Softmax normalization
+        exp_w = np.exp(weights - weights.max())  # Subtract max for numerical stability
+        transformed = exp_w / exp_w.sum()
+        
+    elif transformation == 'rank':
+        # Rank-based transformation - creates uniform spread
+        ranks = weights.rank(method='average')
+        transformed = ranks / len(ranks)
+        
+    else:
+        raise ValueError(f"Unknown weight transformation: {transformation}")
+    
+    # Clip and normalize
+    transformed = transformed.clip(lower=clip_min, upper=clip_max)
+    
+    # Normalize so weights sum to len(weights)
+    transformed = transformed * len(transformed) / (transformed.sum() + 1e-8)
+    
+    logger.debug(f"Weight transformation '{transformation}': "
+                f"min={transformed.min():.4f}, max={transformed.max():.4f}, "
+                f"mean={transformed.mean():.4f}")
+    
+    return transformed
+
+
+def validate_weights_correlation(
+    weights: pd.Series,
+    y_true: pd.Series,
+    y_pred: pd.Series,
+    meta_df: pd.DataFrame,
+    scenario: int,
+    n_bootstrap: int = 100
+) -> Dict[str, Any]:
+    """
+    Validate that sample weights correlate with metric improvement.
+    
+    Computes metrics with different weight configurations to verify
+    that the chosen weights actually improve the target metric.
+    
+    Args:
+        weights: Sample weights to validate
+        y_true: True target values
+        y_pred: Predicted values
+        meta_df: Metadata DataFrame (with bucket, months_postgx)
+        scenario: Scenario number (1 or 2)
+        n_bootstrap: Number of bootstrap samples for confidence intervals
+        
+    Returns:
+        Dictionary with validation results
+    """
+    from .evaluate import compute_metric1, compute_metric2
+    
+    results = {
+        'scenario': scenario,
+        'n_samples': len(weights),
+        'weight_stats': {
+            'min': float(weights.min()),
+            'max': float(weights.max()),
+            'mean': float(weights.mean()),
+            'std': float(weights.std()),
+        }
+    }
+    
+    # Compute weighted vs unweighted RMSE
+    weighted_rmse = np.sqrt(np.average((y_true - y_pred) ** 2, weights=weights))
+    unweighted_rmse = np.sqrt(np.mean((y_true - y_pred) ** 2))
+    
+    results['weighted_rmse'] = weighted_rmse
+    results['unweighted_rmse'] = unweighted_rmse
+    results['rmse_ratio'] = weighted_rmse / (unweighted_rmse + 1e-8)
+    
+    # Compute per-bucket weighted errors
+    if 'bucket' in meta_df.columns:
+        for bucket in [1, 2]:
+            mask = meta_df['bucket'] == bucket
+            if mask.sum() > 0:
+                bucket_rmse = np.sqrt(np.average(
+                    (y_true[mask] - y_pred[mask]) ** 2,
+                    weights=weights[mask]
+                ))
+                results[f'bucket{bucket}_weighted_rmse'] = bucket_rmse
+    
+    # Compute per-time-window weighted errors
+    if 'months_postgx' in meta_df.columns:
+        months = meta_df['months_postgx']
+        windows = [
+            ('0_5', (months >= 0) & (months <= 5)),
+            ('6_11', (months >= 6) & (months <= 11)),
+            ('12_23', (months >= 12) & (months <= 23)),
+        ]
+        
+        for name, mask in windows:
+            if mask.sum() > 0:
+                window_rmse = np.sqrt(np.average(
+                    (y_true[mask] - y_pred[mask]) ** 2,
+                    weights=weights[mask]
+                ))
+                results[f'window_{name}_weighted_rmse'] = window_rmse
+    
+    # Weight efficiency: correlation between weight and absolute error
+    abs_errors = np.abs(y_true - y_pred)
+    weight_error_corr = np.corrcoef(weights, abs_errors)[0, 1]
+    results['weight_error_correlation'] = weight_error_corr
+    
+    # Higher correlation means weights focus on high-error regions
+    # Negative correlation means weights focus on low-error regions (desired)
+    results['interpretation'] = (
+        'Good' if weight_error_corr < 0 else 
+        'Neutral' if abs(weight_error_corr) < 0.1 else 
+        'Review weights'
+    )
+    
+    logger.info(f"Weight validation: RMSE ratio={results['rmse_ratio']:.4f}, "
+               f"weight-error correlation={weight_error_corr:.4f}")
+    
+    return results
+
+
+# ==============================================================================
+# HYPERPARAMETER OPTIMIZATION (Section 5.5)
+# ==============================================================================
+
+def create_optuna_objective(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    meta_train: pd.DataFrame,
+    X_val: pd.DataFrame,
+    y_val: pd.Series,
+    meta_val: pd.DataFrame,
+    scenario: int,
+    model_type: str = 'catboost',
+    search_space: Optional[Dict] = None,
+    run_config: Optional[Dict] = None
+) -> Callable:
+    """
+    Create an Optuna objective function for hyperparameter optimization.
+    
+    Args:
+        X_train, y_train, meta_train: Training data
+        X_val, y_val, meta_val: Validation data
+        scenario: Scenario number
+        model_type: Type of model to tune
+        search_space: Custom search space dict
+        run_config: Run configuration
+        
+    Returns:
+        Objective function for Optuna
+    """
+    def objective(trial: 'optuna.Trial') -> float:
+        """Optuna objective function."""
+        # Define hyperparameters based on model type
+        if model_type == 'catboost':
+            params = {
+                'depth': trial.suggest_int('depth', 
+                    search_space.get('depth', [4, 8])[0],
+                    search_space.get('depth', [4, 8])[1]
+                ),
+                'learning_rate': trial.suggest_float('learning_rate',
+                    search_space.get('learning_rate', [0.01, 0.1])[0],
+                    search_space.get('learning_rate', [0.01, 0.1])[1],
+                    log=True
+                ),
+                'l2_leaf_reg': trial.suggest_float('l2_leaf_reg',
+                    search_space.get('l2_leaf_reg', [1.0, 10.0])[0],
+                    search_space.get('l2_leaf_reg', [1.0, 10.0])[1],
+                    log=True
+                ),
+                'min_data_in_leaf': trial.suggest_int('min_data_in_leaf',
+                    search_space.get('min_data_in_leaf', [10, 50])[0],
+                    search_space.get('min_data_in_leaf', [10, 50])[1]
+                ),
+                'random_strength': trial.suggest_float('random_strength',
+                    search_space.get('random_strength', [0.0, 5.0])[0],
+                    search_space.get('random_strength', [0.0, 5.0])[1]
+                ),
+                'bagging_temperature': trial.suggest_float('bagging_temperature',
+                    search_space.get('bagging_temperature', [0.0, 5.0])[0],
+                    search_space.get('bagging_temperature', [0.0, 5.0])[1]
+                ),
+            }
+            
+        elif model_type == 'lightgbm':
+            params = {
+                'num_leaves': trial.suggest_int('num_leaves',
+                    search_space.get('num_leaves', [15, 63])[0],
+                    search_space.get('num_leaves', [15, 63])[1]
+                ),
+                'learning_rate': trial.suggest_float('learning_rate',
+                    search_space.get('learning_rate', [0.01, 0.1])[0],
+                    search_space.get('learning_rate', [0.01, 0.1])[1],
+                    log=True
+                ),
+                'min_data_in_leaf': trial.suggest_int('min_data_in_leaf',
+                    search_space.get('min_data_in_leaf', [10, 50])[0],
+                    search_space.get('min_data_in_leaf', [10, 50])[1]
+                ),
+                'feature_fraction': trial.suggest_float('feature_fraction',
+                    search_space.get('feature_fraction', [0.6, 1.0])[0],
+                    search_space.get('feature_fraction', [0.6, 1.0])[1]
+                ),
+                'bagging_fraction': trial.suggest_float('bagging_fraction',
+                    search_space.get('bagging_fraction', [0.6, 1.0])[0],
+                    search_space.get('bagging_fraction', [0.6, 1.0])[1]
+                ),
+            }
+            
+        elif model_type == 'xgboost':
+            params = {
+                'max_depth': trial.suggest_int('max_depth',
+                    search_space.get('max_depth', [4, 8])[0],
+                    search_space.get('max_depth', [4, 8])[1]
+                ),
+                'learning_rate': trial.suggest_float('learning_rate',
+                    search_space.get('learning_rate', [0.01, 0.1])[0],
+                    search_space.get('learning_rate', [0.01, 0.1])[1],
+                    log=True
+                ),
+                'min_child_weight': trial.suggest_int('min_child_weight',
+                    search_space.get('min_child_weight', [1, 10])[0],
+                    search_space.get('min_child_weight', [1, 10])[1]
+                ),
+                'colsample_bytree': trial.suggest_float('colsample_bytree',
+                    search_space.get('colsample_bytree', [0.6, 1.0])[0],
+                    search_space.get('colsample_bytree', [0.6, 1.0])[1]
+                ),
+                'subsample': trial.suggest_float('subsample',
+                    search_space.get('subsample', [0.6, 1.0])[0],
+                    search_space.get('subsample', [0.6, 1.0])[1]
+                ),
+            }
+        else:
+            raise ValueError(f"HPO not supported for model type: {model_type}")
+        
+        # Train model with suggested parameters
+        try:
+            model, metrics = train_scenario_model(
+                X_train, y_train, meta_train,
+                X_val, y_val, meta_val,
+                scenario=scenario,
+                model_type=model_type,
+                model_config={'params': params},
+                run_config=run_config
+            )
+            
+            # Return official metric (to minimize)
+            metric_value = metrics.get('official_metric', np.inf)
+            
+            # Report intermediate value for pruning
+            trial.report(metric_value, step=0)
+            
+            if trial.should_prune():
+                raise optuna.TrialPruned()
+            
+            return metric_value
+            
+        except Exception as e:
+            logger.warning(f"Trial failed: {e}")
+            return np.inf
+    
+    return objective
+
+
+def run_hyperparameter_optimization(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    meta_train: pd.DataFrame,
+    X_val: pd.DataFrame,
+    y_val: pd.Series,
+    meta_val: pd.DataFrame,
+    scenario: int,
+    model_type: str = 'catboost',
+    n_trials: int = 100,
+    timeout: Optional[int] = 3600,
+    search_space: Optional[Dict] = None,
+    run_config: Optional[Dict] = None,
+    study_name: Optional[str] = None,
+    storage: Optional[str] = None,
+    artifacts_dir: Optional[Path] = None
+) -> Dict[str, Any]:
+    """
+    Run hyperparameter optimization using Optuna.
+    
+    Args:
+        X_train, y_train, meta_train: Training data
+        X_val, y_val, meta_val: Validation data  
+        scenario: Scenario number
+        model_type: Type of model to tune
+        n_trials: Number of optimization trials
+        timeout: Maximum time in seconds (None for no limit)
+        search_space: Custom search space dict (uses defaults if None)
+        run_config: Run configuration
+        study_name: Name for Optuna study
+        storage: Storage URL for distributed optimization
+        artifacts_dir: Directory to save HPO results
+        
+    Returns:
+        Dictionary with best parameters and optimization history
+    """
+    if not OPTUNA_AVAILABLE:
+        raise ImportError(
+            "Optuna is required for hyperparameter optimization. "
+            "Install with: pip install optuna"
+        )
+    
+    # Default search spaces
+    default_search_spaces = {
+        'catboost': {
+            'depth': [4, 8],
+            'learning_rate': [0.01, 0.1],
+            'l2_leaf_reg': [1.0, 10.0],
+            'min_data_in_leaf': [10, 50],
+            'random_strength': [0.0, 5.0],
+            'bagging_temperature': [0.0, 5.0],
+        },
+        'lightgbm': {
+            'num_leaves': [15, 63],
+            'learning_rate': [0.01, 0.1],
+            'min_data_in_leaf': [10, 50],
+            'feature_fraction': [0.6, 1.0],
+            'bagging_fraction': [0.6, 1.0],
+        },
+        'xgboost': {
+            'max_depth': [4, 8],
+            'learning_rate': [0.01, 0.1],
+            'min_child_weight': [1, 10],
+            'colsample_bytree': [0.6, 1.0],
+            'subsample': [0.6, 1.0],
+        }
+    }
+    
+    search_space = search_space or default_search_spaces.get(model_type, {})
+    
+    # Create study
+    study_name = study_name or f"{model_type}_scenario{scenario}_{datetime.now():%Y%m%d_%H%M%S}"
+    
+    study = optuna.create_study(
+        study_name=study_name,
+        storage=storage,
+        direction='minimize',
+        sampler=TPESampler(seed=42),
+        pruner=MedianPruner(n_startup_trials=10, n_warmup_steps=0)
+    )
+    
+    # Create objective
+    objective = create_optuna_objective(
+        X_train, y_train, meta_train,
+        X_val, y_val, meta_val,
+        scenario=scenario,
+        model_type=model_type,
+        search_space=search_space,
+        run_config=run_config
+    )
+    
+    logger.info(f"Starting HPO with {n_trials} trials, timeout={timeout}s")
+    
+    # Run optimization
+    study.optimize(
+        objective,
+        n_trials=n_trials,
+        timeout=timeout,
+        show_progress_bar=True,
+        catch=(Exception,)
+    )
+    
+    # Collect results
+    results = {
+        'best_params': study.best_params,
+        'best_value': study.best_value,
+        'best_trial': study.best_trial.number,
+        'n_trials': len(study.trials),
+        'study_name': study_name,
+        'model_type': model_type,
+        'scenario': scenario,
+        'search_space': search_space,
+    }
+    
+    # Save results if artifacts_dir provided
+    if artifacts_dir:
+        artifacts_dir = Path(artifacts_dir)
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save best params
+        best_params_path = artifacts_dir / 'best_params.yaml'
+        with open(best_params_path, 'w') as f:
+            yaml.dump(results['best_params'], f)
+        
+        # Save full results
+        results_path = artifacts_dir / 'hpo_results.json'
+        with open(results_path, 'w') as f:
+            json.dump(results, f, indent=2, default=str)
+        
+        # Save trial history
+        history = []
+        for trial in study.trials:
+            history.append({
+                'number': trial.number,
+                'value': trial.value,
+                'params': trial.params,
+                'state': str(trial.state),
+            })
+        
+        history_path = artifacts_dir / 'trial_history.json'
+        with open(history_path, 'w') as f:
+            json.dump(history, f, indent=2)
+        
+        logger.info(f"HPO results saved to {artifacts_dir}")
+    
+    logger.info(f"HPO complete. Best value: {study.best_value:.4f}")
+    logger.info(f"Best params: {study.best_params}")
+    
+    return results
+
+
+# ==============================================================================
+# MEMORY PROFILING (Section 5.7)
+# ==============================================================================
+
+class MemoryProfiler:
+    """
+    Memory profiler for tracking memory usage during training.
+    
+    Uses tracemalloc for detailed memory tracking.
+    
+    Example usage:
+        profiler = MemoryProfiler()
+        profiler.start()
+        
+        # ... training code ...
+        profiler.snapshot("after_data_load")
+        
+        # ... more training ...
+        profiler.snapshot("after_training")
+        
+        profiler.stop()
+        report = profiler.get_report()
+    """
+    
+    def __init__(self, enabled: bool = True):
+        """Initialize memory profiler."""
+        self.enabled = enabled
+        self._snapshots: Dict[str, tracemalloc.Snapshot] = {}
+        self._started = False
+    
+    def start(self):
+        """Start memory tracking."""
+        if not self.enabled:
+            return
+        
+        tracemalloc.start()
+        self._started = True
+        self.snapshot("start")
+        logger.debug("Memory profiling started")
+    
+    def stop(self):
+        """Stop memory tracking."""
+        if not self.enabled or not self._started:
+            return
+        
+        self.snapshot("end")
+        tracemalloc.stop()
+        self._started = False
+        logger.debug("Memory profiling stopped")
+    
+    def snapshot(self, name: str):
+        """Take a memory snapshot."""
+        if not self.enabled or not self._started:
+            return
+        
+        self._snapshots[name] = tracemalloc.take_snapshot()
+        current, peak = tracemalloc.get_traced_memory()
+        logger.debug(f"Memory snapshot '{name}': current={current/1024**2:.1f}MB, "
+                    f"peak={peak/1024**2:.1f}MB")
+    
+    def get_report(self) -> Dict[str, Any]:
+        """Generate memory usage report."""
+        if not self._snapshots:
+            return {'enabled': False}
+        
+        report = {
+            'enabled': True,
+            'snapshots': {},
+            'peak_memory_mb': 0,
+        }
+        
+        # Get peak memory
+        if 'end' in self._snapshots:
+            snapshot = self._snapshots['end']
+            stats = snapshot.statistics('lineno')
+            total = sum(stat.size for stat in stats)
+            report['peak_memory_mb'] = total / 1024 ** 2
+        
+        # Compare snapshots
+        if 'start' in self._snapshots and 'end' in self._snapshots:
+            start_snap = self._snapshots['start']
+            end_snap = self._snapshots['end']
+            
+            top_stats = end_snap.compare_to(start_snap, 'lineno')
+            report['top_memory_growth'] = [
+                {
+                    'file': str(stat.traceback),
+                    'size_diff_mb': stat.size_diff / 1024 ** 2,
+                    'count_diff': stat.count_diff
+                }
+                for stat in top_stats[:10]
+            ]
+        
+        return report
+    
+    def log_current(self):
+        """Log current memory usage."""
+        if not self.enabled or not self._started:
+            return
+        
+        current, peak = tracemalloc.get_traced_memory()
+        logger.info(f"Memory: current={current/1024**2:.1f}MB, peak={peak/1024**2:.1f}MB")
+
+
+# ==============================================================================
+# PARALLEL TRAINING (Section 5.7)
+# ==============================================================================
+
+def train_scenario_parallel(
+    scenario_configs: List[Dict[str, Any]],
+    max_workers: int = 2
+) -> List[Dict[str, Any]]:
+    """
+    Train multiple scenarios in parallel.
+    
+    WARNING: This creates separate processes, so GPU memory is not shared.
+    Use with caution on memory-limited systems.
+    
+    Args:
+        scenario_configs: List of configuration dicts, each with:
+            - scenario: 1 or 2
+            - model_type: Model type string
+            - model_config_path: Path to model config
+            - run_config_path: Path to run config
+            - data_config_path: Path to data config
+            - features_config_path: Path to features config
+            - run_name: Name for this run
+        max_workers: Maximum parallel workers
+        
+    Returns:
+        List of results from each training run
+    """
+    results = []
+    
+    # Use ProcessPoolExecutor for true parallelism
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {}
+        
+        for config in scenario_configs:
+            future = executor.submit(
+                run_experiment,
+                scenario=config['scenario'],
+                model_type=config.get('model_type', 'catboost'),
+                model_config_path=config.get('model_config_path'),
+                run_config_path=config.get('run_config_path', 'configs/run_defaults.yaml'),
+                data_config_path=config.get('data_config_path', 'configs/data.yaml'),
+                features_config_path=config.get('features_config_path', 'configs/features.yaml'),
+                run_name=config.get('run_name')
+            )
+            futures[future] = config
+        
+        for future in as_completed(futures):
+            config = futures[future]
+            try:
+                model, metrics = future.result()
+                results.append({
+                    'scenario': config['scenario'],
+                    'model_type': config.get('model_type'),
+                    'metrics': metrics,
+                    'status': 'success'
+                })
+                logger.info(f"Completed training for scenario {config['scenario']}")
+            except Exception as e:
+                logger.error(f"Training failed for scenario {config['scenario']}: {e}")
+                results.append({
+                    'scenario': config['scenario'],
+                    'model_type': config.get('model_type'),
+                    'error': str(e),
+                    'status': 'failed'
+                })
+    
+    return results
+
+
+def run_full_training_pipeline(
+    run_config_path: str = 'configs/run_defaults.yaml',
+    data_config_path: str = 'configs/data.yaml',
+    features_config_path: str = 'configs/features.yaml',
+    model_config_path: Optional[str] = None,
+    model_type: str = 'catboost',
+    run_cv: bool = False,
+    n_folds: int = 5,
+    parallel: bool = False,
+    run_hpo: bool = False,
+    hpo_trials: int = 50,
+    enable_tracking: bool = False,
+    enable_checkpoints: bool = True,
+    enable_profiling: bool = False,
+    run_name: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Run the full training pipeline for both scenarios.
+    
+    This is a comprehensive training function that can:
+    - Train both scenarios (sequential or parallel)
+    - Run cross-validation
+    - Perform hyperparameter optimization
+    - Track experiments
+    - Save checkpoints
+    - Profile memory usage
+    
+    Args:
+        run_config_path: Path to run config
+        data_config_path: Path to data config
+        features_config_path: Path to features config
+        model_config_path: Path to model config
+        model_type: Model type to train
+        run_cv: Whether to run cross-validation
+        n_folds: Number of CV folds
+        parallel: Train scenarios in parallel
+        run_hpo: Run hyperparameter optimization first
+        hpo_trials: Number of HPO trials
+        enable_tracking: Enable experiment tracking
+        enable_checkpoints: Enable checkpoint saving
+        enable_profiling: Enable memory profiling
+        run_name: Custom run name
+        
+    Returns:
+        Dictionary with all results
+    """
+    # Load configs
+    run_config = load_config(run_config_path)
+    data_config = load_config(data_config_path)
+    features_config = load_config(features_config_path) if features_config_path else {}
+    model_config = load_config(model_config_path) if model_config_path else {}
+    
+    # Setup
+    seed = run_config['reproducibility']['seed']
+    set_seed(seed)
+    
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    run_name = run_name or f"{timestamp}_{model_type}_full"
+    
+    artifacts_dir = get_project_root() / run_config['paths']['artifacts_dir'] / run_name
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    
+    setup_logging(log_file=str(artifacts_dir / "train_full.log"))
+    logger.info(f"Starting full training pipeline: {run_name}")
+    
+    # Initialize profiler
+    profiler = MemoryProfiler(enabled=enable_profiling)
+    profiler.start()
+    
+    # Initialize experiment tracking
+    tracker = None
+    if enable_tracking:
+        tracker = setup_experiment_tracking(run_config, run_name)
+        if tracker:
+            tracker.start_run(run_name=run_name, config={
+                'run_config': run_config,
+                'model_config': model_config,
+                'model_type': model_type
+            })
+    
+    # Initialize checkpoint manager
+    checkpoint_mgr = None
+    if enable_checkpoints:
+        checkpoint_mgr = TrainingCheckpoint(
+            checkpoint_dir=artifacts_dir / 'checkpoints',
+            keep_best_n=3
+        )
+    
+    results = {
+        'run_name': run_name,
+        'timestamp': timestamp,
+        'scenarios': {},
+        'hpo_results': None,
+        'memory_report': None
+    }
+    
+    profiler.snapshot("after_setup")
+    
+    try:
+        # Run HPO if requested
+        if run_hpo:
+            logger.info("Running hyperparameter optimization...")
+            # Load data once for HPO
+            from .data import load_raw_data, prepare_base_panel, compute_pre_entry_stats, handle_missing_values
+            
+            train_data = load_raw_data(data_config, split='train')
+            panel = prepare_base_panel(
+                train_data['volume'],
+                train_data['generics'],
+                train_data['medicine_info']
+            )
+            panel = handle_missing_values(panel)
+            panel = compute_pre_entry_stats(panel, is_train=True)
+            
+            profiler.snapshot("after_data_load")
+            
+            # Run HPO for each scenario
+            for scenario in [1, 2]:
+                from .features import make_features, select_training_rows
+                
+                panel_features = make_features(panel.copy(), scenario=scenario, mode='train', config=features_config)
+                train_rows = select_training_rows(panel_features, scenario=scenario)
+                
+                train_df, val_df = create_validation_split(
+                    train_rows,
+                    val_fraction=run_config['validation']['val_fraction'],
+                    stratify_by=run_config['validation']['stratify_by'],
+                    random_state=seed
+                )
+                
+                X_train, y_train, meta_train = split_features_target_meta(train_df)
+                X_val, y_val, meta_val = split_features_target_meta(val_df)
+                
+                hpo_results = run_hyperparameter_optimization(
+                    X_train, y_train, meta_train,
+                    X_val, y_val, meta_val,
+                    scenario=scenario,
+                    model_type=model_type,
+                    n_trials=hpo_trials,
+                    artifacts_dir=artifacts_dir / f'hpo_scenario{scenario}'
+                )
+                
+                results['hpo_results'] = results.get('hpo_results', {})
+                results['hpo_results'][scenario] = hpo_results
+                
+                # Use best params
+                model_config['params'] = hpo_results['best_params']
+            
+            profiler.snapshot("after_hpo")
+        
+        # Train scenarios
+        scenario_configs = [
+            {
+                'scenario': 1,
+                'model_type': model_type,
+                'model_config_path': model_config_path,
+                'run_config_path': run_config_path,
+                'data_config_path': data_config_path,
+                'features_config_path': features_config_path,
+                'run_name': f"{run_name}_s1"
+            },
+            {
+                'scenario': 2,
+                'model_type': model_type,
+                'model_config_path': model_config_path,
+                'run_config_path': run_config_path,
+                'data_config_path': data_config_path,
+                'features_config_path': features_config_path,
+                'run_name': f"{run_name}_s2"
+            }
+        ]
+        
+        if parallel and len(scenario_configs) > 1:
+            logger.info("Training scenarios in parallel...")
+            scenario_results = train_scenario_parallel(scenario_configs, max_workers=2)
+        else:
+            logger.info("Training scenarios sequentially...")
+            scenario_results = []
+            for config in scenario_configs:
+                model, metrics = run_experiment(
+                    scenario=config['scenario'],
+                    model_type=config['model_type'],
+                    model_config_path=config['model_config_path'],
+                    run_config_path=config['run_config_path'],
+                    data_config_path=config['data_config_path'],
+                    features_config_path=config['features_config_path'],
+                    run_name=config['run_name']
+                )
+                scenario_results.append({
+                    'scenario': config['scenario'],
+                    'metrics': metrics,
+                    'status': 'success'
+                })
+                
+                # Save checkpoint
+                if checkpoint_mgr:
+                    is_best = True  # First model of each scenario is "best" by default
+                    checkpoint_mgr.save(
+                        model=model,
+                        epoch=0,
+                        metrics=metrics,
+                        config={'scenario': config['scenario'], 'model_type': model_type},
+                        is_best=is_best
+                    )
+                
+                # Log to tracker
+                if tracker:
+                    tracker.log_metrics({
+                        f"s{config['scenario']}_official_metric": metrics.get('official_metric', np.nan),
+                        f"s{config['scenario']}_rmse": metrics.get('rmse_norm', np.nan)
+                    })
+        
+        for res in scenario_results:
+            results['scenarios'][res['scenario']] = res
+        
+        profiler.snapshot("after_training")
+        
+    finally:
+        # Stop profiler
+        profiler.stop()
+        results['memory_report'] = profiler.get_report()
+        
+        # End tracking
+        if tracker:
+            tracker.end_run()
+    
+    # Save final results
+    results_path = artifacts_dir / 'full_results.json'
+    with open(results_path, 'w') as f:
+        json.dump(results, f, indent=2, default=str)
+    
+    logger.info(f"Full training pipeline complete. Results saved to {artifacts_dir}")
+    
+    return results
+
+
+def compute_config_hash(configs: Dict[str, Any]) -> str:
+    """
+    Compute a deterministic hash of configuration dictionaries.
+    
+    Used for reproducibility tracking - same configs = same hash.
+    
+    Args:
+        configs: Dictionary of config name -> config dict
+        
+    Returns:
+        8-character hex hash string
+    """
+    # Sort keys for deterministic ordering
+    config_str = json.dumps(configs, sort_keys=True, default=str)
+    return hashlib.sha256(config_str.encode()).hexdigest()[:8]
+
+
+def save_config_snapshot(
+    artifacts_dir: Path,
+    run_config_path: Optional[str] = None,
+    data_config_path: Optional[str] = None,
+    features_config_path: Optional[str] = None,
+    model_config_path: Optional[str] = None
+) -> str:
+    """
+    Save exact copies of all config files used for a run.
+    
+    Creates a 'configs/' subdirectory in artifacts_dir with copies
+    of all config files, plus computes a hash for reproducibility tracking.
+    
+    Args:
+        artifacts_dir: Directory to save config copies
+        run_config_path: Path to run config YAML
+        data_config_path: Path to data config YAML
+        features_config_path: Path to features config YAML
+        model_config_path: Path to model config YAML
+        
+    Returns:
+        Config hash string
+    """
+    config_dir = artifacts_dir / 'configs'
+    config_dir.mkdir(parents=True, exist_ok=True)
+    
+    configs = {}
+    config_paths = {
+        'run_config': run_config_path,
+        'data_config': data_config_path,
+        'features_config': features_config_path,
+        'model_config': model_config_path,
+    }
+    
+    for name, path in config_paths.items():
+        if path and Path(path).exists():
+            # Copy the file
+            src_path = Path(path)
+            dst_path = config_dir / src_path.name
+            shutil.copy2(src_path, dst_path)
+            
+            # Load for hash computation
+            with open(src_path, 'r') as f:
+                configs[name] = yaml.safe_load(f)
+    
+    # Compute and save hash
+    config_hash = compute_config_hash(configs)
+    hash_file = config_dir / 'config_hash.txt'
+    with open(hash_file, 'w') as f:
+        f.write(f"{config_hash}\n")
+        f.write(f"Generated: {datetime.now().isoformat()}\n")
+        f.write(f"Files:\n")
+        for name, path in config_paths.items():
+            if path:
+                f.write(f"  {name}: {path}\n")
+    
+    logger.info(f"Config snapshot saved to {config_dir} (hash: {config_hash})")
+    return config_hash
+
+
+def compute_metric_aligned_weights(
+    meta_df: pd.DataFrame,
+    scenario: int,
+    avg_vol_col: str = 'avg_vol_12m'
+) -> pd.Series:
+    """
+    Compute sample weights that exactly align with the official metric formula.
+    
+    This derives per-row weights from the official metric equations:
+    
+    **Scenario 1 (Metric 1) formula:**
+    PE = 0.2 * sum(|actual-pred|)/(24*avg_vol)     [monthly component, all months]
+      + 0.5 * |sum(actual)-sum(pred)|/(6*avg_vol)  [months 0-5]
+      + 0.2 * |sum(actual)-sum(pred)|/(6*avg_vol)  [months 6-11]
+      + 0.1 * |sum(actual)-sum(pred)|/(12*avg_vol) [months 12-23]
+    
+    Bucket weighting: bucket1 weight = 2/n1, bucket2 weight = 1/n2
+    
+    **Scenario 2 (Metric 2) formula:**
+    PE = 0.2 * sum(|actual-pred|)/(18*avg_vol)     [monthly component, months 6-23]
+      + 0.5 * |sum(actual)-sum(pred)|/(6*avg_vol)  [months 6-11]
+      + 0.3 * |sum(actual)-sum(pred)|/(12*avg_vol) [months 12-23]
+    
+    For training, we approximate the window-sum components with per-row weights
+    based on the relative importance of each window.
+    
+    Args:
+        meta_df: DataFrame with months_postgx, bucket, and avg_vol columns
+        scenario: 1 or 2
+        avg_vol_col: Column name for average volume (default: 'avg_vol_12m')
+        
+    Returns:
+        Series of sample weights aligned with meta_df index
+    """
+    scenario = _normalize_scenario(scenario)
+    
+    months = meta_df['months_postgx']
+    
+    # Get avg_vol for normalization (higher avg_vol = lower weight contribution)
+    avg_vol = meta_df[avg_vol_col].clip(lower=1.0)  # Prevent division by zero
+    inv_avg_vol = 1.0 / avg_vol
+    
+    # Normalize inv_avg_vol to have mean 1
+    inv_avg_vol = inv_avg_vol / inv_avg_vol.mean()
+    
+    if scenario == 1:
+        # Metric 1 weights derived from formula
+        # Monthly component (0.2 weight, divided by 24 months): 0.2/24 = 0.00833 per month
+        # Window 0-5 (0.5 weight, 6 months): 0.5/6 = 0.0833 per month
+        # Window 6-11 (0.2 weight, 6 months): 0.2/6 = 0.0333 per month
+        # Window 12-23 (0.1 weight, 12 months): 0.1/12 = 0.00833 per month
+        
+        # Combined per-month weights (monthly + window contribution)
+        # Months 0-5: 0.00833 (monthly) + 0.0833 (window) = 0.0917
+        # Months 6-11: 0.00833 (monthly) + 0.0333 (window) = 0.0417
+        # Months 12-23: 0.00833 (monthly) + 0.00833 (window) = 0.0167
+        
+        base_weights = np.where(months <= 5, 0.0917,
+                       np.where((months >= 6) & (months <= 11), 0.0417,
+                       np.where(months >= 12, 0.0167, 0.0)))
+    else:
+        # Metric 2 weights derived from formula
+        # Monthly component (0.2 weight, divided by 18 months): 0.2/18 = 0.0111 per month
+        # Window 6-11 (0.5 weight, 6 months): 0.5/6 = 0.0833 per month
+        # Window 12-23 (0.3 weight, 12 months): 0.3/12 = 0.025 per month
+        
+        # Combined per-month weights
+        # Months 6-11: 0.0111 (monthly) + 0.0833 (window) = 0.0944
+        # Months 12-23: 0.0111 (monthly) + 0.025 (window) = 0.0361
+        
+        base_weights = np.where((months >= 6) & (months <= 11), 0.0944,
+                       np.where(months >= 12, 0.0361, 0.0))
+    
+    weights = pd.Series(base_weights, index=meta_df.index)
+    
+    # Apply inverse avg_vol weighting (smaller series have higher metric contribution)
+    weights = weights * inv_avg_vol
+    
+    # Apply bucket weighting (bucket 1 has 2x weight)
+    if 'bucket' in meta_df.columns:
+        # Estimate n1, n2 for proper bucket weighting
+        bucket_counts = meta_df.groupby(['country', 'brand_name'])['bucket'].first().value_counts()
+        n1 = bucket_counts.get(1, 1)
+        n2 = bucket_counts.get(2, 1)
+        
+        # Bucket 1 weight: 2/n1, Bucket 2 weight: 1/n2
+        # Normalize so average weight ≈ 1
+        total_weight = 2 + 1  # 2 for bucket 1, 1 for bucket 2
+        bucket1_w = (2 / n1) * (n1 + n2) / total_weight if n1 > 0 else 1.0
+        bucket2_w = (1 / n2) * (n1 + n2) / total_weight if n2 > 0 else 1.0
+        
+        bucket_weight = meta_df['bucket'].map({1: bucket1_w, 2: bucket2_w}).fillna(1.0)
+        weights = weights * bucket_weight
+    
+    # Normalize so weights sum to len(weights) (helps with loss scale)
+    weights = weights * len(weights) / (weights.sum() + 1e-8)
+    
+    # Ensure no zero weights
+    weights = weights.clip(lower=0.01)
+    
+    logger.debug(f"Metric-aligned weights - min: {weights.min():.4f}, max: {weights.max():.4f}, "
+                f"mean: {weights.mean():.4f}")
+    
+    return weights
 
 
 def split_features_target_meta(
@@ -186,7 +1762,10 @@ def get_experiment_metadata(
 def compute_sample_weights(
     meta_df: pd.DataFrame, 
     scenario,
-    config: Optional[dict] = None
+    config: Optional[dict] = None,
+    use_metric_aligned: bool = False,
+    avg_vol_col: str = 'avg_vol_12m',
+    weight_transform: str = 'identity'
 ) -> pd.Series:
     """
     Compute sample weights that approximate official metric weighting.
@@ -210,11 +1789,24 @@ def compute_sample_weights(
         meta_df: DataFrame with months_postgx and bucket columns
         scenario: 1, 2, "scenario1", or "scenario2"
         config: Optional config dict with 'sample_weights' section
+        use_metric_aligned: If True, use exact metric-aligned weights
+        avg_vol_col: Column name for average volume (used when use_metric_aligned=True)
+        weight_transform: Transformation to apply: 'identity', 'sqrt', 'log', 'softmax', 'rank'
         
     Returns:
         Series of sample weights aligned with meta_df index
     """
     scenario = _normalize_scenario(scenario)
+    
+    # Use metric-aligned weights if requested
+    if use_metric_aligned:
+        weights = compute_metric_aligned_weights(
+            meta_df=meta_df,
+            scenario=scenario,
+            avg_vol_col=avg_vol_col
+        )
+        return transform_weights(weights, weight_transform)
+    
     weights = pd.Series(1.0, index=meta_df.index)
     
     # Get weights from config or use defaults
@@ -264,6 +1856,9 @@ def compute_sample_weights(
     
     # Normalize so weights sum to len(weights) (optional, helps with loss scale)
     weights = weights * len(weights) / weights.sum()
+    
+    # Apply transformation
+    weights = transform_weights(weights, weight_transform)
     
     logger.info(f"Sample weights - min: {weights.min():.2f}, max: {weights.max():.2f}, mean: {weights.mean():.2f}")
     
@@ -648,16 +2243,28 @@ def run_experiment(
     setup_logging(log_file=str(artifacts_dir / "train.log"))
     logger.info(f"Starting experiment: {run_id}")
     
-    # Save config snapshot
+    # Save exact config file copies and compute hash for reproducibility
+    config_hash = save_config_snapshot(
+        artifacts_dir=artifacts_dir,
+        run_config_path=run_config_path,
+        data_config_path=data_config_path,
+        features_config_path=features_config_path,
+        model_config_path=model_config_path
+    )
+    logger.info(f"Config hash: {config_hash}")
+    
+    # Also save a merged config snapshot with scenario/model info for quick reference
+    config_dict = {
+        'run_config': run_config,
+        'data_config': data_config,
+        'features_config': features_config,
+        'model_config': model_config,
+        'scenario': scenario,
+        'model_type': model_type,
+        'config_hash': config_hash
+    }
     with open(artifacts_dir / "config_snapshot.yaml", "w") as f:
-        yaml.dump({
-            'run_config': run_config,
-            'data_config': data_config,
-            'features_config': features_config,
-            'model_config': model_config,
-            'scenario': scenario,
-            'model_type': model_type
-        }, f)
+        yaml.dump(config_dict, f)
     
     # Load and prepare data using cached features if enabled
     if use_cached_features:
@@ -717,6 +2324,7 @@ def run_experiment(
         train_df=train_df,
         val_df=val_df
     )
+    metadata['config_hash'] = config_hash  # Add config hash for reproducibility
     with open(artifacts_dir / "metadata.json", "w") as f:
         json.dump(metadata, f, indent=2, default=str)
     
@@ -760,6 +2368,12 @@ def main():
         # Train with cross-validation
         python -m src.train --scenario 1 --model catboost --cv --n-folds 5
         
+        # Run hyperparameter optimization
+        python -m src.train --scenario 1 --model catboost --hpo --hpo-trials 50
+        
+        # Train both scenarios with full pipeline
+        python -m src.train --full-pipeline --model catboost
+        
         # Use custom configs
         python -m src.train --scenario 2 --model lightgbm \\
             --model-config configs/model_lgbm.yaml \\
@@ -772,16 +2386,22 @@ def main():
 Examples:
   python -m src.train --scenario 1 --model catboost
   python -m src.train --scenario 1 --model catboost --cv --n-folds 5
+  python -m src.train --scenario 1 --model catboost --hpo --hpo-trials 50
+  python -m src.train --full-pipeline --model catboost --parallel
   python -m src.train --scenario 2 --model lightgbm --model-config configs/model_lgbm.yaml
         """
     )
-    parser.add_argument('--scenario', type=int, required=True,
+    
+    # Core arguments
+    parser.add_argument('--scenario', type=int, default=None,
                         choices=[1, 2],
                         help="Forecasting scenario: 1 (no actuals) or 2 (6 months actuals)")
     parser.add_argument('--model', type=str, default='catboost',
                         choices=['catboost', 'lightgbm', 'xgboost', 'linear', 
                                 'baseline_global_mean', 'baseline_flat'],
                         help="Model type to train (default: catboost)")
+    
+    # Config paths
     parser.add_argument('--model-config', type=str, default=None,
                         help="Path to model config YAML (e.g., configs/model_cat.yaml)")
     parser.add_argument('--run-config', type=str, default='configs/run_defaults.yaml',
@@ -790,18 +2410,151 @@ Examples:
                         help="Path to data config YAML (default: configs/data.yaml)")
     parser.add_argument('--features-config', type=str, default='configs/features.yaml',
                         help="Path to features config YAML (default: configs/features.yaml)")
+    
+    # Run options
     parser.add_argument('--run-name', type=str, default=None,
                         help="Custom run name for artifacts directory")
     parser.add_argument('--cv', action='store_true',
                         help="Run cross-validation instead of single train/val split")
     parser.add_argument('--n-folds', type=int, default=5,
                         help="Number of CV folds (default: 5, only used with --cv)")
+    
+    # Data options
     parser.add_argument('--force-rebuild', action='store_true',
                         help="Force rebuild of cached panels and features")
     parser.add_argument('--no-cache', action='store_true',
                         help="Disable feature caching (build features from scratch)")
     
+    # HPO options (Section 5.5)
+    parser.add_argument('--hpo', action='store_true',
+                        help="Run hyperparameter optimization using Optuna")
+    parser.add_argument('--hpo-trials', type=int, default=100,
+                        help="Number of HPO trials (default: 100)")
+    parser.add_argument('--hpo-timeout', type=int, default=3600,
+                        help="HPO timeout in seconds (default: 3600)")
+    
+    # Full pipeline options (Section 5.7)
+    parser.add_argument('--full-pipeline', action='store_true',
+                        help="Run full training pipeline for both scenarios")
+    parser.add_argument('--parallel', action='store_true',
+                        help="Train scenarios in parallel (use with --full-pipeline)")
+    
+    # Tracking and profiling (Section 5.1, 5.7)
+    parser.add_argument('--enable-tracking', action='store_true',
+                        help="Enable experiment tracking (MLflow/W&B)")
+    parser.add_argument('--tracking-backend', type=str, default='mlflow',
+                        choices=['mlflow', 'wandb'],
+                        help="Experiment tracking backend (default: mlflow)")
+    parser.add_argument('--enable-checkpoints', action='store_true',
+                        help="Enable checkpoint saving during training")
+    parser.add_argument('--enable-profiling', action='store_true',
+                        help="Enable memory profiling during training")
+    
+    # Weight options (Section 5.4)
+    parser.add_argument('--weight-transform', type=str, default='identity',
+                        choices=['identity', 'sqrt', 'log', 'softmax', 'rank'],
+                        help="Transformation to apply to sample weights (default: identity)")
+    parser.add_argument('--metric-aligned-weights', action='store_true',
+                        help="Use exact metric-aligned sample weights")
+    
     args = parser.parse_args()
+    
+    # Handle full pipeline mode
+    if args.full_pipeline:
+        results = run_full_training_pipeline(
+            run_config_path=args.run_config,
+            data_config_path=args.data_config,
+            features_config_path=args.features_config,
+            model_config_path=args.model_config,
+            model_type=args.model,
+            run_cv=args.cv,
+            n_folds=args.n_folds,
+            parallel=args.parallel,
+            run_hpo=args.hpo,
+            hpo_trials=args.hpo_trials,
+            enable_tracking=args.enable_tracking,
+            enable_checkpoints=args.enable_checkpoints,
+            enable_profiling=args.enable_profiling,
+            run_name=args.run_name
+        )
+        logger.info(f"Full pipeline complete. Results: {json.dumps(results, indent=2, default=str)[:500]}...")
+        return
+    
+    # Require scenario for single-scenario training
+    if args.scenario is None:
+        parser.error("--scenario is required unless using --full-pipeline")
+    
+    # Handle HPO mode
+    if args.hpo:
+        if not OPTUNA_AVAILABLE:
+            logger.error("Optuna is required for HPO. Install with: pip install optuna")
+            sys.exit(1)
+        
+        # Load configs and data
+        run_config = load_config(args.run_config)
+        data_config = load_config(args.data_config)
+        model_config = load_config(args.model_config) if args.model_config else {}
+        features_config = load_config(args.features_config) if args.features_config else {}
+        
+        set_seed(run_config['reproducibility']['seed'])
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        run_id = args.run_name or f"{timestamp}_{args.model}_scenario{args.scenario}_hpo"
+        
+        artifacts_dir = get_project_root() / run_config['paths']['artifacts_dir'] / run_id
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        
+        setup_logging(log_file=str(artifacts_dir / "hpo.log"))
+        logger.info(f"Starting HPO: {run_id}")
+        
+        # Load data
+        from .data import load_raw_data, prepare_base_panel, compute_pre_entry_stats, handle_missing_values
+        from .features import make_features, select_training_rows
+        
+        with timer("Load and prepare data"):
+            train_data = load_raw_data(data_config, split='train')
+            panel = prepare_base_panel(
+                train_data['volume'],
+                train_data['generics'],
+                train_data['medicine_info']
+            )
+            panel = handle_missing_values(panel)
+            panel = compute_pre_entry_stats(panel, is_train=True)
+        
+        with timer("Feature engineering"):
+            panel_features = make_features(panel, scenario=args.scenario, mode='train', config=features_config)
+            train_rows = select_training_rows(panel_features, scenario=args.scenario)
+        
+        # Create validation split
+        train_df, val_df = create_validation_split(
+            train_rows,
+            val_fraction=run_config['validation']['val_fraction'],
+            stratify_by=run_config['validation']['stratify_by'],
+            random_state=run_config['reproducibility']['seed']
+        )
+        
+        X_train, y_train, meta_train = split_features_target_meta(train_df)
+        X_val, y_val, meta_val = split_features_target_meta(val_df)
+        
+        # Get search space from model config
+        search_space = model_config.get('tuning', {}).get('search_space', {})
+        
+        # Run HPO
+        hpo_results = run_hyperparameter_optimization(
+            X_train, y_train, meta_train,
+            X_val, y_val, meta_val,
+            scenario=args.scenario,
+            model_type=args.model,
+            n_trials=args.hpo_trials,
+            timeout=args.hpo_timeout,
+            search_space=search_space,
+            run_config=run_config,
+            artifacts_dir=artifacts_dir
+        )
+        
+        logger.info(f"HPO complete. Best params: {hpo_results['best_params']}")
+        logger.info(f"Best metric: {hpo_results['best_value']:.4f}")
+        return
     
     if args.cv:
         # Cross-validation mode

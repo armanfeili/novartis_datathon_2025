@@ -143,6 +143,15 @@ hardware:
 experiment:
   name: "novartis-datathon-2025"
   description: "Generic Erosion Forecasting"
+
+# Experiment tracking backends (Section 5.1)
+# Supports MLflow and Weights & Biases (W&B)
+experiment_tracking:
+  enabled: false                      # Set to true to enable tracking
+  backend: "mlflow"                   # Options: "mlflow", "wandb"
+  experiment_name: "novartis-datathon-2025"
+  tracking_uri: null                  # MLflow tracking URI (null = local ./mlruns)
+  project_name: "novartis-datathon-2025"  # W&B project name
   
 # Run naming
 run:
