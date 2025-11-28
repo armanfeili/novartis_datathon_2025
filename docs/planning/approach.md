@@ -252,15 +252,29 @@ def prepare_base_panel(volume_df, generics_df, medicine_info_df) -> pd.DataFrame
     # Join with medicine_info on (country, brand_name)
     pass
 
-def compute_pre_entry_stats(panel_df) -> pd.DataFrame:
-    """Compute avg_vol and bucket for each (country, brand_name)."""
+def compute_pre_entry_stats(panel_df: pd.DataFrame, is_train: bool = True) -> pd.DataFrame:
+    """
+    Compute pre-entry statistics.
+    
+    Args:
+        panel_df: Panel data with volume and months_postgx
+        is_train: If True, compute bucket from post-entry targets.
+                  If False (inference), only compute avg_vol_12m.
+    """
     # 1. Filter to months_postgx in [-12, -1]
-    # 2. Compute avg_vol = mean(volume)
-    # 3. Filter to months_postgx in [0, 23]
-    # 4. Compute normalized volume = volume / avg_vol
-    # 5. Compute mean_erosion = mean(normalized_volume)
-    # 6. Assign bucket: 1 if mean_erosion <= 0.25 else 2
-    pass
+    # 2. Compute avg_vol_12m = mean(volume)  <-- Always computed
+    
+    if is_train:
+        # 3. Filter to months_postgx in [0, 23]  
+        # 4. Compute normalized volume = volume / avg_vol_12m
+        # 5. Compute mean_erosion = mean(normalized_volume)
+        # 6. Assign bucket: 1 if mean_erosion <= 0.25 else 2
+        # --> bucket is ONLY computed on training data
+        pass
+    
+    return panel_df
+    # NOTE: On test, call compute_pre_entry_stats(panel, is_train=False)
+    #       to get avg_vol_12m without computing bucket
 ```
 
 ### 4.3 Missing Value Strategy
@@ -289,7 +303,7 @@ def compute_pre_entry_stats(panel_df) -> pd.DataFrame:
 
 #### B. Target Distribution
 - [ ] Histogram of `volume` (likely right-skewed)
-- [ ] Histogram of `avg_vol` (pre-entry baseline)
+- [ ] Histogram of `avg_vol_12m` (pre-entry baseline)
 - [ ] Histogram of mean normalized erosion
 - [ ] Bucket distribution (B1 vs B2 count)
 
@@ -351,6 +365,10 @@ def compute_pre_entry_stats(panel_df) -> pd.DataFrame:
    - Fast (most drop in months 0-5) → prioritize early month accuracy
    - Gradual → smooth trend models may work
 
+5. **Does `df_generics_test` contain `n_gxs` for forecast months?**
+   - If yes → treat `n_gxs` as known exogenous, allow future values in `add_generics_features`
+   - If no → apply strict cutoff (`months_postgx < cutoff`) for all features
+
 ---
 
 ## 6. Feature Engineering Strategy
@@ -367,7 +385,7 @@ def compute_pre_entry_stats(panel_df) -> pd.DataFrame:
 │  ├─ avg_vol_6m: Mean volume over months [-6, -1]                    │
 │  ├─ avg_vol_3m: Mean volume over months [-3, -1]                    │
 │  ├─ pre_entry_trend: Linear slope over pre-entry period             │
-│  ├─ pre_entry_volatility: Std dev of volume / avg_vol               │
+│  ├─ pre_entry_volatility: std(volume_pre) / avg_vol_12m             │
 │  ├─ pre_entry_max: Maximum volume in pre-entry period               │
 │  └─ log_avg_vol: log1p(avg_vol_12m) for scale normalization         │
 │                                                                      │
@@ -460,10 +478,15 @@ def make_features(panel_df: pd.DataFrame, scenario: str) -> pd.DataFrame:
 
 | Rule | Implementation |
 |------|----------------|
-| **Never use future months** | Filter `months_postgx < cutoff` before computing features |
+| **Never use future target-derived info** | Filter `months_postgx < cutoff` for features derived from volume/erosion |
+| **Exogenous futures allowed** | If `df_generics_test` provides `n_gxs` for forecast months, these can be used |
 | **Never use bucket as feature** | Bucket is computed from target; use only for analysis |
 | **Separate train/test pipelines** | Same code, but test has no access to train statistics |
 | **No global statistics on test** | Statistics (mean, std) computed only on training data |
+
+> **Key distinction:**
+> - **Target-derived features** (erosion, normalized volume stats): respect scenario cutoffs strictly
+> - **Exogenous variables in test data** (e.g., `n_gxs` if provided for forecast months): allowed to use future values since they don't leak target
 
 ### 6.4 Target Definition & Metric Alignment
 
@@ -514,6 +537,57 @@ def compute_sample_weights(df: pd.DataFrame, scenario: str) -> pd.Series:
 ```
 
 **Key insight**: This makes the training loss approximate the official PE, rather than optimizing generic MAE/MSE equally across all rows.
+
+#### Bucket Usage Guardrail
+
+> **IMPORTANT**: `bucket` is computed **only on the training panel** and used solely for:
+> - Stratified train/validation splitting
+> - Sample weighting during training
+> - Offline error analysis and reporting
+>
+> It is **NEVER computed or used on the test set** and **NEVER included as a model feature**.
+
+This is critical for avoiding target leakage. If the jury asks about leakage, this is a key point to emphasize.
+
+#### Plan B: Target Fallback
+
+If normalized-volume target shows instability during EDA (e.g., many tiny `Avg_j` values causing extreme normalized targets):
+
+1. Switch to `log1p(volume)` as target by flipping a config flag
+2. At inference, use `expm1(prediction)` to recover volume
+3. Same pipeline, same features, just different target transform
+
+This provides a fast escape route without restructuring the codebase.
+
+### 6.5 Training Row Selection (Which Rows Are Supervised Targets)
+
+**Scenario 1 training rows:**
+- Use only rows with `months_postgx ∈ [0, 23]` as training targets
+- Features for each row are computed from pre-entry data (and static + generics respecting cutoff)
+
+**Scenario 2 training rows:**
+- Use rows with `months_postgx ∈ [6, 23]` as training targets  
+- Features can use pre-entry data AND months 0–5 (respecting cutoff = 6)
+
+```python
+def select_training_rows(panel_df: pd.DataFrame, scenario: str) -> pd.DataFrame:
+    """Select only rows that are valid supervised targets for the scenario."""
+    if scenario == "scenario1":
+        return panel_df[panel_df['months_postgx'].between(0, 23)]
+    else:  # scenario2
+        return panel_df[panel_df['months_postgx'].between(6, 23)]
+```
+
+**Always call this before splitting into features/target.** This prevents accidentally training on pre-entry rows or mismatching sample weight logic.
+
+### 6.6 Target Column Convention
+
+To avoid confusion between target and features:
+
+- **Target column name:** `y_norm` (normalized volume)
+- After computing `avg_vol_12m`, create `y_norm = volume / avg_vol_12m` for training rows only
+- This column is **dropped from feature matrices** and passed separately as `train_target`
+- Never include `y_norm`, `volume`, or `bucket` in feature matrices
 
 ---
 
@@ -628,41 +702,107 @@ HERO_MODEL_CONFIG = {
 
 ### 7.4 Model Training Strategy
 
+> **All hero models are trained using sample weights that approximate the official metric's time-window and bucket weighting.**
+
+#### Meta vs Feature Columns (Prevent Leakage)
+
+```python
+# Define column groups to prevent accidental leakage
+META_COLS = ['country', 'brand_name', 'months_postgx', 'bucket', 'avg_vol_12m', 'y_norm']
+TARGET_COL = 'y_norm'
+
+def split_features_target_meta(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
+    """
+    Separate pure features from target and meta columns.
+    This guarantees bucket/y_norm never leak into model features.
+    Use this for TRAINING data (has y_norm).
+    """
+    feature_cols = [c for c in df.columns if c not in META_COLS]
+    
+    X = df[feature_cols]       # Pure features for model
+    y = df[TARGET_COL]         # Target
+    meta = df[META_COLS]       # Meta for weights, grouping, metrics
+    
+    return X, y, meta
+
+def get_feature_matrix_and_meta(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    For INFERENCE: separate features from meta (no target).
+    CRITICAL: feature_cols must match training exactly!
+    """
+    feature_cols = [c for c in df.columns if c not in META_COLS]
+    
+    X = df[feature_cols]       # Pure features - same columns as training
+    meta = df[[c for c in META_COLS if c in df.columns]]  # Meta (may not have y_norm/bucket)
+    
+    return X, meta
+```
+
+#### Training Function
+
 ```python
 # src/train.py
 
 def train_scenario_model(
-    train_features: pd.DataFrame,
-    train_target: pd.Series,
-    val_features: pd.DataFrame,
-    val_target: pd.Series,
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    meta_train: pd.DataFrame,
+    X_val: pd.DataFrame,
+    y_val: pd.Series,
+    meta_val: pd.DataFrame,
     scenario: str,
     model_type: str = 'catboost'
 ) -> Tuple[Model, dict]:
     """
     Train model for specific scenario with early stopping.
+    Uses sample weights computed from META (not features) to align with official metric.
+    
+    Args:
+        X_train, X_val: Pure feature matrices (no target, no meta)
+        y_train, y_val: Target series (y_norm)
+        meta_train, meta_val: Meta columns for weights (months_postgx, bucket)
     
     Returns:
         Trained model and training metrics
     """
     config = HERO_MODEL_CONFIG[model_type][scenario]
     
+    # Compute sample weights from META (not from features!)
+    weights_train = compute_sample_weights(meta_train, scenario)
+    weights_val = compute_sample_weights(meta_val, scenario)
+    
     if model_type == 'catboost':
         model = CatBoostRegressor(**config)
         model.fit(
-            train_features, train_target,
-            eval_set=(val_features, val_target),
+            X_train, y_train,  # <-- Pure features, no meta columns
+            sample_weight=weights_train,
+            eval_set=(X_val, y_val),
             verbose=100
         )
     
-    # Compute validation metrics
-    val_pred = model.predict(val_features)
-    metrics = compute_validation_metrics(val_target, val_pred, scenario)
+    # Compute validation metrics (pass meta for proper weighting)
+    val_pred = model.predict(X_val)
+    metrics = compute_validation_metrics(y_val, val_pred, meta_val, scenario)
     
     return model, metrics
 ```
 
-### 7.5 Hyperparameter Tuning Strategy
+### 7.5 Minimal v0 Hero Model (First Working GBM)
+
+**Commit to training this FIRST before any tuning or feature expansion:**
+
+| Aspect | v0 Specification |
+|--------|------------------|
+| Model | CatBoostRegressor |
+| Features | Category 1 (pre-entry stats) + Category 2 (time features) + `n_gxs` only |
+| Interactions | None |
+| Early-erosion features | None (added in v1+) |
+| Hyperparameters | Defaults + early stopping (100 rounds patience) |
+| Validation | Single **series-level** split (80/20 of series, stratified by bucket) |
+
+**Checkpoint:** v0 must be trained and validated for both scenarios by **end of Day 1** even if nothing else is done. This ensures a working baseline before any optimization.
+
+### 7.6 Hyperparameter Tuning Strategy
 
 Given time constraints, use **targeted tuning**:
 
@@ -775,7 +915,44 @@ Track these metrics for every model experiment:
 | **MAE Overall** | Unnormalized | Unnormalized |
 | **MAE Normalized** | MAE / avg_vol | MAE / avg_vol |
 
-### 8.4 Cross-Validation Strategy
+### 8.4 Scenario-Aware Validation Logic
+
+When validating, **mimic the true scenario constraints** for held-out series:
+
+**Scenario 1 Validation:**
+- For each series in the validation fold:
+  - **Input**: Only months `[-12, -1]` as features (pre-entry data)
+  - **Forecast**: Months `[0, 23]`
+  - **Evaluate**: Compare predictions vs actual on `[0, 23]` using `compute_metric1()`
+
+**Scenario 2 Validation:**
+- For each series in the validation fold:
+  - **Input**: Months `[-12, -1]` AND `[0, 5]` as features (pre-entry + early post-entry)
+  - **Forecast**: Months `[6, 23]`
+  - **Evaluate**: Compare predictions vs actual on `[6, 23]` using `compute_metric2()`
+
+```python
+def simulate_scenario(val_df: pd.DataFrame, scenario: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Prepare validation data mimicking true scenario constraints.
+    
+    Returns:
+        features_df: Data available for prediction
+        targets_df: Data to evaluate against
+    """
+    if scenario == "scenario1":
+        # Only pre-entry data available
+        features_df = val_df[val_df['months_postgx'] < 0]
+        targets_df = val_df[val_df['months_postgx'].between(0, 23)]
+    else:  # scenario2
+        # Pre-entry + months 0-5 available
+        features_df = val_df[val_df['months_postgx'] < 6]
+        targets_df = val_df[val_df['months_postgx'].between(6, 23)]
+    
+    return features_df, targets_df
+```
+
+### 8.5 Cross-Validation Strategy
 
 Given time constraints, use **1-2 splits** rather than full K-fold:
 
@@ -805,7 +982,7 @@ def quick_cv(panel_df, model_fn, n_splits=2):
     }
 ```
 
-### 8.5 Adversarial Validation (Optional but Recommended)
+### 8.6 Adversarial Validation (Optional but Recommended)
 
 Adversarial validation detects **distribution shift** between train and test, which helps avoid overfitting to quirks of the training data.
 
@@ -819,9 +996,12 @@ def adversarial_validation(train_features: pd.DataFrame,
     High AUC indicates distribution shift.
     """
     # Combine train and test (features only, no target)
-    train_features['is_test'] = 0
-    test_features['is_test'] = 1
-    combined = pd.concat([train_features, test_features])
+    # IMPORTANT: Use copies to avoid mutating original frames!
+    train_aug = train_features.copy()
+    test_aug = test_features.copy()
+    train_aug['is_test'] = 0
+    test_aug['is_test'] = 1
+    combined = pd.concat([train_aug, test_aug])
     
     # Train simple classifier
     X = combined.drop(columns=['is_test'])
@@ -974,6 +1154,14 @@ EXPERIMENT_LOG = {
 
 **Critical**: Correctly identifying which test series belong to Scenario 1 vs Scenario 2 is essential.
 
+> **⚠️ DATA SCHEMA CHECK REQUIRED**: The detection logic below assumes test data contains **only post-entry months** (0+ or 6+). When you first load test data, run:
+> ```python
+> test_min = test_volume.groupby(['country', 'brand_name'])['months_postgx'].min().describe()
+> print(test_min)
+> ```
+> - **If min < 0**: Test has pre-entry months → use those for `avg_vol_12m`, but scenario detection needs adjustment
+> - **If min ≥ 0**: Test has only post-entry → detection below is correct, but `avg_vol_12m` must come from train data (merged by series key)
+
 #### Detection Rules
 
 | Scenario | Detection Criterion | Expected Count |
@@ -1023,6 +1211,8 @@ def validate_scenario_detection(scenarios: dict) -> None:
 
 ### 10.3 Submission Generation Code
 
+> **CRITICAL**: Models output **normalized volume** (volume / Avg_j). Submission must contain **actual volume**. Always multiply predictions by `avg_vol_12m` before submission.
+
 ```python
 # src/inference.py
 
@@ -1036,27 +1226,75 @@ def generate_submission(
 ) -> pd.DataFrame:
     """
     Generate final submission file.
+    
+    IMPORTANT: Models predict normalized volume. Must inverse transform!
+    
+    CRITICAL: Feature columns at inference must EXACTLY match training.
+    Use the same split_features_target_meta / get_feature_matrix_and_meta
+    to ensure X has identical columns (no meta cols like avg_vol_12m, bucket).
     """
-    # Detect scenarios using validated logic
+    # 1. Build full test panel (joined volume + generics + medicine)
+    full_panel = prepare_base_panel(test_volume, test_generics, test_medicine_info)
+    
+    # 2. Get avg_vol_12m for test series
+    # NOTE: Check test schema first! (see Section 10.2 warning)
+    #   - If test has pre-entry months (min < 0): use compute_pre_entry_stats
+    #   - If test has only post-entry (min >= 0): merge avg_vol_12m from train
+    test_min = test_volume.groupby(['country', 'brand_name'])['months_postgx'].min().min()
+    
+    if test_min < 0:
+        # Case A: Test has pre-entry months - compute directly
+        full_panel = compute_pre_entry_stats(full_panel, is_train=False)
+    else:
+        # Case B: Test has only post-entry - merge from train lookup
+        # avg_vol_lookup must be computed once from train and passed in
+        full_panel = full_panel.merge(
+            avg_vol_lookup,  # pre-computed: train_panel.groupby(...).first()
+            on=['country', 'brand_name'],
+            how='left',
+            validate='m:1'
+        )
+    
+    # 3. Detect scenarios and split panel
     scenarios = detect_test_scenarios(test_volume)
     validate_scenario_detection(scenarios)
     
-    # Build features for Scenario 1 series
-    scenario1_features = make_features(
-        scenario1_panel, scenario='scenario1'
-    )
-    scenario1_pred = model_scenario1.predict(scenario1_features)
+    s1_keys = set(scenarios['scenario1'])
+    s2_keys = set(scenarios['scenario2'])
     
-    # Build features for Scenario 2 series
-    scenario2_features = make_features(
-        scenario2_panel, scenario='scenario2'
-    )
-    scenario2_pred = model_scenario2.predict(scenario2_features)
+    scenario1_panel = full_panel[
+        full_panel.apply(lambda x: (x['country'], x['brand_name']) in s1_keys, axis=1)
+    ]
+    scenario2_panel = full_panel[
+        full_panel.apply(lambda x: (x['country'], x['brand_name']) in s2_keys, axis=1)
+    ]
+    
+    # 4. Build features and split X / meta (MUST match training!)
+    scenario1_features = make_features(scenario1_panel, scenario='scenario1')
+    X_s1, meta_s1 = get_feature_matrix_and_meta(scenario1_features)  # <-- Same split as training!
+    
+    # Model outputs NORMALIZED volume (predict on X only, not meta)
+    yhat_norm_s1 = model_scenario1.predict(X_s1)
+    
+    # INVERSE TRANSFORM: multiply by avg_vol to get actual volume
+    avg_vol_s1 = meta_s1['avg_vol_12m']  # Get from meta, not X
+    scenario1_pred = meta_s1[['country', 'brand_name', 'months_postgx']].copy()
+    scenario1_pred['volume'] = yhat_norm_s1 * avg_vol_s1
+    
+    # Same for Scenario 2
+    scenario2_features = make_features(scenario2_panel, scenario='scenario2')
+    X_s2, meta_s2 = get_feature_matrix_and_meta(scenario2_features)  # <-- Same split as training!
+    
+    yhat_norm_s2 = model_scenario2.predict(X_s2)
+    
+    avg_vol_s2 = meta_s2['avg_vol_12m']
+    scenario2_pred = meta_s2[['country', 'brand_name', 'months_postgx']].copy()
+    scenario2_pred['volume'] = yhat_norm_s2 * avg_vol_s2
     
     # Combine predictions
     all_predictions = pd.concat([scenario1_pred, scenario2_pred])
     
-    # Post-processing
+    # Post-processing: clip negative volumes
     all_predictions['volume'] = all_predictions['volume'].clip(lower=0)
     
     # Merge with template to ensure correct format
@@ -1313,8 +1551,8 @@ def apply_edge_case_fallback(predictions: pd.DataFrame,
         mask = (predictions['country'] == country) & \
                (predictions['brand_name'] == brand)
         
-        # Fall back to global erosion curve × brand's avg_vol
-        avg_vol = predictions.loc[mask, 'avg_vol'].iloc[0]
+        # Fall back to global erosion curve × brand's avg_vol_12m
+        avg_vol = predictions.loc[mask, 'avg_vol_12m'].iloc[0]  # <-- STANDARDIZED NAME
         predictions.loc[mask, 'volume'] = (
             global_erosion_curve * avg_vol
         ).values
@@ -1424,7 +1662,60 @@ novartis_datathon_2025/
     └── test_smoke.py
 ```
 
-### 13.2 Documentation Files
+### 13.2 Smoke Test Checklist
+
+Before full training, run a minimal end-to-end test:
+
+```python
+# tests/test_smoke.py
+
+def test_full_pipeline_smoke():
+    """
+    Run full pipeline on tiny subset to catch integration bugs.
+    """
+    # 1. Load small subset (5-10 series only)
+    mini_train = load_raw_data(data_dir, 'train')
+    mini_train = filter_to_n_series(mini_train, n=10)
+    
+    # 2. Run through full pipeline (is_train=True to compute bucket)
+    panel = prepare_base_panel(**mini_train)
+    panel = compute_pre_entry_stats(panel, is_train=True)
+    
+    # 3. Create tiny train/val split (series-level)
+    train_df, val_df = create_validation_split(panel, val_fraction=0.3)
+    
+    # 4. Build features
+    train_features = make_features(train_df, scenario='scenario1')
+    val_features = make_features(val_df, scenario='scenario1')
+    
+    # 5. Restrict to supervised rows per scenario (Section 6.5)
+    train_supervised = select_training_rows(train_features, scenario='scenario1')
+    val_supervised = select_training_rows(val_features, scenario='scenario1')
+    
+    # 6. Split into X / y / meta (Section 7.4)
+    X_train, y_train, meta_train = split_features_target_meta(train_supervised)
+    X_val, y_val, meta_val = split_features_target_meta(val_supervised)
+    
+    # 7. Train model (few iterations only)
+    model, _ = train_scenario_model(
+        X_train, y_train, meta_train,
+        X_val, y_val, meta_val,
+        scenario='scenario1',
+        config_override={'iterations': 10}  # Fast!
+    )
+    
+    # 8. Generate predictions
+    predictions = generate_mini_submission(model, X_val, meta_val)
+    
+    # 9. Validate format
+    sanity_check_submission(predictions, mini_template)
+    
+    print("✓ Smoke test passed!")
+```
+
+**Run this BEFORE any real training** to catch bugs early.
+
+### 13.3 Documentation Files
 
 Maintain these concise docs during the competition:
 
@@ -1479,7 +1770,7 @@ after generic entry, with emphasis on high-erosion brands (Bucket 1).
 | 11/28 | catboost_v1 | fe_v1 | 1.45 | 1.12 | First GBM |
 ```
 
-### 13.3 Core Module Specifications
+### 13.4 Core Module Specifications
 
 #### `src/data.py`
 ```python
@@ -1489,7 +1780,7 @@ def load_raw_data(data_dir: str, split: str) -> dict: ...
 def prepare_base_panel(volume, generics, medicine_info) -> pd.DataFrame: ...
 def compute_pre_entry_stats(panel) -> pd.DataFrame: ...
 def handle_missing_values(panel) -> pd.DataFrame: ...
-def adversarial_validation(train_features, test_features) -> dict: ...
+# NOTE: adversarial_validation moved to validation.py
 ```
 
 #### `src/features.py`
@@ -1511,6 +1802,7 @@ def add_early_erosion_features(df) -> pd.DataFrame: ...  # Scenario 2 only
 def create_validation_split(panel, val_fraction, stratify_by) -> Tuple: ...
 def simulate_scenario(train_df, val_df, scenario: str) -> Tuple: ...
 def compute_validation_metrics(actuals, predictions, scenario) -> dict: ...
+def adversarial_validation(train_features, test_features) -> dict: ...  # Detect train/test shift
 ```
 
 #### `src/train.py`
@@ -1740,10 +2032,127 @@ The following valuable concepts were incorporated from our initial strategy docu
     - Baseline vs Global Curve vs Our Model on B1 example
     - Quantified improvement for jury impact
 
+12. **Inverse Transform at Inference** (Section 10.3)
+    - Models output normalized volume, submission needs actual volume
+    - Explicit `yhat_norm * avg_vol` step in code
+
+13. **Smoke Test Checklist** (Section 13.2)
+    - End-to-end test on 10 series before full training
+    - Catches integration bugs early
+
+14. **Training Row Selection** (Section 6.5)
+    - Explicit definition of which rows are supervised targets per scenario
+    - Prevents training on pre-entry rows or mismatched weights
+
+15. **Target Column Convention** (Section 6.6)
+    - Single column name `y_norm` for normalized target
+    - Explicit drop from feature matrices
+
 The original `approach_old.md` is archived for reference but this document (`approach.md`) is the **single source of truth** for the competition.
 
 ---
 
-*Document Version: 1.2*
-*Last Updated: November 2025*
+*Document Version: 1.4 (FROZEN)*
+*Last Updated: November 28, 2025*
 *Purpose: Implementation guide for Novartis Datathon 2025*
+
+**⚠️ DOCUMENT FROZEN:** No further planning. Move to execution:
+1. Implement `data.py` + `features.py` + `validation.py`
+2. Run smoke test on tiny subset (10 series)
+3. Train v0 hero model for Scenario 1 + 2
+4. Produce first valid submission
+
+---
+
+## Appendix E: Implementation Notes Inspired by Novartis Datathon 2024
+
+The public solution for **Novartis Datathon 2024** is used only as an implementation reference. The core strategy for 2025 remains exactly as defined in this document. From the 2024 codebase, only the following patterns are adopted:
+
+### 1. Custom Metric Wrappers (CYME → PE Analogue)
+
+- Implement a dedicated `src/evaluate.py` module that wraps `metric_calculation.py` in the same way the 2024 repo wraps CYME:
+  - `compute_metric1_wrapper(y_true, y_pred, meta) -> float`
+  - `compute_metric2_wrapper(y_true, y_pred, meta) -> float`
+- Provide sklearn-compatible scorers analogous to `cyme_scorer()` from 2024:
+  - `pe_scorer_scenario1()` and `pe_scorer_scenario2()` that internally call the official metric functions.
+- Use these wrappers consistently in:
+  - Validation reporting (Section 8)
+  - Any hyperparameter tuning / model comparison for GBMs.
+
+### 2. Rolling / LTM KPI Utilities (LTM Features → Erosion Features)
+
+- Generalize the 2024 **Last Twelve Months (LTM)** pattern into a reusable helper in `src/features.py`:
+
+```python
+def add_rolling_kpis(
+    df: pd.DataFrame,
+    group_cols: list[str],
+    target_col: str,
+    windows: list[int],
+    suffix: str
+) -> pd.DataFrame:
+    """
+    Add rolling aggregations (e.g., mean, std, sum) of `target_col`
+    within groups defined by `group_cols`.
+    Window definitions follow the scenario-specific cutoff rules.
+    """
+    ...
+```
+
+- Use this helper to implement the pre-entry and early-post-entry features already specified in Section 6 (no new features, just cleaner implementation):
+  - Pre-entry: rolling 3/6/12-month averages, maxima, and volatilities on `volume` for months `[-12, -1]`.
+  - Scenario 2: rolling statistics over months `[0, 5]` to build `avg_vol_0_5`, `erosion_0_5`, and short-term trends.
+- Enforce the existing leakage rules: all rolling windows must respect the scenario-specific cutoff (`months_postgx < 0` for Scenario 1, `months_postgx < 6` for Scenario 2).
+
+### 3. Cold-Start Logic → Edge-Case Handling for Tricky Series
+
+- Adapt the 2024 "future launches / cold-start" identification pattern into an **edge-case detector** consistent with Section 12.4:
+
+```python
+def identify_edge_case_series(panel_df: pd.DataFrame) -> list[tuple[str, str]]:
+    """
+    Identify series (country, brand_name) with:
+    - Very low baseline avg_vol_12m
+    - Short pre-entry history
+    - High pre-entry volatility
+    Returns list of (country, brand_name) keys for fallback handling.
+    """
+    ...
+```
+
+- Feed this list into `apply_edge_case_fallback()` (Section 12.4) to fall back to:
+  - Global erosion curve × `avg_vol_12m` for those problematic series.
+- The logic mirrors the 2024 "cold start" branch, but uses the **existing edge-case policy** instead of introducing any new modeling branch.
+
+### 4. Model Wrappers and Lightweight Model Zoo
+
+- Take inspiration from `models.py` in the 2024 repo to create a thin abstraction layer in `src/train.py` or `src/models/`:
+
+```python
+class GBMModel:
+    def __init__(self, model_type: str, config: dict):
+        ...
+    def fit(self, X_train, y_train, sample_weight, X_val, y_val):
+        ...
+    def predict(self, X):
+        ...
+```
+
+- Use this abstraction to:
+  - Plug in CatBoost / LightGBM / XGBoost under a single "hero model" API (Tier 2 in Section 7).
+  - Optionally build a simple **weighted-mean ensemble** over 2–3 GBM variants if time allows (Tier 3), without changing the core strategy.
+
+### 5. Automated EDA & Profiling (Acceleration Only)
+
+- Optionally replicate the 2024 usage of `ydata-profiling` to speed up the EDA in Section 5:
+  - Generate an HTML profiling report on the base training panel and on `df_medicine_info_train`.
+  - Use this only to confirm distributions, missingness, and basic sanity checks; all EDA questions and plots remain exactly as defined in Section 5.
+
+### 6. Tests and Utility Patterns
+
+- Mirror the 2024 `tests/test_utils.py` style to strengthen the smoke tests in Section 13.2:
+  - Unit tests for `prepare_base_panel()` (row counts, join keys).
+  - Unit tests for `compute_pre_entry_stats()` (correct `avg_vol_12m` and bucket assignment on a synthetic small panel).
+- Keep configuration patterns similar to `settings.yaml` from 2024, but aligned with the `configs/` layout already defined in Section 13.
+
+> **Note**: No 2024-specific choices that conflict with this document are imported (e.g., z-score outlier deletion on targets, `-1` sentinel handling, or macro-economic feature sets). Only generic implementation patterns that accelerate this 2025 approach are reused.
