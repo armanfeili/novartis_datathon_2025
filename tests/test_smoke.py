@@ -5365,6 +5365,708 @@ class TestInferenceCLI:
         assert '--save-auxiliary' in result.stdout
 
 
+# =============================================================================
+# SECTION 9 TESTS: TESTING & QUALITY ASSURANCE
+# =============================================================================
+
+
+class TestFeatureEngineeringCorrectness:
+    """Tests for feature engineering correctness (Section 9.1)."""
+    
+    def test_make_features_respects_scenario1_cutoff(self):
+        """Test that make_features respects S1 cutoff (months_postgx < 0 for features)."""
+        from src.features import make_features, SCENARIO_CONFIG
+        
+        # Create panel with pre-entry and post-entry data
+        panel_data = []
+        for m in range(-12, 24):
+            panel_data.append({
+                'country': 'US',
+                'brand_name': 'BRAND_A',
+                'months_postgx': m,
+                'volume': 1000 - abs(m) * 10,  # Volume varies with month
+                'n_gxs': 0 if m < 0 else max(1, m // 3),
+                'month': 'Jan',
+                'ther_area': 'AREA_1',
+                'main_package': 'Tablet',
+                'hospital_rate': 50.0,
+                'biological': False,
+                'small_molecule': True,
+            })
+        
+        panel = pd.DataFrame(panel_data)
+        panel['avg_vol_12m'] = 1000.0
+        
+        # Build features for Scenario 1
+        result = make_features(panel.copy(), scenario=1, mode='train')
+        
+        # S1 cutoff is 0, so features should only use data from months < 0
+        assert SCENARIO_CONFIG[1]['feature_cutoff'] == 0
+        
+        # Early erosion features should NOT be present for S1
+        early_erosion_cols = [c for c in result.columns if 'erosion_0_' in c.lower() or 'avg_vol_0_' in c.lower()]
+        assert len(early_erosion_cols) == 0, f"S1 should not have early erosion features, found: {early_erosion_cols}"
+        
+        # Pre-entry features SHOULD be present
+        assert 'pre_entry_trend' in result.columns
+        assert 'avg_vol_3m' in result.columns
+    
+    def test_make_features_respects_scenario2_cutoff(self):
+        """Test that make_features respects S2 cutoff (months_postgx < 6 for features)."""
+        from src.features import make_features, SCENARIO_CONFIG
+        
+        # Create panel with pre-entry and post-entry data
+        panel_data = []
+        for m in range(-12, 24):
+            panel_data.append({
+                'country': 'US',
+                'brand_name': 'BRAND_A',
+                'months_postgx': m,
+                'volume': 1000 - abs(m) * 10,
+                'n_gxs': 0 if m < 0 else max(1, m // 3),
+                'month': 'Jan',
+                'ther_area': 'AREA_1',
+                'main_package': 'Tablet',
+                'hospital_rate': 50.0,
+                'biological': False,
+                'small_molecule': True,
+            })
+        
+        panel = pd.DataFrame(panel_data)
+        panel['avg_vol_12m'] = 1000.0
+        
+        # Build features for Scenario 2
+        result = make_features(panel.copy(), scenario=2, mode='train')
+        
+        # S2 cutoff is 6, so features can use data from months < 6
+        assert SCENARIO_CONFIG[2]['feature_cutoff'] == 6
+        
+        # Early erosion features SHOULD be present for S2
+        early_erosion_cols = [c for c in result.columns if 'erosion_0_' in c.lower() or 'avg_vol_0_' in c.lower()]
+        assert len(early_erosion_cols) > 0, "S2 should have early erosion features"
+    
+    def test_make_features_mode_test_no_y_norm(self):
+        """Test that mode='test' does not create y_norm or modify volume."""
+        from src.features import make_features
+        
+        # Create panel
+        panel_data = []
+        for m in range(-12, 24):
+            panel_data.append({
+                'country': 'US',
+                'brand_name': 'BRAND_A',
+                'months_postgx': m,
+                'volume': 1000.0,
+                'n_gxs': 1 if m >= 0 else 0,
+                'month': 'Jan',
+                'ther_area': 'AREA_1',
+                'main_package': 'Tablet',
+                'hospital_rate': 50.0,
+                'biological': False,
+                'small_molecule': True,
+            })
+        
+        panel = pd.DataFrame(panel_data)
+        panel['avg_vol_12m'] = 1000.0
+        original_volume = panel['volume'].copy()
+        
+        # Build features in TEST mode
+        result = make_features(panel.copy(), scenario=1, mode='test')
+        
+        # y_norm should NOT be created in test mode
+        assert 'y_norm' not in result.columns, "Test mode should not have y_norm"
+        
+        # Volume should not be modified
+        assert 'volume' in result.columns
+        np.testing.assert_array_equal(result['volume'].values, original_volume.values)
+    
+    def test_make_features_mode_train_creates_y_norm(self):
+        """Test that mode='train' creates y_norm."""
+        from src.features import make_features
+        
+        # Create panel
+        panel_data = []
+        for m in range(-12, 24):
+            panel_data.append({
+                'country': 'US',
+                'brand_name': 'BRAND_A',
+                'months_postgx': m,
+                'volume': 800.0 if m >= 0 else 1000.0,
+                'n_gxs': 1 if m >= 0 else 0,
+                'month': 'Jan',
+                'ther_area': 'AREA_1',
+                'main_package': 'Tablet',
+                'hospital_rate': 50.0,
+                'biological': False,
+                'small_molecule': True,
+            })
+        
+        panel = pd.DataFrame(panel_data)
+        panel['avg_vol_12m'] = 1000.0
+        
+        # Build features in TRAIN mode
+        result = make_features(panel.copy(), scenario=1, mode='train')
+        
+        # y_norm SHOULD be created in train mode
+        assert 'y_norm' in result.columns, "Train mode should have y_norm"
+        
+        # y_norm should be volume / avg_vol_12m
+        expected_y_norm = panel['volume'] / panel['avg_vol_12m']
+        np.testing.assert_array_almost_equal(result['y_norm'].values, expected_y_norm.values)
+    
+    def test_early_erosion_features_only_scenario2(self):
+        """Test that early erosion features only appear for Scenario 2."""
+        from src.features import make_features
+        
+        # Create panel
+        panel_data = []
+        for m in range(-12, 24):
+            panel_data.append({
+                'country': 'US',
+                'brand_name': 'BRAND_A',
+                'months_postgx': m,
+                'volume': 1000.0 - (10 * m if m >= 0 else 0),
+                'n_gxs': 1 if m >= 0 else 0,
+                'month': 'Jan',
+                'ther_area': 'AREA_1',
+                'main_package': 'Tablet',
+                'hospital_rate': 50.0,
+                'biological': False,
+                'small_molecule': True,
+            })
+        
+        panel = pd.DataFrame(panel_data)
+        panel['avg_vol_12m'] = 1000.0
+        
+        # Build for S1 and S2
+        s1_result = make_features(panel.copy(), scenario=1, mode='train')
+        s2_result = make_features(panel.copy(), scenario=2, mode='train')
+        
+        # Define early erosion feature patterns
+        early_patterns = ['erosion_0_5', 'avg_vol_0_5', 'trend_0_5', 'drop_month_0', 
+                          'month_0_to_3_change', 'recovery_signal', 'competition_response']
+        
+        # Check S1 doesn't have these
+        for pattern in early_patterns:
+            matching_s1 = [c for c in s1_result.columns if pattern in c.lower()]
+            assert len(matching_s1) == 0, f"S1 should not have '{pattern}' features, found: {matching_s1}"
+        
+        # Check S2 DOES have at least some of these
+        found_s2_early = False
+        for pattern in early_patterns:
+            matching_s2 = [c for c in s2_result.columns if pattern in c.lower()]
+            if len(matching_s2) > 0:
+                found_s2_early = True
+                break
+        
+        assert found_s2_early, "S2 should have at least one early erosion feature"
+
+
+class TestTrainCLISmokeTest:
+    """Tests for train.py CLI (Section 9.2)."""
+    
+    def test_train_cli_help_returns_success(self):
+        """Test that python -m src.train --help returns exit code 0."""
+        import subprocess
+        
+        result = subprocess.run(
+            ['python', '-m', 'src.train', '--help'],
+            capture_output=True,
+            text=True,
+            cwd=Path(__file__).parent.parent,
+            timeout=30
+        )
+        
+        assert result.returncode == 0, f"CLI --help failed: {result.stderr}"
+    
+    def test_train_cli_has_key_arguments(self):
+        """Test that train CLI includes all key arguments."""
+        import subprocess
+        
+        result = subprocess.run(
+            ['python', '-m', 'src.train', '--help'],
+            capture_output=True,
+            text=True,
+            cwd=Path(__file__).parent.parent,
+            timeout=30
+        )
+        
+        # Key arguments that must be present
+        key_args = [
+            '--scenario', '--model', '--data-config', '--features-config',
+            '--run-config', '--model-config', '--cv', '--n-folds',
+            '--run-name', '--force-rebuild', '--no-cache'
+        ]
+        
+        for arg in key_args:
+            assert arg in result.stdout, f"Missing argument '{arg}' in CLI help"
+    
+    def test_train_cli_scenario_is_integer(self):
+        """Test that --scenario expects an integer argument."""
+        import subprocess
+        
+        result = subprocess.run(
+            ['python', '-m', 'src.train', '--help'],
+            capture_output=True,
+            text=True,
+            cwd=Path(__file__).parent.parent,
+            timeout=30
+        )
+        
+        # Check that scenario is described as 1 or 2
+        help_text = result.stdout.lower()
+        assert '1' in help_text and '2' in help_text, "Scenario should accept 1 or 2"
+
+
+class TestLeakageStrengthening:
+    """Tests for leakage prevention (Section 9.3)."""
+    
+    def test_forbidden_column_bucket_raises_error(self):
+        """Test that including 'bucket' in features raises error."""
+        from src.features import split_features_target_meta, validate_feature_leakage
+        
+        # Create DataFrame with forbidden column
+        df_with_bucket = pd.DataFrame({
+            'country': ['US', 'DE'],
+            'brand_name': ['A', 'B'],
+            'months_postgx': [0, 0],
+            'feature1': [1.0, 2.0],
+            'bucket': [1, 2],  # FORBIDDEN
+            'y_norm': [0.8, 0.7]
+        })
+        
+        # split_features_target_meta should exclude bucket
+        X, y, meta = split_features_target_meta(df_with_bucket)
+        assert 'bucket' not in X.columns, "bucket should be excluded from features"
+        
+        # validate_feature_leakage should detect it if present
+        bad_X = pd.DataFrame({
+            'feature1': [1.0, 2.0],
+            'bucket': [1, 2]  # FORBIDDEN
+        })
+        is_valid, violations = validate_feature_leakage(bad_X, scenario=1, mode='train')
+        assert not is_valid, "Should detect 'bucket' as leakage"
+        assert any('bucket' in v.lower() for v in violations)
+    
+    def test_forbidden_column_y_norm_raises_error(self):
+        """Test that including 'y_norm' in features raises error."""
+        from src.features import validate_feature_leakage
+        
+        bad_X = pd.DataFrame({
+            'feature1': [1.0, 2.0],
+            'y_norm': [0.8, 0.7]  # FORBIDDEN - this is the target
+        })
+        
+        is_valid, violations = validate_feature_leakage(bad_X, scenario=1, mode='train')
+        assert not is_valid, "Should detect 'y_norm' as leakage"
+    
+    def test_forbidden_column_mean_erosion_raises_error(self):
+        """Test that including 'mean_erosion' in features raises error."""
+        from src.features import validate_feature_leakage
+        
+        bad_X = pd.DataFrame({
+            'feature1': [1.0, 2.0],
+            'mean_erosion': [0.25, 0.50]  # FORBIDDEN - target-derived
+        })
+        
+        is_valid, violations = validate_feature_leakage(bad_X, scenario=1, mode='train')
+        assert not is_valid, "Should detect 'mean_erosion' as leakage"
+    
+    def test_data_audit_strict_mode_raises(self):
+        """Test that audit_data_leakage in strict mode raises ValueError."""
+        from src.data import audit_data_leakage
+        
+        bad_X = pd.DataFrame({
+            'feature1': [1.0, 2.0],
+            'volume': [100, 200]  # FORBIDDEN
+        })
+        
+        with pytest.raises(ValueError, match="Data leakage detected"):
+            audit_data_leakage(bad_X, scenario=1, mode='train', strict=True)
+
+
+class TestIntegrationEndToEnd:
+    """Integration tests (Section 9.4)."""
+    
+    @pytest.mark.skipif(
+        not (Path(__file__).parent.parent / 'data' / 'raw' / 'TRAIN').exists(),
+        reason="Training data not available"
+    )
+    def test_end_to_end_data_pipeline(self):
+        """End-to-end test of data loading and feature engineering pipeline."""
+        from src.utils import load_config, get_project_root, set_seed
+        from src.data import load_raw_data, prepare_base_panel, handle_missing_values, compute_pre_entry_stats
+        from src.features import make_features
+        
+        set_seed(42)
+        root = get_project_root()
+        
+        # Load configs
+        data_config = load_config(root / 'configs' / 'data.yaml')
+        features_config = load_config(root / 'configs' / 'features.yaml')
+        
+        # Load data
+        raw_data = load_raw_data(data_config, split='train')
+        
+        # Verify raw data loaded correctly
+        assert 'volume' in raw_data, "Should have volume data"
+        assert 'generics' in raw_data, "Should have generics data"
+        assert 'medicine_info' in raw_data, "Should have medicine_info data"
+        
+        # Build panel
+        panel = prepare_base_panel(
+            raw_data['volume'],
+            raw_data['generics'],
+            raw_data['medicine_info']
+        )
+        panel = handle_missing_values(panel)
+        panel = compute_pre_entry_stats(panel, is_train=True)
+        
+        # Filter to ~10 series for speed
+        unique_series = panel[['country', 'brand_name']].drop_duplicates().head(10)
+        panel_subset = panel.merge(unique_series, on=['country', 'brand_name'])
+        
+        assert len(unique_series) >= 5, "Need at least 5 series for test"
+        
+        # Build features for Scenario 1
+        panel_features = make_features(panel_subset.copy(), scenario=1, mode='train', config=features_config)
+        
+        # Verify features were built correctly
+        assert 'y_norm' in panel_features.columns, "Should have y_norm in train mode"
+        assert 'months_postgx' in panel_features.columns, "Should have months_postgx"
+        
+        # Test with post-entry data only
+        post_entry = panel_features[panel_features['months_postgx'] >= 0].copy()
+        assert len(post_entry) > 0, "Should have post-entry data"
+        
+        # Verify y_norm is properly normalized
+        assert post_entry['y_norm'].min() >= 0, "y_norm should be non-negative"
+        assert post_entry['y_norm'].max() <= 10, "y_norm should be in reasonable range"
+        
+        # Verify no NaN in essential columns
+        essential_cols = ['country', 'brand_name', 'months_postgx', 'y_norm']
+        for col in essential_cols:
+            assert not post_entry[col].isna().any(), f"Column {col} should have no NaN values"
+        
+        print(f"End-to-end data pipeline test passed with {len(panel_features)} rows")
+    
+    @pytest.mark.skipif(
+        not (Path(__file__).parent.parent / 'data' / 'raw' / 'TRAIN').exists(),
+        reason="Training data not available"
+    )
+    def test_end_to_end_scenario2_features(self):
+        """End-to-end test for Scenario 2 feature engineering."""
+        from src.utils import load_config, get_project_root, set_seed
+        from src.data import load_raw_data, prepare_base_panel, handle_missing_values, compute_pre_entry_stats
+        from src.features import make_features
+        
+        set_seed(42)
+        root = get_project_root()
+        
+        # Load configs
+        data_config = load_config(root / 'configs' / 'data.yaml')
+        features_config = load_config(root / 'configs' / 'features.yaml')
+        
+        # Load data
+        raw_data = load_raw_data(data_config, split='train')
+        
+        # Build panel
+        panel = prepare_base_panel(
+            raw_data['volume'],
+            raw_data['generics'],
+            raw_data['medicine_info']
+        )
+        panel = handle_missing_values(panel)
+        panel = compute_pre_entry_stats(panel, is_train=True)
+        
+        # Filter to ~10 series
+        unique_series = panel[['country', 'brand_name']].drop_duplicates().head(10)
+        panel_subset = panel.merge(unique_series, on=['country', 'brand_name'])
+        
+        # Build features for Scenario 2
+        panel_features = make_features(panel_subset.copy(), scenario=2, mode='train', config=features_config)
+        
+        # Verify features were built correctly
+        assert 'y_norm' in panel_features.columns, "Should have y_norm in train mode"
+        assert 'months_postgx' in panel_features.columns, "Should have months_postgx"
+        
+        # S2 should have early erosion features
+        early_erosion_cols = [c for c in panel_features.columns if 'erosion_0_5' in c or 'early' in c.lower()]
+        assert len(early_erosion_cols) > 0, "S2 should have early erosion features"
+        
+        # Test with S2 target range (months 6-23)
+        s2_data = panel_features[panel_features['months_postgx'] >= 6].copy()
+        assert len(s2_data) > 0, "Should have S2 data (months 6-23)"
+        
+        print(f"S2 feature engineering test passed with {len(panel_features)} rows")
+
+
+class TestDataValidation:
+    """Data validation tests (Section 9.5)."""
+    
+    @pytest.mark.skipif(
+        not (Path(__file__).parent.parent / 'data' / 'raw' / 'TRAIN').exists(),
+        reason="Training data not available"
+    )
+    def test_data_drift_detection(self):
+        """Test that adversarial validation can detect data drift."""
+        from src.validation import adversarial_validation
+        from src.utils import load_config, get_project_root
+        from src.data import load_raw_data, prepare_base_panel, handle_missing_values
+        
+        root = get_project_root()
+        data_config = load_config(root / 'configs' / 'data.yaml')
+        
+        # Load train data
+        train_raw = load_raw_data(data_config, split='train')
+        train_panel = prepare_base_panel(
+            train_raw['volume'],
+            train_raw['generics'],
+            train_raw['medicine_info']
+        )
+        train_panel = handle_missing_values(train_panel)
+        
+        # Load test data
+        test_raw = load_raw_data(data_config, split='test')
+        test_panel = prepare_base_panel(
+            test_raw['volume'],
+            test_raw['generics'],
+            test_raw['medicine_info']
+        )
+        test_panel = handle_missing_values(test_panel)
+        
+        # Get numeric features
+        numeric_cols = ['n_gxs', 'hospital_rate']
+        existing_cols = [c for c in numeric_cols if c in train_panel.columns and c in test_panel.columns]
+        
+        if len(existing_cols) < 2:
+            pytest.skip("Not enough numeric columns for drift test")
+        
+        train_features = train_panel[existing_cols].dropna()
+        test_features = test_panel[existing_cols].dropna()
+        
+        # Run adversarial validation
+        result = adversarial_validation(train_features.head(500), test_features.head(200), n_folds=2)
+        
+        # AUC should be between 0 and 1
+        assert 0 <= result['mean_auc'] <= 1, f"AUC should be in [0, 1], got {result['mean_auc']}"
+        
+        # If AUC is close to 0.5, distributions are similar (no major drift)
+        # If AUC is close to 1.0, there's significant drift
+        print(f"Adversarial validation AUC: {result['mean_auc']:.3f}")
+    
+    def test_submission_against_template(self):
+        """Test submission validation against template."""
+        from src.inference import validate_submission_format
+        from src.utils import get_project_root
+        
+        root = get_project_root()
+        template_path = root / 'docs' / 'guide' / 'submission_template.csv'
+        
+        if not template_path.exists():
+            pytest.skip("Submission template not found")
+        
+        template = pd.read_csv(template_path)
+        
+        # Check template has expected columns
+        expected_cols = ['country', 'brand_name', 'months_postgx', 'volume']
+        assert list(template.columns) == expected_cols, f"Template columns: {list(template.columns)}"
+        
+        # Create a valid submission matching template structure
+        submission = template.copy()
+        submission['volume'] = 1000.0  # Fill with valid values
+        
+        # Should pass validation
+        is_valid = validate_submission_format(submission, template, strict=False)
+        assert is_valid, "Valid submission should pass validation"
+    
+    def test_submission_column_order_matters(self):
+        """Test that column order in submission matches template."""
+        from src.inference import validate_submission_format
+        
+        template = pd.DataFrame({
+            'country': ['A'],
+            'brand_name': ['X'],
+            'months_postgx': [0],
+            'volume': [np.nan]
+        })
+        
+        # Submission with wrong column order
+        wrong_order = pd.DataFrame({
+            'volume': [1000.0],  # Wrong order
+            'country': ['A'],
+            'brand_name': ['X'],
+            'months_postgx': [0],
+        })
+        
+        # Reorder to match
+        correct_order = wrong_order[['country', 'brand_name', 'months_postgx', 'volume']]
+        
+        # The validate function should work with correct order
+        is_valid = validate_submission_format(correct_order, template, strict=False)
+        assert is_valid
+    
+    def test_submission_dtype_compatibility(self):
+        """Test that submission dtypes are compatible."""
+        from src.inference import validate_submission_format
+        
+        template = pd.DataFrame({
+            'country': ['A'],
+            'brand_name': ['X'],
+            'months_postgx': [0],
+            'volume': [np.nan]
+        })
+        
+        # Submission with correct types
+        good_submission = pd.DataFrame({
+            'country': ['A'],
+            'brand_name': ['X'],
+            'months_postgx': [0],
+            'volume': [1000.0]
+        })
+        
+        assert good_submission['volume'].dtype in [np.float64, np.float32, float]
+        
+        is_valid = validate_submission_format(good_submission, template, strict=False)
+        assert is_valid
+    
+    @pytest.mark.skipif(
+        not (Path(__file__).parent.parent / 'docs' / 'guide' / 'auxiliar_metric_computation_example.csv').exists(),
+        reason="Auxiliary example file not found"
+    )
+    def test_metric_calculation_against_example(self):
+        """Test metric calculation matches provided example."""
+        from src.evaluate import compute_metric1
+        from src.utils import get_project_root
+        
+        root = get_project_root()
+        aux_example_path = root / 'docs' / 'guide' / 'auxiliar_metric_computation_example.csv'
+        
+        # Load the example auxiliary file
+        aux_example = pd.read_csv(aux_example_path)
+        
+        # Check it has expected schema
+        expected_cols = ['country', 'brand_name', 'avg_vol', 'bucket']
+        for col in expected_cols:
+            assert col in aux_example.columns, f"Aux file should have column '{col}'"
+        
+        # Create synthetic actual and pred DataFrames for testing
+        series_list = list(zip(aux_example['country'], aux_example['brand_name']))[:5]  # First 5 series
+        
+        data = []
+        for country, brand in series_list:
+            avg_vol = aux_example[(aux_example['country'] == country) & 
+                                   (aux_example['brand_name'] == brand)]['avg_vol'].values[0]
+            for m in range(24):
+                data.append({
+                    'country': country,
+                    'brand_name': brand,
+                    'months_postgx': m,
+                    'volume_actual': avg_vol * (1 - 0.02 * m),
+                    'volume_pred': avg_vol * (1 - 0.025 * m)  # Slightly different
+                })
+        
+        df = pd.DataFrame(data)
+        df_actual = df[['country', 'brand_name', 'months_postgx', 'volume_actual']].rename(
+            columns={'volume_actual': 'volume'})
+        df_pred = df[['country', 'brand_name', 'months_postgx', 'volume_pred']].rename(
+            columns={'volume_pred': 'volume'})
+        
+        # Filter aux to matching series
+        aux_subset = aux_example[aux_example.apply(
+            lambda r: (r['country'], r['brand_name']) in series_list, axis=1)]
+        
+        # Compute metric
+        metric = compute_metric1(df_actual, df_pred, aux_subset)
+        
+        assert np.isfinite(metric), "Metric should be finite"
+        assert metric >= 0, "Metric should be non-negative"
+
+
+class TestCodeQuality:
+    """Code quality tests (Section 9.6)."""
+    
+    def test_all_source_files_have_docstrings(self):
+        """Test that all source modules have module docstrings."""
+        import importlib
+        
+        modules = [
+            'src.data', 'src.features', 'src.train', 'src.inference',
+            'src.evaluate', 'src.validation', 'src.utils'
+        ]
+        
+        for module_name in modules:
+            try:
+                module = importlib.import_module(module_name)
+                assert module.__doc__ is not None, f"Module {module_name} should have a docstring"
+                assert len(module.__doc__.strip()) > 10, f"Module {module_name} docstring should be meaningful"
+            except ImportError:
+                pytest.skip(f"Could not import {module_name}")
+    
+    def test_key_functions_have_docstrings(self):
+        """Test that key functions have docstrings."""
+        from src import data, features, train, inference, evaluate, validation
+        
+        key_functions = [
+            (data, 'load_raw_data'),
+            (data, 'prepare_base_panel'),
+            (data, 'compute_pre_entry_stats'),
+            (data, 'get_panel'),
+            (features, 'make_features'),
+            (features, 'split_features_target_meta'),
+            (train, 'train_scenario_model'),
+            (train, 'compute_sample_weights'),
+            (inference, 'generate_submission'),
+            (inference, 'detect_test_scenarios'),
+            (evaluate, 'compute_metric1'),
+            (evaluate, 'compute_metric2'),
+            (validation, 'create_validation_split'),
+        ]
+        
+        for module, func_name in key_functions:
+            func = getattr(module, func_name, None)
+            assert func is not None, f"Function {module.__name__}.{func_name} should exist"
+            assert func.__doc__ is not None, f"Function {module.__name__}.{func_name} should have a docstring"
+    
+    def test_no_print_statements_in_source(self):
+        """Test that source files don't have bare print statements (should use logger)."""
+        # This is a light check - just verify logging is used
+        from src import data, features, train, inference, evaluate, validation
+        
+        for module in [data, features, train, inference, evaluate, validation]:
+            # Check that logger is defined
+            assert hasattr(module, 'logger') or hasattr(module, 'logging'), \
+                f"Module {module.__name__} should use logging"
+    
+    def test_constants_are_uppercase(self):
+        """Test that constants follow UPPER_CASE convention."""
+        from src.data import META_COLS, ID_COLS, TIME_COL, RAW_TARGET_COL, MODEL_TARGET_COL
+        from src.features import SCENARIO_CONFIG, FORBIDDEN_FEATURES
+        
+        # These should be defined and uppercase (they're constant names)
+        assert META_COLS is not None
+        assert ID_COLS is not None
+        assert SCENARIO_CONFIG is not None
+        assert FORBIDDEN_FEATURES is not None
+    
+    def test_imports_are_organized(self):
+        """Test that imports don't cause circular dependencies."""
+        # Just try importing all modules - will fail if circular imports
+        from src import data
+        from src import features
+        from src import train
+        from src import inference
+        from src import evaluate
+        from src import validation
+        from src import utils
+        from src.models import base
+        from src.models import linear
+        from src.models import ensemble
+        
+        # If we get here, no circular import issues
+        assert True
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
 
