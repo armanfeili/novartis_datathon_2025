@@ -16,10 +16,14 @@
 12. [Risk Mitigation](#12-risk-mitigation)
 13. [Code Organization](#13-code-organization)
 14. [Deliverables Checklist](#14-deliverables-checklist)
+15. [Future Work & Continued Extensions](#15-future-work--continued-extensions)
 
 ---
 
 ## 1. Executive Summary
+
+### 1.0 Document Scope
+This document is the **implementation playbook for the Novartis Datathon 2025 solution as coded**. It focuses strictly on what is realistically implementable in the 48-hour window ("**Core competition implementation**"). Ideas that are valuable but optional are deferred to "**Future / continued work after the datathon**" (Section 15).
 
 ### 1.1 Business Objective
 
@@ -288,6 +292,48 @@ def compute_pre_entry_stats(panel_df: pd.DataFrame, is_train: bool = True) -> pd
 | `main_package` | "Unknown" category | Preserve information |
 | `biological` / `small_molecule` | False if missing + flag | Conservative default |
 
+### 4.4 Reproducible Feature Pipeline (Canonical Functions)
+
+The feature pipeline must be expressed only through a small set of scenario-aware, reproducible functions:
+
+- `prepare_base_panel(volume_df, generics_df, medicine_info_df)`
+- `compute_pre_entry_stats(panel_df, is_train=True|False)`
+- `make_features(panel_df, scenario)`
+- `select_training_rows(panel_df, scenario)`
+- `split_features_target_meta(df)` (train)
+- `get_feature_matrix_and_meta(df)` (inference)
+
+All training, validation, and inference code must call these functions instead of re-implementing joins or features ad-hoc. Any new feature must be added inside `make_features()` and its helpers, not scattered across notebooks or scripts.
+
+- **Train, validation, and test** must all go through the same pipeline.
+- **No notebook should implement its own join/feature logic**; they must call these functions.
+
+**Canonical function contracts (implementation checklist)**
+
+- `prepare_base_panel(...)`  
+  Input: raw `volume`, `generics`, `medicine_info`.  
+  Output: joined panel with one row per `(country, brand_name, months_postgx)`.
+
+- `compute_pre_entry_stats(panel_df, is_train)`  
+  - Always computes `avg_vol_12m`.  
+  - When `is_train=True`, also computes `bucket` and any train-only target-derived stats.  
+  - Never writes `bucket` on test.
+
+- `make_features(panel_df, scenario)`  
+  - Uses only scenario-allowed history for target-derived features.  
+  - Must be a pure function: no global state, no I/O.
+
+- `select_training_rows(panel_df, scenario)`  
+  - Scenario 1: returns rows with `months_postgx ∈ [0, 23]`.  
+  - Scenario 2: returns rows with `months_postgx ∈ [6, 23]`.
+
+- `split_features_target_meta(df)`  
+  - Drops all `META_COLS` from X.  
+  - Returns `(X, y, meta)`, used only for training / validation.
+
+- `get_feature_matrix_and_meta(df)`  
+  - Used at inference: returns `(X, meta)` with exactly the same `X` columns as training.
+
 ---
 
 ## 5. Exploratory Data Analysis Plan
@@ -372,6 +418,10 @@ def compute_pre_entry_stats(panel_df: pd.DataFrame, is_train: bool = True) -> pd
 ---
 
 ## 6. Feature Engineering Strategy
+
+All feature categories (1–6) are implemented through `make_features()` and helper functions `add_pre_entry_features`, `add_time_features`, `add_generics_features`, `add_drug_features`, `add_early_erosion_features`, `add_interaction_features` (see Section 4.4).
+
+**Reminder**: Any new feature **must respect the scenario cutoffs** (Scenario 1: `months_postgx < 0`; Scenario 2: `< 6`) and must be integrated into these helpers only.
 
 ### 6.1 Feature Categories
 
@@ -500,13 +550,20 @@ $$y_{j,i} = \frac{\text{volume}_{j,i}}{\text{Avg}_j}$$
 
 | Option | Pros | Cons |
 |--------|------|------|
-| **Normalized volume** ✓ | Directly aligns with metric; scale-invariant | Need to handle small Avg_j |
+| **Normalized volume** ✓ | Directly aligns with metric; scale-invariant | Need to handle small `Avg_j` (=`avg_vol_12m`) |
 | Log volume | Handles skewness | Doesn't match metric normalization |
 | Raw volume | Simple | Large brands dominate; metric mismatch |
 
-**Handling small Avg_j**:
+**Handling small `Avg_j`**:
 - Clip `Avg_j` to minimum of 100 (or 1st percentile) to avoid division instability
 - Flag series with very small `Avg_j` for conservative prediction fallback
+
+**Implementation decision**
+
+- Default target: `y_norm = volume / avg_vol_12m`.  
+- Config key: `training.target_type ∈ {"normalized_volume", "log_volume"}`.  
+- All training / inference code must read this flag from a single config file (e.g., `configs/model.yaml`) and never hard-code the choice inside notebooks.
+- **Copilot must enforce** this flag in `train.py` and `inference.py`.
 
 #### Sample Weights to Reflect Metric
 
@@ -535,6 +592,8 @@ def compute_sample_weights(df: pd.DataFrame, scenario: str) -> pd.Series:
     
     return weights
 ```
+
+All training code must call a single helper `compute_sample_weights(meta_df, scenario)` so that metric-aligned weighting is consistent across experiments.
 
 **Key insight**: This makes the training loss approximate the official PE, rather than optimizing generic MAE/MSE equally across all rows.
 
@@ -600,21 +659,21 @@ To avoid confusion between target and features:
 │                       MODEL HIERARCHY                                │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
-│  TIER 1: BASELINES (Implement First)                                 │
+│  TIER 1: BASELINES (Implement First - Core)                          │
 │  ├─ Naive Flat: Predict avg_vol_12m for all future months           │
 │  ├─ Global Erosion Curve: Apply average erosion by months_postgx    │
 │  └─ Linear Trend: Extrapolate pre-entry trend                       │
 │                                                                      │
-│  TIER 2: HERO MODEL (Primary Focus)                                  │
+│  TIER 2: HERO MODEL (Primary Focus - Core)                           │
 │  ├─ Gradient Boosting (CatBoost / LightGBM / XGBoost)               │
 │  ├─ Train separate models for Scenario 1 and Scenario 2             │
 │  └─ Features: Full engineered feature set                            │
 │                                                                      │
-│  TIER 3: ENSEMBLE (If Time Permits)                                  │
+│  TIER 3: ENSEMBLE (Future Work - Section 15.3)                       │
 │  ├─ Average of 2-3 best GBM variants                                │
 │  └─ Weighted average prioritizing Bucket 1 performance              │
 │                                                                      │
-│  TIER 4: ALTERNATIVES (Optional Exploration)                         │
+│  TIER 4: ALTERNATIVES (Future Work - Section 15.3)                   │
 │  ├─ Ridge/Lasso on normalized volume                                 │
 │  ├─ Per-series ARIMA (for comparison)                                │
 │  └─ Neural network (if data supports)                                │
@@ -622,10 +681,14 @@ To avoid confusion between target and features:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+Simple weighted ensembles over 2–3 GBM variants can be implemented later; see Section 15.3.
+
 ### 7.2 Baseline Implementations
 
 ```python
 # src/models/baselines.py
+
+# NOTE: Implementation details omitted here; these are optional extensions, not part of the 48h core scope.
 
 def baseline_flat(train_df: pd.DataFrame, test_df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -709,6 +772,7 @@ HERO_MODEL_CONFIG = {
 ```python
 # Define column groups to prevent accidental leakage
 META_COLS = ['country', 'brand_name', 'months_postgx', 'bucket', 'avg_vol_12m', 'y_norm']
+# Any new meta-only column (e.g., series-level identifiers, diagnostic flags) must be added to META_COLS to prevent leakage into features.
 TARGET_COL = 'y_norm'
 
 def split_features_target_meta(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
@@ -751,7 +815,8 @@ def train_scenario_model(
     y_val: pd.Series,
     meta_val: pd.DataFrame,
     scenario: str,
-    model_type: str = 'catboost'
+    model_type: str = 'catboost',
+    config_override: dict = None
 ) -> Tuple[Model, dict]:
     """
     Train model for specific scenario with early stopping.
@@ -814,6 +879,8 @@ Given time constraints, use **targeted tuning**:
 | `iterations` | Use early stopping | Auto |
 | `subsample` | [0.7, 0.8, 0.9] | Medium |
 | `colsample_bylevel` | [0.7, 0.8, 0.9] | Low |
+
+**Time budget**: at most 10–20 random configurations per scenario during the datathon. More exhaustive search belongs to Future Work (Section 15.3).
 
 **Strategy**: 
 1. Start with defaults
@@ -954,92 +1021,13 @@ def simulate_scenario(val_df: pd.DataFrame, scenario: str) -> Tuple[pd.DataFrame
 
 ### 8.5 Cross-Validation Strategy
 
-Given time constraints, use **1-2 splits** rather than full K-fold:
-
-```python
-def quick_cv(panel_df, model_fn, n_splits=2):
-    """
-    Quick 2-fold CV for robustness check.
-    """
-    scores = []
-    
-    for fold in range(n_splits):
-        train_df, val_df = create_validation_split(
-            panel_df, 
-            val_fraction=0.2,
-            random_state=42 + fold
-        )
-        
-        # Train and evaluate
-        model = model_fn(train_df)
-        score = evaluate_model(model, val_df)
-        scores.append(score)
-    
-    return {
-        'mean_score': np.mean(scores),
-        'std_score': np.std(scores),
-        'scores': scores
-    }
-```
+Given time constraints, use **1-2 splits** rather than full K-fold. See Section 15.1 for the `quick_cv` implementation.
 
 ### 8.6 Adversarial Validation (Optional but Recommended)
 
 Adversarial validation detects **distribution shift** between train and test, which helps avoid overfitting to quirks of the training data.
 
-**Implementation**:
-
-```python
-def adversarial_validation(train_features: pd.DataFrame, 
-                           test_features: pd.DataFrame) -> dict:
-    """
-    Train classifier to distinguish train vs test rows.
-    High AUC indicates distribution shift.
-    """
-    # Combine train and test (features only, no target)
-    # IMPORTANT: Use copies to avoid mutating original frames!
-    train_aug = train_features.copy()
-    test_aug = test_features.copy()
-    train_aug['is_test'] = 0
-    test_aug['is_test'] = 1
-    combined = pd.concat([train_aug, test_aug])
-    
-    # Train simple classifier
-    X = combined.drop(columns=['is_test'])
-    y = combined['is_test']
-    
-    model = LGBMClassifier(n_estimators=100, max_depth=4)
-    model.fit(X, y)
-    
-    # Compute AUC
-    from sklearn.model_selection import cross_val_score
-    auc_scores = cross_val_score(model, X, y, cv=3, scoring='roc_auc')
-    
-    # Get feature importances
-    importances = pd.DataFrame({
-        'feature': X.columns,
-        'importance': model.feature_importances_
-    }).sort_values('importance', ascending=False)
-    
-    return {
-        'mean_auc': np.mean(auc_scores),
-        'auc_scores': auc_scores,
-        'top_shift_features': importances.head(10)
-    }
-```
-
-**Interpretation**:
-- **AUC ≈ 0.5**: Train and test are similar → Good!
-- **AUC > 0.7**: Significant distribution shift → Caution!
-- **AUC > 0.8**: Severe shift → Consider:
-  - Dropping high-importance features that cause shift
-  - Increasing regularization
-  - Mentioning this in presentation as a "robustness consideration"
-
-**What to do with results**:
-1. If shift detected, inspect the top features driving the shift
-2. Consider whether those features are "safe" (real signal) or "dangerous" (artifacts)
-3. Optionally train models with/without suspect features and compare validation scores
-4. **Mention adversarial validation in presentation** – shows methodological rigor
+See Section 15.1 for the full adversarial validation implementation and interpretation details, which can be activated after the core pipeline is stable.
 
 ---
 
@@ -1211,7 +1199,7 @@ def validate_scenario_detection(scenarios: dict) -> None:
 
 ### 10.3 Submission Generation Code
 
-> **CRITICAL**: Models output **normalized volume** (volume / Avg_j). Submission must contain **actual volume**. Always multiply predictions by `avg_vol_12m` before submission.
+> **CRITICAL**: Models output **normalized volume** (volume / `Avg_j`). Submission must contain **actual volume**. Always multiply predictions by `avg_vol_12m` before submission.
 
 ```python
 # src/inference.py
@@ -1465,33 +1453,9 @@ For a compelling presentation, prepare **at least 3 case studies**:
 
 ### 11.6 Decision-Support Layer (Optional but Attractive)
 
-Convert predictions into **actionable prioritization** for finance teams:
+Convert predictions into **actionable prioritization** for finance teams. The idea is to flag at-risk revenues so finance teams can prioritize which brands need strategic attention.
 
-**Priority Score Formula**:
-$$\text{priority\_score}_j = \text{avg\_vol}_j \times (1 - \text{predicted\_mean\_erosion}_j)$$
-
-- High score = Large brand with severe erosion = **High priority for attention**
-- Low score = Small brand or mild erosion = Lower priority
-
-**Alternative formulation** (if predicting early drop):
-$$\text{priority\_score}_j = \text{avg\_vol}_j \times \text{predicted\_early\_drop}_{0\text{-}5}$$
-
-**What to show**:
-
-```text
-┌──────────────────────────────────────────────────────────────────┐
-│  TOP 10 HIGH-PRIORITY BRANDS (Illustrative Example)              │
-├───────┬─────────┬─────────────────┬─────────────┬───────────────┤
-│ Rank  │ Country │ Brand           │ Pred Erosion│ Priority Score│
-├───────┼─────────┼─────────────────┼─────────────┼───────────────┤
-│ 1     │ DE      │ DrugA           │ 0.12        │ 8,500,000     │
-│ 2     │ FR      │ DrugB           │ 0.18        │ 6,200,000     │
-│ 3     │ ES      │ DrugC           │ 0.15        │ 5,100,000     │
-│ ...   │ ...     │ ...             │ ...         │ ...           │
-└───────┴─────────┴─────────────────┴─────────────┴───────────────┘
-```
-
-**Key message to jury**: "This is not a prescriptive tool, but a way to **flag at-risk revenues** so finance teams can prioritize which brands need strategic attention."
+Full details on the priority score calculation are in **Section 15.4**.
 
 ---
 
@@ -1572,7 +1536,7 @@ The 48-hour window is tight. If time pressure hits, follow this priority ranking
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  PRIORITY 1: NON-NEGOTIABLE (Must Complete)                          │
+│  PRIORITY 1: NON-NEGOTIABLE (Must Complete in 48h)                   │
 ├─────────────────────────────────────────────────────────────────────┤
 │  ✓ Clean data pipeline (load, join, preprocess)                     │
 │  ✓ Baseline model + hero GBM for BOTH scenarios                     │
@@ -1580,7 +1544,7 @@ The 48-hour window is tight. If time pressure hits, follow this priority ranking
 │  ✓ At least ONE valid submission uploaded                            │
 │  ✓ Basic slides structure                                            │
 ├─────────────────────────────────────────────────────────────────────┤
-│  PRIORITY 2: HIGH VALUE (Strong Impact If Done)                      │
+│  PRIORITY 2: HIGH VALUE (Implement if possible)                      │
 ├─────────────────────────────────────────────────────────────────────┤
 │  ○ Metric-aligned sample weights in training                         │
 │  ○ 2-3 case study plots (B1 success, B1 challenge, B2 contrast)     │
@@ -1588,13 +1552,13 @@ The 48-hour window is tight. If time pressure hits, follow this priority ranking
 │  ○ Feature importance interpretation                                 │
 │  ○ Edge case handling policy                                         │
 ├─────────────────────────────────────────────────────────────────────┤
-│  PRIORITY 3: NICE-TO-HAVE (Drop If Pressed)                          │
+│  PRIORITY 3: NICE-TO-HAVE (Move to Future Work - Section 15)         │
 ├─────────────────────────────────────────────────────────────────────┤
-│  △ Ensemble of multiple models                                       │
-│  △ Adversarial validation                                            │
-│  △ SHAP values                                                       │
-│  △ Hyperparameter tuning beyond 10-15 runs                           │
-│  △ Decision-support priority score                                   │
+│  △ Ensemble of multiple models (Section 15.3)                        │
+│  △ Adversarial validation (Section 15.1)                             │
+│  △ SHAP values (Section 15.2)                                        │
+│  △ Hyperparameter tuning beyond 10-15 runs (Section 15.3)            │
+│  △ Decision-support priority score (Section 15.4)                    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1705,7 +1669,10 @@ def test_full_pipeline_smoke():
     )
     
     # 8. Generate predictions
-    predictions = generate_mini_submission(model, X_val, meta_val)
+    # (In real code, call generate_submission with raw data. Here we simulate it)
+    y_pred = model.predict(X_val)
+    predictions = meta_val[['country', 'brand_name', 'months_postgx']].copy()
+    predictions['volume'] = y_pred * meta_val['avg_vol_12m']
     
     # 9. Validate format
     sanity_check_submission(predictions, mini_template)
@@ -1801,7 +1768,7 @@ def add_early_erosion_features(df) -> pd.DataFrame: ...  # Scenario 2 only
 
 def create_validation_split(panel, val_fraction, stratify_by) -> Tuple: ...
 def simulate_scenario(train_df, val_df, scenario: str) -> Tuple: ...
-def compute_validation_metrics(actuals, predictions, scenario) -> dict: ...
+def compute_validation_metrics(y_true, y_pred, meta, scenario) -> dict: ...
 def adversarial_validation(train_features, test_features) -> dict: ...  # Detect train/test shift
 ```
 
@@ -1821,7 +1788,7 @@ def load_model(path) -> Model: ...
 
 def generate_submission(models, test_data, template) -> pd.DataFrame: ...
 def post_process_predictions(predictions) -> pd.DataFrame: ...
-def validate_submission_format(submission, template) -> bool: ...
+def sanity_check_submission(submission, template) -> bool: ...
 ```
 
 #### `src/evaluate.py`
@@ -1915,6 +1882,87 @@ def sanity_check_submission(submission_df, template_df):
 
 ---
 
+## 15. Future Work & Continued Extensions
+
+This section collects ideas that are valuable but not strictly required for the 48-hour competition. They can be continued after the datathon as research or productionization work.
+
+**Note**: Implementation details are omitted or simplified here; these are optional extensions, not part of the 48h core scope.
+
+### 15.1 Advanced Validation & Robustness
+
+**Adversarial Validation (from Section 8.5)**
+Adversarial validation detects **distribution shift** between train and test.
+Implementation details:
+```python
+def adversarial_validation(train_features: pd.DataFrame, 
+                           test_features: pd.DataFrame) -> dict:
+    """
+    Train classifier to distinguish train vs test rows.
+    High AUC indicates distribution shift.
+    """
+    # Combine train and test (features only, no target)
+    train_aug = train_features.copy()
+    test_aug = test_features.copy()
+    train_aug['is_test'] = 0
+    test_aug['is_test'] = 1
+    combined = pd.concat([train_aug, test_aug])
+    
+    # Train simple classifier
+    X = combined.drop(columns=['is_test'])
+    y = combined['is_test']
+    
+    model = LGBMClassifier(n_estimators=100, max_depth=4)
+    model.fit(X, y)
+    
+    # Compute AUC
+    from sklearn.model_selection import cross_val_score
+    auc_scores = cross_val_score(model, X, y, cv=3, scoring='roc_auc')
+    
+    return {
+        'mean_auc': np.mean(auc_scores),
+        'auc_scores': auc_scores
+    }
+```
+
+**Quick Cross-Validation (from Section 8.6)**
+```python
+def quick_cv(panel_df, model_fn, n_splits=2):
+    """
+    Quick 2-fold CV for robustness check.
+    """
+    scores = []
+    for fold in range(n_splits):
+        train_df, val_df = create_validation_split(panel_df, val_fraction=0.2, random_state=42 + fold)
+        model = model_fn(train_df)
+        score = evaluate_model(model, val_df)
+        scores.append(score)
+    return {'mean_score': np.mean(scores), 'std_score': np.std(scores)}
+```
+
+### 15.2 Explainability & SHAP
+(Placeholder for SHAP implementation details)
+
+### 15.3 Ensembles & Model Zoo
+**Tier 3 & 4 Models (from Section 7)**
+- **Weighted Ensembles**: Average of 2-3 best GBM variants.
+- **Alternative Models**: Ridge/Lasso on normalized volume, Per-series ARIMA, Neural Networks.
+- **Exhaustive Hyperparameter Tuning**: Search beyond the 10-20 random configurations allocated for the datathon.
+
+### 15.4 Decision-Support & Priority Scoring
+**Priority Score Formula (from Section 11.6)**
+$$\text{priority\_score}_j = \text{avg\_vol}_j \times (1 - \text{predicted\_mean\_erosion}_j)$$
+
+**Alternative formulation**:
+$$\text{priority\_score}_j = \text{avg\_vol}_j \times \text{predicted\_early\_drop}_{0\text{-}5}$$
+
+### 15.5 Productionization & MLOps
+(Placeholder for deployment pipelines)
+
+### 15.6 Research Directions
+(Placeholder for long-term research)
+
+---
+
 ## Appendix A: Quick Reference Commands
 
 ### Environment Setup
@@ -1943,7 +1991,7 @@ python src/train.py --scenario scenario2 --config configs/model_cat.yaml
 python src/inference.py --output submissions/submission_v1.csv
 
 # Validate submission
-python -c "from src.inference import validate_submission; validate_submission('submissions/submission_v1.csv')"
+python -c "from src.inference import validate_submission_cli; validate_submission_cli('submissions/submission_v1.csv')"
 ```
 
 ---
@@ -2052,11 +2100,11 @@ The original `approach_old.md` is archived for reference but this document (`app
 
 ---
 
-*Document Version: 1.4 (FROZEN)*
+*Document Version: 1.5 (Execution-Focused)*
 *Last Updated: November 28, 2025*
 *Purpose: Implementation guide for Novartis Datathon 2025*
 
-**⚠️ DOCUMENT FROZEN:** No further planning. Move to execution:
+**⚠️ DOCUMENT FROZEN:** Core sections frozen for the datathon; ‘Future Work’ may evolve later.
 1. Implement `data.py` + `features.py` + `validation.py`
 2. Run smoke test on tiny subset (10 series)
 3. Train v0 hero model for Scenario 1 + 2
@@ -2065,6 +2113,8 @@ The original `approach_old.md` is archived for reference but this document (`app
 ---
 
 ## Appendix E: Implementation Notes Inspired by Novartis Datathon 2024
+
+**This appendix is implementation inspiration only; none of its patterns override the 2025 design decisions in Sections 1–14.**
 
 The public solution for **Novartis Datathon 2024** is used only as an implementation reference. The core strategy for 2025 remains exactly as defined in this document. From the 2024 codebase, only the following patterns are adopted:
 
