@@ -1,42 +1,55 @@
 # Default run-level settings for Novartis Datathon 2025
-# Seeds, CV scheme, experiment tracking
-
-# Experiment identification
-experiment:
-  name: "novartis-datathon-2025"
-  description: "Novartis Datathon 2025 Competition"
-  
-# Run naming
-run:
-  name_format: "{timestamp}_{model}_{version}"
-  timestamp_format: "%Y-%m-%d_%H-%M"
+# Seeds, CV scheme, scenarios, sample weights, experiment tracking
 
 # Reproducibility
 reproducibility:
   seed: 42
   deterministic: true
 
-# Cross-validation scheme
-cv:
-  strategy: "time_series"      # kfold, stratified_kfold, time_series, grouped
-  n_splits: 5
-  shuffle: false               # Usually false for time series
-  
-  # Time series specific
-  time_series:
-    gap: 0                     # Gap between train and validation
-    max_train_size: null       # Maximum training set size (null = no limit)
-    test_size: null            # Validation set size (null = auto)
-  
-  # Grouped CV (e.g., by patient)
-  grouped:
-    group_column: null
+# Validation configuration
+validation:
+  val_fraction: 0.2                   # 20% of series for validation
+  stratify_by: "bucket"               # Stratify by bucket for balanced split
+  split_level: "series"               # CRITICAL: split at series level, not row level
 
-# Paths (relative to project root or Drive)
+# Scenario definitions
+scenarios:
+  scenario1:
+    name: "Scenario 1 - No Post-Entry Actuals"
+    forecast_start: 0
+    forecast_end: 23
+    feature_cutoff: 0                 # Only months_postgx < 0 for features
+    target_months: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+    
+  scenario2:
+    name: "Scenario 2 - First 6 Months Available"
+    forecast_start: 6
+    forecast_end: 23
+    feature_cutoff: 6                 # months_postgx < 6 allowed for features
+    target_months: [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+
+# Sample weights to align training loss with official metric
+sample_weights:
+  scenario1:
+    # Phase 1A weights: 50% months 0-5, 20% months 6-11, 10% months 12-23, 20% monthly
+    months_0_5: 3.0                   # Highest priority - 50% of metric
+    months_6_11: 1.5                  # Medium priority - 20% of metric
+    months_12_23: 1.0                 # Lower priority - 10% of metric
+    
+  scenario2:
+    # Phase 1B weights: 50% months 6-11, 30% months 12-23, 20% monthly
+    months_6_11: 2.5                  # Highest priority - 50% of metric
+    months_12_23: 1.0                 # Medium priority - 30% of metric
+    
+  bucket_weights:
+    bucket1: 2.0                      # High erosion - 2x weight
+    bucket2: 1.0                      # Medium/low erosion - 1x weight
+
+# Paths (relative to project root)
 paths:
-  artifacts_dir: "artifacts/runs"
+  artifacts_dir: "artifacts"
   submissions_dir: "submissions"
-  logs_dir: "artifacts/runs/{run_id}/logs"
+  logs_dir: "artifacts/logs"
 
 # Output settings
 output:
@@ -45,31 +58,41 @@ output:
   save_feature_importance: true
   save_training_curves: true
   save_config_snapshot: true
-
-# Metrics to track
+  
+# Metrics to track (in addition to official metrics)
 metrics:
-  primary: "rmse"              # Primary metric for model selection
+  primary: "official_metric"          # Use official metric for model selection
   secondary:
+    - rmse
     - mae
-    - mape
     - r2
 
-# Logging
+# Logging configuration
 logging:
   level: "INFO"
   console: true
   file: true
+  log_to_file: true
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
-# Google Drive integration
+# Google Drive integration (for Colab)
 drive:
   folder_id: "1iP8ffP5MfJ6hqig1-lQpVwzfrl9uuU03"
   mount_path: "/content/drive"
   base_path: "/content/drive/MyDrive/novartis-datathon-2025"
   sync_artifacts: true
 
-# Hardware
+# Hardware settings
 hardware:
-  use_gpu: true
-  mixed_precision: true
+  use_gpu: false                      # GPU optional, not required
   num_workers: 4
+
+# Experiment tracking
+experiment:
+  name: "novartis-datathon-2025"
+  description: "Generic Erosion Forecasting"
+  
+# Run naming
+run:
+  name_format: "{timestamp}_{model}_{scenario}"
+  timestamp_format: "%Y-%m-%d_%H-%M"

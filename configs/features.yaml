@@ -1,66 +1,101 @@
 # Feature engineering configuration for Novartis Datathon 2025
-# Which features/lag windows to use
+# Scenario-aware feature construction with strict leakage prevention
 
-# Feature groups to include
-feature_groups:
-  basic: true           # Basic transformations
-  lags: true            # Lag features
-  rolling: true         # Rolling statistics
-  diff: true            # Difference features
-  interactions: true    # Feature interactions
-  time_based: true      # Time-based features
+# Pre-entry statistics (both scenarios)
+# Features derived from months_postgx < 0 only
+pre_entry:
+  windows: [3, 6, 12]           # Months for rolling averages: avg_vol_3m, avg_vol_6m, avg_vol_12m
+  compute_trend: true           # Linear slope over pre-entry period
+  compute_volatility: true      # std(volume_pre) / avg_vol_12m
+  compute_max: true             # Maximum volume in pre-entry period
+  log_transform: true           # log1p(avg_vol_12m) for scale normalization
 
-# Lag configuration
-lags:
-  windows: [1, 7, 14, 30]  # Lag windows in time units
-  columns: []              # Columns to create lags for
-
-# Rolling statistics
-rolling:
-  windows: [7, 14, 30]     # Rolling window sizes
-  functions:               # Aggregation functions
-    - mean
-    - std
-    - min
-    - max
-    - median
-  columns: []              # Columns to compute rolling stats for
-
-# Difference features
-diff:
-  periods: [1, 7]          # Difference periods
-  columns: []
-
-# Date/time features
-time_features:
-  extract:
-    - day_of_week
-    - day_of_month
-    - week_of_year
-    - month
-    - quarter
-    - year
-    - is_weekend
-    - is_month_start
-    - is_month_end
-  cyclical_encoding: true  # Use sin/cos encoding for cyclical features
-
-# Feature interactions
-interactions:
-  pairs: []                # List of column pairs for interactions
-  methods:
-    - multiply
-    - divide
-    - subtract
-
-# Feature selection
-selection:
-  drop_low_variance: true
-  variance_threshold: 0.01
-  drop_high_correlation: true
-  correlation_threshold: 0.95
+# Time features
+time:
+  include_months_postgx: true         # Direct time index
+  include_squared: true               # months_postgx^2 for non-linear decay
+  include_is_post_entry: true         # Binary (months_postgx >= 0)
+  include_time_bucket: true           # Categorical (pre, 0-5, 6-11, 12-23)
+  include_month_of_year: true         # Seasonality from calendar month
   
-# Encoding
-encoding:
-  categorical_method: "label"  # label, onehot, target
-  handle_unknown: "value"      # value, error
+  # Time bucket definitions
+  time_buckets:
+    pre: [-999, -1]
+    early: [0, 5]
+    mid: [6, 11]
+    late: [12, 23]
+
+# Generics competition features
+generics:
+  include_n_gxs: true                 # Current number of generics
+  include_has_generic: true           # Binary (n_gxs > 0)
+  include_multiple_generics: true     # Binary (n_gxs >= 2)
+  include_cummax: true                # Maximum n_gxs up to current month
+  include_first_month: true           # Month when n_gxs first > 0
+  
+  # Cutoff behavior: features derived from n_gxs must respect scenario cutoff
+  # Scenario 1: only use n_gxs for months_postgx < 0
+  # Scenario 2: can use n_gxs for months_postgx < 6
+
+# Drug characteristics (static features from medicine_info)
+drug:
+  categoricals:
+    - "ther_area"                     # Therapeutic area
+    - "main_package"                  # Dosage form
+  
+  numerical:
+    - "hospital_rate"                 # Percentage (0-100)
+  
+  boolean:
+    - "biological"
+    - "small_molecule"
+  
+  # Derived features
+  hospital_rate_bins: [30, 70]        # Create Low/Medium/High bins
+  derive_is_injection: true           # Binary from main_package
+  
+  # Encoding method for categoricals
+  encoding: "label"                   # label, onehot, target
+
+# Scenario 2 specific features (early post-entry signal)
+# Only computed when scenario="scenario2"
+scenario2_early:
+  compute_avg_0_5: true               # Mean volume over months [0, 5]
+  compute_erosion_0_5: true           # avg_vol_0_5 / avg_vol_12m
+  compute_trend_0_5: true             # Linear slope over months 0-5
+  compute_drop_month_0: true          # volume[0] / avg_vol_12m (initial drop)
+
+# Interaction features (optional, can increase model complexity)
+interactions:
+  enabled: false                      # Set to true to include interactions
+  pairs:
+    - ["n_gxs", "biological"]         # n_gxs_x_biological
+    - ["hospital_rate", "months_postgx"]  # hospital_rate_x_time
+    - ["ther_area", "n_gxs"]          # ther_area_x_n_gxs (requires encoding first)
+
+# Feature selection / filtering
+selection:
+  drop_low_variance: false            # Not recommended for this problem
+  variance_threshold: 0.01
+  drop_high_correlation: false        # Not recommended - let models handle
+  correlation_threshold: 0.95
+
+# Leakage prevention rules (enforced in code)
+leakage_prevention:
+  # These columns are NEVER included in model features
+  forbidden_features:
+    - "bucket"                        # Target-derived
+    - "y_norm"                        # Target
+    - "volume"                        # Raw target
+    - "mean_erosion"                  # Target-derived
+    - "country"                       # Meta key
+    - "brand_name"                    # Meta key
+  
+  # Cutoff rules per scenario
+  scenario1:
+    feature_cutoff: 0                 # Only months_postgx < 0 for feature derivation
+    target_range: [0, 23]             # Forecast months 0-23
+  
+  scenario2:
+    feature_cutoff: 6                 # months_postgx < 6 allowed
+    target_range: [6, 23]             # Forecast months 6-23

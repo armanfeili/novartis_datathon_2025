@@ -1,51 +1,53 @@
 # CatBoost model configuration for Novartis Datathon 2025
+# Primary hero model for the competition
 
 model:
   name: "catboost"
-  task: "regression"  # regression, binary, multiclass
+  task: "regression"
 
 # CatBoost hyperparameters
 params:
   # Core parameters
-  loss_function: "RMSE"       # RMSE, MAE, Logloss, MultiClass
+  loss_function: "RMSE"
   eval_metric: "RMSE"
   
-  # Tree parameters
+  # Tree parameters - conservative to prevent overfitting
   depth: 6
-  min_data_in_leaf: 1
+  min_data_in_leaf: 20
   max_leaves: 31
   
-  # Learning parameters
-  learning_rate: 0.05
-  iterations: 1000
+  # Learning parameters - slower learning for better generalization
+  learning_rate: 0.03
+  iterations: 2000
   
   # Regularization
   l2_leaf_reg: 3.0
   random_strength: 1.0
   bagging_temperature: 1.0
-  subsample: 0.8              # Only for Bayesian bootstrap
-  
-  # Categorical features
-  cat_features: []            # List of categorical column indices/names
-  one_hot_max_size: 10
   
   # Early stopping
-  early_stopping_rounds: 50
+  early_stopping_rounds: 100
   
-  # Other
-  verbose: 100
-  thread_count: -1
+  # Reproducibility
   random_seed: 42
   
-  # GPU (uncomment for GPU training)
-  # task_type: "GPU"
-  # devices: "0"
+  # Output
+  verbose: 100
+  thread_count: -1
 
 # Training settings
 training:
   use_early_stopping: true
+  use_sample_weights: true            # CRITICAL: use sample weights aligned with metric
   eval_metric: "RMSE"
-  plot: false
+
+# Categorical features to pass to CatBoost
+# CatBoost handles categoricals natively - no encoding needed
+categorical_features:
+  - "ther_area"
+  - "main_package"
+  - "time_bucket"
+  - "hospital_rate_bin"
 
 # Hyperparameter tuning (Optuna)
 tuning:
@@ -53,9 +55,9 @@ tuning:
   n_trials: 100
   timeout: 3600
   search_space:
-    depth: [4, 10]
-    learning_rate: [0.01, 0.3]
+    depth: [4, 8]
+    learning_rate: [0.01, 0.1]
     l2_leaf_reg: [1.0, 10.0]
-    subsample: [0.5, 1.0]
-    random_strength: [0.0, 10.0]
-    bagging_temperature: [0.0, 10.0]
+    min_data_in_leaf: [10, 50]
+    random_strength: [0.0, 5.0]
+    bagging_temperature: [0.0, 5.0]
