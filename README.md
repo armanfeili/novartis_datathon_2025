@@ -2,342 +2,574 @@
 
 ---
 
-**Repository:** `novartis_datathon_2025`  
+**Repository:** `novartis_datathon_2025`
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/armanfeili/novartis_datathon_2025/blob/Arman/notebooks/colab/main.ipynb)
 
-This project implements an end-to-end, **config-driven forecasting pipeline** for the **Novartis Datathon 2025** generic erosion challenge.
+This project implements an end-to-end, **config-driven forecasting pipeline** for the **Novartis Datathon 2025** generic erosion challenge hosted by the Barcelona Digital Finance Hub.
 
-The core goal is to:
+> **Goal:** Forecast monthly sales volume erosion after generic entry for each (country, brand) under two official scenarios, using the competition's custom error metrics and submission format.
 
-> **Forecast monthly sales volume after generic entry for each (country, brand) under two official scenarios, using the competition’s custom error metrics and submission format.**
+**Key Features:**
 
-It combines:
+- ✅ **Fully Implemented Pipeline** – Data loading, feature engineering, training, inference, and submission generation
+- ✅ **Multiple Model Support** – CatBoost (hero), LightGBM, XGBoost, Linear models, and baselines
+- ✅ **Scenario-Aware Features** – Strict leakage prevention with proper feature cutoffs
+- ✅ **Sample Weights** – Aligned with official metric weighting (bucket & time-window)
+- ✅ **Series-Level Validation** – Never mix months from the same series across train/val
+- ✅ **Config-Driven** – YAML configurations for data, features, models, and runs
+- ✅ **Reproducibility** – Deterministic seeding, config snapshots, structured artifacts
 
-- **Code on GitHub** – versioned development with VS Code + Copilot  
-- **Storage on Google Drive (optional)** – datasets, runs, models, submissions  
-- **Execution in Colab or locally** – quick setup, CPU-friendly (GPU not required)  
-- **Reproducibility** – config snapshots, deterministic seeds, structured artifacts  
+---
+
+## Table of Contents
+
+1. [Competition Problem](#1-competition-problem)
+2. [Data Overview](#2-data-overview)
+3. [Architecture](#3-architecture)
+4. [Repository Structure](#4-repository-structure)
+5. [Implemented Modules](#5-implemented-modules)
+6. [Feature Engineering](#6-feature-engineering)
+7. [Models](#7-models)
+8. [Quick Start](#8-quick-start)
+9. [CLI Usage](#9-cli-usage)
+10. [Configuration Files](#10-configuration-files)
+11. [Testing](#11-testing)
+12. [Important Technical Details](#12-important-technical-details)
+13. [License & Creator](#13-license--creator)
 
 ---
 
 ## 1. Competition Problem
 
-Novartis wants to anticipate how **branded drug volume erodes after generic (gx) entry**.  
-The datathon provides de-identified commercial data and asks participants to:
+Novartis wants to anticipate how **branded drug volume erodes after generic (gx) entry**. The datathon provides de-identified commercial data from **50+ countries** and asks participants to:
 
-- Use **pre- and post-generic-entry history** to forecast **monthly volume** (`volume`),  
-- Focus on two scenarios:
+### Scenarios
 
-  1. **Scenario 1 (0 actuals)** – forecast months **0–23** after generic entry with only **pre-entry** data.  
-  2. **Scenario 2 (6 actuals)** – forecast months **6–23** after generic entry, given pre-entry and the **first 6 months post-entry**.
+| Scenario | Forecast Range | Available Data | Official Metric |
+|----------|---------------|----------------|-----------------|
+| **Scenario 1** | Months 0–23 | Pre-entry only (months < 0) | Metric 1 (Phase 1A) |
+| **Scenario 2** | Months 6–23 | Pre-entry + first 6 months (months < 6) | Metric 2 (Phase 1B) |
 
-- Optimize a **custom prediction error (PE)** metric, computed via the official `metric_calculation.py` using:
-  - `auxiliar_metric_computation.csv` (with `avg_vol` and `bucket` per series),
-  - Bucket-wise aggregation and **double weighting of high-erosion brands (Bucket 1)**.
+### Evaluation Metric
+
+The official **Prediction Error (PE)** metric combines:
+- **Monthly errors** weighted by time windows (50% early, 30% mid, 20% late)
+- **Cumulative differences** at window endpoints
+- **Bucket weighting**: Bucket 1 (high erosion) = **2×**, Bucket 2 = **1×**
+
+Lower PE is better. The competition uses `metric_calculation.py` with `auxiliar_metric_computation.csv` for official scoring.
 
 ---
 
 ## 2. Data Overview
 
-The official dataset is split into **train** and **test**, each with three core tables:
+### Training Data (1,953 series)
 
-### 2.1 Train
+| File | Description | Key Columns |
+|------|-------------|-------------|
+| `df_volume_train.csv` | Time-series with target | `country`, `brand_name`, `month`, `months_postgx`, `volume` |
+| `df_generics_train.csv` | Generic competitor count | `country`, `brand_name`, `months_postgx`, `n_gxs` |
+| `df_medicine_info_train.csv` | Static drug attributes | `ther_area`, `hospital_rate`, `main_package`, `biological`, `small_molecule` |
 
-- `df_volume_train.csv`  
-  Time-series fact table with the **target**:
+### Test Data (340 series: 228 S1 + 112 S2)
 
-  - `country`
-  - `brand_name`
-  - `month` (calendar month)
-  - `months_postgx` (relative time; 0 at generic entry, negative before, positive after)
-  - `volume` (monthly units sold)
+Same schema with missing `volume` for post-entry months to predict.
 
-- `df_generics_train.csv`  
-  Time-varying generics competition:
+### Metrics & Submission Helpers
 
-  - `country`
-  - `brand_name`
-  - `months_postgx`
-  - `n_gxs` (number of generic competitors at this relative month)
-
-- `df_medicine_info_train.csv`  
-  Static drug attributes per `(country, brand_name)`:
-
-  - `ther_area` (therapeutic area)
-  - `hospital_rate` (share of volume via hospital channel)
-  - `main_package` (e.g., PILL, INJECTION, EYE DROP, Others)
-  - `biological` (boolean)
-  - `small_molecule` (boolean)
-
-### 2.2 Test
-
-Same schema, but with **missing target** (`volume`) for the post-entry months to be predicted:
-
-- `df_volume_test.csv`
-- `df_generics_test.csv`
-- `df_medicine_info_test.csv`
-
-### 2.3 Metrics & Submission Helpers
-
-- `auxiliar_metric_computation.csv`  
-  Per `(country, brand_name)`:
-
-  - `avg_vol` – pre-entry average volume, used for metric normalization  
-  - `bucket` – erosion bucket (1 = high erosion, 2 = lower erosion)
-
-- `metric_calculation.py`  
-  Official implementation of:
-
-  - **Metric 1** – Phase 1A (Scenario 1, “0 actuals”)  
-  - **Metric 2** – Phase 1B (Scenario 2, “6 actuals”)  
-
-  Both compute a **normalized PE** combining:
-
-  - Sum of absolute monthly errors over specified windows,
-  - Absolute differences between cumulative actual and cumulative predicted volume,
-  - Weighted by `avg_vol` and aggregated by `bucket` with extra weight on Bucket 1.
-
-- `submission_template.csv`  
-  Template with required columns:
-
-  - `country,brand_name,months_postgx,volume`  
-
-  Where `volume` is empty and must be filled with our predictions.
-
-- `submission_example.csv`  
-  Example submission showing the **exact format** expected by the platform.
+| File | Purpose |
+|------|---------|
+| `auxiliar_metric_computation.csv` | Contains `avg_vol` and `bucket` per series |
+| `metric_calculation.py` | Official metric implementation |
+| `submission_template.csv` | Required format: `country`, `brand_name`, `month`, `volume` |
 
 ---
 
 ## 3. Architecture
 
-The project separates:
-
-- **Code** (GitHub repo)  
-- **Compute** (local machine or Colab VM)  
-- **Data & Artifacts** (local `data/` folder or Google Drive mount)
-
-```text
+```
 ┌─────────────────────────────────────────────────────────────────┐
-│  LOCAL / VS Code + Copilot                                      │
+│  LOCAL / VS Code                                                │
 │  ├─ Edit src/, configs/, notebooks/                             │
-│  ├─ Commit & push to GitHub                                     │
-│  └─ (Optionally) keep a local data/ folder                      │
+│  ├─ Run tests: pytest tests/                                    │
+│  └─ Commit & push to GitHub                                     │
 └─────────────────────────────────────────────────────────────────┘
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  COLAB VM (/content/)                                          │
-│  ├─ Clone repo from GitHub (code only)                         │
-│  ├─ (Optional) Mount Google Drive at /content/drive            │
-│  └─ Run training/inference → write artifacts & submissions     │
+│  EXECUTION (Local or Colab)                                     │
+│  ├─ python -m src.train --scenario 1 --model cat                │
+│  ├─ python -m src.train --scenario 2 --model lgbm               │
+│  └─ Generate submission CSV                                     │
 └─────────────────────────────────────────────────────────────────┘
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  STORAGE (local or Drive)                                      │
-│  ├─ data/raw/                  ← official CSVs                 │
-│  ├─ data/interim/              ← merged/cleaned panels         │
-│  ├─ data/processed/            ← feature matrices               │
-│  ├─ artifacts/scenario1_runs/  ← Scenario 1 runs               │
-│  ├─ artifacts/scenario2_runs/  ← Scenario 2 runs               │
-│  └─ submissions/               ← submission_*.csv              │
+│  STORAGE                                                        │
+│  ├─ data/raw/           ← Official CSVs (TRAIN/, TEST/)         │
+│  ├─ data/interim/       ← Merged panels                         │
+│  ├─ data/processed/     ← Feature matrices                      │
+│  ├─ artifacts/          ← Model checkpoints, metrics, logs      │
+│  └─ submissions/        ← Final submission_*.csv                │
 └─────────────────────────────────────────────────────────────────┘
-````
-
-**Key principle:**
-The pipeline is **config-driven and scenario-aware**. You can re-run it end-to-end (from raw CSVs to submission) with a small number of commands.
+```
 
 ---
 
 ## 4. Repository Structure
 
-```text
-novartis_datathon_2025/
-├─ data/
-│  ├─ raw/                    # Original files from organizers
-│  ├─ interim/                # Merged, cleaned panels
-│  └─ processed/              # Scenario-specific feature tables
-│
-├─ configs/
-│  ├─ data.yaml               # Paths, filenames, column definitions
-│  ├─ features.yaml           # Scenario 1/2 feature engineering cfg
-│  ├─ run_scenario1.yaml      # Scenario 1 run config (validation, paths)
-│  ├─ run_scenario2.yaml      # Scenario 2 run config
-│  ├─ model_gbm.yaml          # Main GBM hyperparameters
-│  └─ model_baseline.yaml     # Naive baseline configs
-│
-├─ src/
-│  ├─ cfg.py                  # Simple configuration loader
-│  ├─ utils.py                # Seeding, logging, timers
-│  ├─ data.py                 # Data loading & panel construction
-│  ├─ features.py             # Feature engineering (S1/S2)
-│  ├─ metrics.py              # Thin wrapper around metric_calculation.py
-│  ├─ validation.py           # Scenario-aware train/val splitting
-│  ├─ train_scenario1.py      # End-to-end training for Scenario 1 (Metric 1)
-│  ├─ train_scenario2.py      # End-to-end training for Scenario 2 (Metric 2)
-│  ├─ inference.py            # Model loading & prediction helpers
-│  ├─ submission.py           # Fill submission_template.csv with preds
-│  └─ models/
-│      ├─ base.py             # Base model interface
-│      ├─ gbm.py              # LightGBM/XGBoost/CatBoost wrapper
-│      └─ baseline.py         # Naive baselines for comparison
-│
-├─ notebooks/
-│  ├─ 00_eda_erosion.ipynb    # EDA on erosion patterns & buckets
-│  ├─ 01_scenario1_experiments.ipynb
-│  ├─ 02_scenario2_experiments.ipynb
-│  └─ colab/
-│      └─ main.ipynb          # Colab-friendly end-to-end workflow
-│
-├─ artifacts/
-│  ├─ scenario1_runs/         # Run dirs for Scenario 1
-│  └─ scenario2_runs/         # Run dirs for Scenario 2
-│
-├─ submissions/               # Final CSVs for upload
-├─ metric_calculation.py      # Official metric implementation (provided)
-├─ requirements.txt           # Python dependencies
-└─ README.md                  # This file
 ```
-
-Each run under `artifacts/scenario*/` typically contains:
-
-* `config_used.yaml` – frozen run configuration
-* `metrics.json` – Metric 1 or 2 + internal metrics
-* `oof_preds.csv` – out-of-fold or validation predictions
-* `model_fold_*.pkl` – model weights per fold (if CV used)
-* `logs.txt` – training log
+novartis_datathon_2025/
+├── configs/                    # YAML configuration files
+│   ├── data.yaml               # Paths, columns, schema, missing value handling
+│   ├── features.yaml           # Feature engineering configuration
+│   ├── run_defaults.yaml       # Validation, scenarios, sample weights
+│   ├── model_cat.yaml          # CatBoost hyperparameters
+│   ├── model_lgbm.yaml         # LightGBM hyperparameters
+│   ├── model_xgb.yaml          # XGBoost hyperparameters
+│   ├── model_linear.yaml       # Linear model configuration
+│   └── model_nn.yaml           # Neural network configuration
+│
+├── src/                        # Core Python modules
+│   ├── __init__.py
+│   ├── data.py                 # Data loading & panel construction
+│   ├── features.py             # Scenario-aware feature engineering
+│   ├── train.py                # Training pipeline with CLI
+│   ├── inference.py            # Prediction & submission generation
+│   ├── evaluate.py             # Official metric wrappers
+│   ├── validation.py           # Series-level stratified validation
+│   ├── utils.py                # Seeding, logging, config loading
+│   └── models/                 # Model implementations
+│       ├── __init__.py
+│       ├── base.py             # Abstract BaseModel interface
+│       ├── cat_model.py        # CatBoost implementation
+│       ├── lgbm_model.py       # LightGBM implementation
+│       ├── xgb_model.py        # XGBoost implementation
+│       └── linear.py           # Linear + baseline models
+│
+├── data/
+│   ├── raw/                    # Original competition data
+│   │   ├── TRAIN/              # Training CSVs
+│   │   └── TEST/               # Test CSVs
+│   ├── interim/                # Merged/cleaned panels
+│   └── processed/              # Feature matrices
+│
+├── notebooks/                  # Jupyter notebooks
+│   ├── 00_eda.ipynb            # Exploratory data analysis
+│   ├── 01_feature_prototype.ipynb
+│   ├── 01_train.ipynb
+│   ├── 02_model_sanity.ipynb
+│   └── colab/
+│       └── main.ipynb          # Colab-friendly workflow
+│
+├── docs/                       # Documentation
+│   ├── guide/                  # Competition guide files
+│   ├── instructions/           # Detailed documentation
+│   └── planning/               # Planning & approach docs
+│
+├── tests/
+│   └── test_smoke.py           # Smoke tests for all modules
+│
+├── submissions/                # Generated submission files
+├── env/                        # Environment files
+│   ├── requirements.txt
+│   ├── environment.yml
+│   └── colab_requirements.txt
+│
+├── requirements.txt            # Main dependencies
+├── CONTRIBUTING.md
+├── LICENSE
+└── README.md
+```
 
 ---
 
-## 5. Quick Start (Colab)
+## 5. Implemented Modules
 
-### Step 1 – Open in Colab
+### `src/data.py` – Data Loading & Panel Construction
 
-Click the badge at the top or open:
+```python
+from src.data import load_raw_data, prepare_base_panel, compute_pre_entry_stats
 
-```text
-https://colab.research.google.com/github/armanfeili/novartis_datathon_2025/blob/Arman/notebooks/colab/main.ipynb
+# Load raw CSVs
+df_vol, df_gen, df_med = load_raw_data(config, split='train')
+
+# Build panel with merges and computed columns
+panel = prepare_base_panel(df_vol, df_gen, df_med, is_train=True)
+# Columns: country, brand_name, month, months_postgx, volume, n_gxs, 
+#          ther_area, hospital_rate, ..., avg_vol_12m, y_norm, bucket
 ```
 
-### Step 2 – (Optional) Mount Google Drive
+**Key Functions:**
+- `load_raw_data()` – Load volume, generics, medicine_info CSVs
+- `prepare_base_panel()` – Merge tables, compute `avg_vol_12m`, `y_norm`, `bucket`
+- `compute_pre_entry_stats()` – Pre-entry statistics (volume, n_gxs trends)
+- `handle_missing_values()` – Strategy-based imputation
 
-The Colab notebook will:
+### `src/features.py` – Scenario-Aware Feature Engineering
 
-* Ask to mount Drive (if you choose to store data & artifacts there),
-* Or you can keep everything under `/content/novartis_datathon_2025`.
+```python
+from src.features import make_features, get_feature_columns
 
-### Step 3 – Run All Cells
+# Build features for scenario 1 (strict cutoff at month 0)
+panel_s1 = make_features(panel, scenario=1, mode='train', config=features_config)
+
+# Get feature columns (excludes META_COLS)
+feature_cols = get_feature_columns(panel_s1, META_COLS)
+```
+
+**Feature Categories:**
+
+| Category | Description | Examples |
+|----------|-------------|----------|
+| Pre-entry | Statistics from months < 0 | `vol_mean_pre`, `vol_std_pre`, `vol_trend_pre` |
+| Time | Temporal encodings | `months_postgx`, `month_sin`, `month_cos` |
+| Generics | Generic competition | `n_gxs`, `n_gxs_change`, `n_gxs_cumsum` |
+| Drug | Static attributes | `ther_area`, `hospital_rate`, `biological` |
+| Early erosion | S2 only (months 0-5) | `vol_mean_early`, `erosion_rate_early` |
+| Interaction | Combined features | `hospital_x_bio`, `vol_pre_x_ngxs` |
+
+### `src/train.py` – Training Pipeline
+
+```python
+from src.train import run_experiment, train_scenario_model
+
+# Full experiment
+results = run_experiment(
+    scenario=1,
+    model_type='catboost',
+    config=run_config,
+    model_config=model_config
+)
+
+# Train single model
+model, metrics = train_scenario_model(
+    panel, scenario=1, model_cls=CatBoostModel, config=model_config
+)
+```
+
+**Critical Constants:**
+```python
+META_COLS = ['country', 'brand_name', 'months_postgx', 'bucket', 
+             'avg_vol_12m', 'y_norm', 'volume', 'mean_erosion', 'month']
+# NEVER use these as features to prevent leakage
+```
+
+### `src/inference.py` – Prediction & Submission
+
+```python
+from src.inference import generate_submission, detect_test_scenarios
+
+# Detect which scenario each test series belongs to
+scenarios = detect_test_scenarios(test_panel)
+
+# Generate submission file
+submission = generate_submission(
+    model_s1, model_s2, test_panel, scenarios, config
+)
+# Inverse transform: volume = y_norm * avg_vol_12m
+```
+
+### `src/evaluate.py` – Metric Computation
+
+```python
+from src.evaluate import compute_metric1, compute_metric2, compute_bucket_metrics
+
+# Official metric wrappers
+metric1 = compute_metric1(df_with_preds, scenario=1)
+metric2 = compute_metric2(df_with_preds, scenario=2)
+
+# Bucket-wise analysis
+bucket_metrics = compute_bucket_metrics(df)
+# Returns: {'bucket_1_rmse': ..., 'bucket_2_rmse': ..., ...}
+```
+
+### `src/validation.py` – Series-Level Validation
+
+```python
+from src.validation import create_validation_split, simulate_scenario
+
+# Split at series level (critical for time-series)
+train_idx, val_idx = create_validation_split(
+    panel, val_fraction=0.2, stratify_by='bucket', random_state=42
+)
+# Guarantees: no series appears in both train and val
+
+# Simulate scenario for validation
+val_panel = simulate_scenario(panel.loc[val_idx], scenario=2)
+```
+
+### `src/utils.py` – Utilities
+
+```python
+from src.utils import set_seed, load_config, get_project_root, setup_logging
+
+set_seed(42)  # Reproducibility across numpy, torch, random
+config = load_config('configs/data.yaml')
+root = get_project_root()
+logger = setup_logging('experiment')
+```
+
+---
+
+## 6. Feature Engineering
+
+### Scenario Feature Cutoffs
+
+| Scenario | Feature Cutoff | Rationale |
+|----------|---------------|-----------|
+| S1 | `months_postgx < 0` | Only pre-entry data available |
+| S2 | `months_postgx < 6` | Pre-entry + first 6 months available |
+
+### Feature Configuration (`configs/features.yaml`)
+
+```yaml
+pre_entry:
+  vol_mean_pre: true
+  vol_std_pre: true
+  vol_trend_pre: true
+  vol_median_pre: true
+  n_gxs_at_entry: true
+
+time_features:
+  months_postgx: true
+  month_sin: true
+  month_cos: true
+  quarter: true
+
+generics_features:
+  n_gxs: true
+  n_gxs_change: true
+  n_gxs_cumsum: true
+
+drug_features:
+  ther_area: true
+  hospital_rate: true
+  main_package: true
+  biological: true
+  small_molecule: true
+```
+
+---
+
+## 7. Models
+
+### Implemented Models
+
+| Model | Class | Config File | Notes |
+|-------|-------|-------------|-------|
+| **CatBoost** | `CatBoostModel` | `model_cat.yaml` | Hero model, native categorical support |
+| **LightGBM** | `LGBMModel` | `model_lgbm.yaml` | Fast training, good baseline |
+| **XGBoost** | `XGBModel` | `model_xgb.yaml` | Alternative GBM |
+| **Linear** | `LinearModel` | `model_linear.yaml` | Ridge/Lasso/ElasticNet |
+| **Baselines** | `GlobalMeanBaseline`, `FlatBaseline`, `TrendBaseline` | - | Reference baselines |
+
+### Model Interface (`src/models/base.py`)
+
+All models implement:
+```python
+class BaseModel(ABC):
+    def fit(self, X_train, y_train, X_val, y_val, sample_weight) -> dict
+    def predict(self, X) -> np.ndarray
+    def save(self, path: Path)
+    def load(self, path: Path)
+    def get_feature_importance(self) -> pd.DataFrame
+```
+
+### CatBoost Default Configuration
+
+```yaml
+# configs/model_cat.yaml
+model:
+  iterations: 1000
+  learning_rate: 0.05
+  depth: 6
+  l2_leaf_reg: 3.0
+  early_stopping_rounds: 50
+  task_type: CPU
+  random_seed: 42
+```
+
+---
+
+## 8. Quick Start
+
+### Option A: Colab (Recommended)
+
+Click the badge: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/armanfeili/novartis_datathon_2025/blob/Arman/notebooks/colab/main.ipynb)
 
 The notebook will:
-
 1. Install dependencies
-2. Load configs
-3. Load and merge the three train tables into a panel
-4. Build features for Scenario 1 and Scenario 2
-5. Train baseline and GBM models
-6. Evaluate locally with **official Metric 1 / Metric 2**
-7. Generate submission files from `submission_template.csv`
+2. Mount Google Drive (optional)
+3. Load and prepare data
+4. Train models for both scenarios
+5. Generate submission file
 
----
-
-## 6. End-to-End Workflow
-
-High-level flow for each scenario:
-
-```text
-1. Place official CSVs in data/raw/
-2. Configure paths & columns in configs/data.yaml
-3. (Optional) Adjust features in configs/features.yaml
-4. Train:
-   - Scenario 1 → python -m src.train_scenario1 ...
-   - Scenario 2 → python -m src.train_scenario2 ...
-5. Inspect artifacts/scenario*_runs/<run_id>/metrics.json
-6. Use src/inference.py + src/submission.py to generate submission CSV
-7. Upload CSV to competition platform
-```
-
-### Example Commands (Local CLI)
+### Option B: Local Development
 
 ```bash
-# Train Scenario 1
-python -m src.train_scenario1 \
-    --run-config configs/run_scenario1.yaml \
-    --model-config configs/model_gbm.yaml
-
-# Train Scenario 2
-python -m src.train_scenario2 \
-    --run-config configs/run_scenario2.yaml \
-    --model-config configs/model_gbm.yaml
-```
-
-After training, generate a submission:
-
-```bash
-python -m src.submission \
-    --scenario 1 \
-    --run-id <best_scenario1_run_id> \
-    --output submissions/submission_scenario1.csv
-```
-
-(Adapt arguments to your actual script interface.)
-
----
-
-## 7. Local Development
-
-### 1. Clone Repository
-
-```bash
+# 1. Clone repository
 git clone https://github.com/armanfeili/novartis_datathon_2025.git
 cd novartis_datathon_2025
+
+# 2. Create environment
+python -m venv venv
+source venv/bin/activate  # or `venv\Scripts\activate` on Windows
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Add competition data
+# Copy CSVs to data/raw/TRAIN/ and data/raw/TEST/
+
+# 5. Run tests
+pytest tests/test_smoke.py -v
+
+# 6. Train models
+python -m src.train --scenario 1 --model cat
+python -m src.train --scenario 2 --model cat
 ```
 
-### 2. Install Dependencies
+---
+
+## 9. CLI Usage
+
+### Training
 
 ```bash
-pip install -r requirements.txt
+# Train CatBoost for Scenario 1
+python -m src.train \
+    --scenario 1 \
+    --model cat \
+    --data-config configs/data.yaml \
+    --features-config configs/features.yaml \
+    --run-config configs/run_defaults.yaml \
+    --model-config configs/model_cat.yaml
+
+# Train LightGBM for Scenario 2
+python -m src.train \
+    --scenario 2 \
+    --model lgbm \
+    --model-config configs/model_lgbm.yaml
 ```
 
-### 3. Add Data
+### Generating Submissions
 
-Copy the competition CSVs into `data/raw/`:
-
-* `df_volume_train.csv`
-* `df_generics_train.csv`
-* `df_medicine_info_train.csv`
-* `df_volume_test.csv`
-* `df_generics_test.csv`
-* `df_medicine_info_test.csv`
-* `auxiliar_metric_computation.csv`
-* `submission_template.csv`
-
-### 4. Develop & Iterate
-
-* Edit `src/`, `configs/`, and `notebooks/` using VS Code + Copilot.
-* Commit and push changes to GitHub.
-* Re-run training in Colab or locally as needed.
+```bash
+# Generate submission from trained models
+python -m src.inference \
+    --model-s1 artifacts/scenario1_model.pkl \
+    --model-s2 artifacts/scenario2_model.pkl \
+    --output submissions/submission.csv
+```
 
 ---
 
-## 8. Notes
+## 10. Configuration Files
 
-* The project is designed around the **two official scenarios** and the **exact competition metrics**.
-* Baseline models are kept intentionally simple to highlight the added value of the main GBM model.
-* The code is organized to make it easy to:
+### `configs/data.yaml`
+- Raw data paths
+- Column definitions and schema
+- Missing value handling strategies
+- Google Drive paths for Colab
 
-  * Swap models,
-  * Extend features,
-  * Adjust validation strategies,
-  * And reproduce results with minimal friction.
+### `configs/features.yaml`
+- Feature groups to enable/disable
+- Pre-entry feature configuration
+- Scenario-specific settings
+
+### `configs/run_defaults.yaml`
+- Random seed (42)
+- Validation settings (20% series holdout)
+- Scenario definitions
+- Sample weight configuration
+- Logging and output settings
+
+### Model configs (`model_*.yaml`)
+- Hyperparameters
+- Early stopping
+- Regularization
 
 ---
 
-## Creator
+## 11. Testing
 
-Created by **[Arman Feili](https://github.com/armanfeili)** for the **Novartis Generic Erosion Datathon 2025**.
+Run the smoke test suite:
+
+```bash
+pytest tests/test_smoke.py -v
+```
+
+**Test Coverage:**
+- ✅ Module imports
+- ✅ Configuration loading
+- ✅ Data loading (if data present)
+- ✅ Panel construction
+- ✅ Feature leakage prevention
+- ✅ Model interface
+- ✅ Metric computation
+- ✅ Validation split (series-level)
+- ✅ Submission format
+- ✅ Sample weight computation
 
 ---
 
-## License
+## 12. Important Technical Details
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+### Target Normalization
+
+Models are trained on **normalized volume**:
+```python
+y_norm = volume / avg_vol_12m
+```
+
+At inference, predictions are inverse-transformed:
+```python
+predicted_volume = predicted_y_norm * avg_vol_12m
+```
+
+### Leakage Prevention
+
+**META_COLS** are strictly excluded from features:
+```python
+META_COLS = ['country', 'brand_name', 'months_postgx', 'bucket', 
+             'avg_vol_12m', 'y_norm', 'volume', 'mean_erosion', 'month']
+```
+
+**Feature cutoffs** ensure no future information:
+- S1: Only use data from `months_postgx < 0`
+- S2: Only use data from `months_postgx < 6`
+
+### Sample Weights
+
+Training loss is aligned with the official metric:
+- **Time weights**: Early months weighted higher (3.0 for months 0-5)
+- **Bucket weights**: Bucket 1 = 2.0×, Bucket 2 = 1.0×
+
+### Validation Strategy
+
+**Series-level splits** ensure:
+- All months of a series stay together
+- Stratification by bucket for balanced evaluation
+- No data leakage from temporal dependencies
+
+---
+
+## 13. License & Creator
+
+**Created by [Arman Feili](https://github.com/armanfeili)** for the **Novartis Generic Erosion Datathon 2025**.
+
+Licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
+
+---
+
+### Dependencies
+
+Core libraries:
+- `pandas`, `numpy` – Data manipulation
+- `catboost`, `lightgbm`, `xgboost` – Gradient boosting
+- `scikit-learn` – ML utilities
+- `torch` – Neural networks (optional)
+- `pyyaml`, `omegaconf` – Configuration
+- `matplotlib`, `seaborn`, `plotly` – Visualization
+
+See `requirements.txt` for the full list.

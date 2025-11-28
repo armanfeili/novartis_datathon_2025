@@ -1,37 +1,143 @@
+"""
+XGBoost model wrapper for Novartis Datathon 2025.
+"""
+
+from typing import Optional
+
 import xgboost as xgb
 import numpy as np
+import pandas as pd
 import joblib
+
 from .base import BaseModel
 
-class XGBModel(BaseModel):
-    def __init__(self, config: dict):
-        super().__init__(config)
-        self.params = config.get('params', {})
-        self.training_params = config.get('training', {})
 
-    def fit(self, X_train, y_train, X_val=None, y_val=None):
-        dtrain = xgb.DMatrix(X_train, label=y_train)
+# Default XGBoost configuration for generic erosion forecasting
+DEFAULT_CONFIG = {
+    'params': {
+        'objective': 'reg:squarederror',
+        'eval_metric': 'rmse',
+        'eta': 0.03,
+        'max_depth': 6,
+        'subsample': 0.8,
+        'colsample_bytree': 0.8,
+        'min_child_weight': 5,
+        'reg_alpha': 0.1,
+        'reg_lambda': 1.0,
+        'tree_method': 'hist',
+        'seed': 42
+    },
+    'training': {
+        'num_boost_round': 2000,
+        'early_stopping_rounds': 100,
+        'verbose_eval': 100,
+        'sample_weights': True
+    }
+}
+
+
+class XGBModel(BaseModel):
+    """XGBoost model with native sample weight support via DMatrix."""
+    
+    def __init__(self, config: dict):
+        """
+        Initialize XGBoost model.
+        
+        Args:
+            config: Configuration dict with 'params' and 'training' sections
+        """
+        super().__init__(config)
+        
+        # Merge with defaults
+        self.params = {**DEFAULT_CONFIG['params'], **config.get('params', {})}
+        self.training_params = {**DEFAULT_CONFIG['training'], **config.get('training', {})}
+    
+    def fit(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: Optional[pd.DataFrame] = None,
+        y_val: Optional[pd.Series] = None,
+        sample_weight: Optional[pd.Series] = None
+    ) -> 'XGBModel':
+        """
+        Train XGBoost model with optional sample weights.
+        
+        Args:
+            X_train: Training features
+            y_train: Training targets
+            X_val: Validation features (optional, for early stopping)
+            y_val: Validation targets (optional)
+            sample_weight: Sample weights for training (optional)
+        
+        Returns:
+            Self (for chaining)
+        """
+        self.feature_names = list(X_train.columns)
+        
+        # Create DMatrix with sample weights
+        weight = sample_weight.values if sample_weight is not None else None
+        dtrain = xgb.DMatrix(X_train, label=y_train, weight=weight)
+        
         evals = [(dtrain, 'train')]
         
         if X_val is not None and y_val is not None:
             dval = xgb.DMatrix(X_val, label=y_val)
             evals.append((dval, 'eval'))
-
+        
         self.model = xgb.train(
             self.params,
             dtrain,
-            num_boost_round=self.params.get('n_estimators', 1000),
+            num_boost_round=self.training_params.get('num_boost_round', 2000),
             evals=evals,
-            early_stopping_rounds=self.params.get('early_stopping_rounds', 50),
+            early_stopping_rounds=self.training_params.get('early_stopping_rounds', 100),
             verbose_eval=self.training_params.get('verbose_eval', 100)
         )
-
-    def predict(self, X) -> np.ndarray:
+        
+        return self
+    
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """Generate predictions using trained model."""
         dtest = xgb.DMatrix(X)
         return self.model.predict(dtest)
-
-    def save(self, path: str):
-        joblib.dump(self.model, path)
-
-    def load(self, path: str):
-        self.model = joblib.load(path)
+    
+    def save(self, path: str) -> None:
+        """Save model and metadata to disk."""
+        joblib.dump({
+            'model': self.model,
+            'feature_names': self.feature_names,
+            'params': self.params
+        }, path)
+    
+    @classmethod
+    def load(cls, path: str) -> 'XGBModel':
+        """Load model from disk."""
+        data = joblib.load(path)
+        instance = cls({'params': data.get('params', {})})
+        instance.model = data['model']
+        instance.feature_names = data.get('feature_names', [])
+        return instance
+    
+    def get_feature_importance(self) -> pd.DataFrame:
+        """
+        Get feature importance scores.
+        
+        Returns:
+            DataFrame with columns ['feature', 'importance']
+        """
+        if self.model is None or len(self.feature_names) == 0:
+            return pd.DataFrame(columns=['feature', 'importance'])
+        
+        # Get gain-based importance
+        importance_dict = self.model.get_score(importance_type='gain')
+        
+        # Map feature names (XGBoost uses f0, f1, etc. internally)
+        importance_data = []
+        for i, name in enumerate(self.feature_names):
+            key = f'f{i}'
+            importance_data.append({
+                'feature': name,
+                'importance': importance_dict.get(key, 0)
+            })
+        
+        return pd.DataFrame(importance_data).sort_values('importance', ascending=False)
