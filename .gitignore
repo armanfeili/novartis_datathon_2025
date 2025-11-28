@@ -1,0 +1,140 @@
+# ===========================================
+# Git Ignore for novartis_datathon_2025
+# ===========================================
+
+# ===========================================
+# Virtual Environments
+# ===========================================
+saeed_venv/
+venv/
+env/
+.env/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ===========================================
+# Python
+# ===========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ===========================================
+# Jupyter Notebooks
+# ===========================================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ===========================================
+# Large Data Files
+# ===========================================
+#*.csv
+#*.tsv
+
+# Large media files
+*.mp4
+*.avi
+*.mov
+*.mp3
+*.wav
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# ===========================================
+# Model Files (can be very large)
+# ===========================================
+*.pt
+*.pth
+*.onnx
+*.pb
+*.h5
+*.keras
+*.ckpt
+#models/
+#saved_models/
+#checkpoints/
+
+# ===========================================
+# Data Directories
+# ===========================================
+#data/
+#datasets/
+#raw_data/
+#processed_data/
+#output/
+#outputs/
+#results/
+
+# ===========================================
+# IDE & Editor
+# ===========================================
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.spyderproject
+.spyproject
+
+# VS Code - keep settings but ignore some
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/markdown-pdf.css
+
+# ===========================================
+# OS Generated
+# ===========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ===========================================
+# Logs & Temp Files
+# ===========================================
+*.log
+logs/
+*.tmp
+*.temp
+.cache/
+*.cache
+
+# ===========================================
+# Environment Variables (sensitive data)
+# ===========================================
+.env
+.env.local
+.env.*.local
+*.env
+secrets.json
+credentials.json
