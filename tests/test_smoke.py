@@ -2824,6 +2824,558 @@ class TestInteractionFeatures:
         assert 'ther_area_erosion_x_time' in result.columns
 
 
+# ==============================================================================
+# Section 6: Validation & Evaluation Tests
+# ==============================================================================
+
+class TestGroupedKFold:
+    """Tests for grouped K-fold by therapeutic area (Section 6.1)."""
+    
+    def test_get_grouped_kfold_series_exists(self):
+        """Test grouped K-fold function exists."""
+        from src.validation import get_grouped_kfold_series
+        assert callable(get_grouped_kfold_series)
+    
+    def test_get_grouped_kfold_basic(self):
+        """Test basic grouped K-fold split by therapeutic area."""
+        from src.validation import get_grouped_kfold_series
+        
+        # Create panel with multiple therapeutic areas
+        panel_data = []
+        for brand_idx in range(10):
+            ther_area = f"AREA_{brand_idx % 3}"  # 3 different areas
+            for m in range(12):
+                panel_data.append({
+                    'country': 'COUNTRY_1',
+                    'brand_name': f'BRAND_{brand_idx}',
+                    'ther_area': ther_area,
+                    'months_postgx': m,
+                    'y_norm': 0.5,
+                    'bucket': 1 if brand_idx < 5 else 2,
+                })
+        
+        panel_df = pd.DataFrame(panel_data)
+        
+        # get_grouped_kfold_series returns list of (train_df, val_df) tuples
+        folds = get_grouped_kfold_series(panel_df, n_folds=3, group_by='ther_area')
+        
+        # Should have folds
+        assert len(folds) >= 1
+        
+        # Each fold should have train and val DataFrames
+        train_df, val_df = folds[0]
+        assert len(train_df) > 0
+        assert len(val_df) > 0
+
+
+class TestPurgedCVSplit:
+    """Tests for purged cross-validation with temporal gap (Section 6.1)."""
+    
+    def test_create_purged_cv_split_exists(self):
+        """Test purged CV split function exists."""
+        from src.validation import create_purged_cv_split
+        assert callable(create_purged_cv_split)
+    
+    def test_purged_cv_respects_temporal_gap(self):
+        """Test that purged CV enforces temporal gap between train and val."""
+        from src.validation import create_purged_cv_split
+        
+        panel_data = []
+        for brand_idx in range(6):  # Need 6 series for 3-fold CV
+            for m in range(36):
+                panel_data.append({
+                    'country': 'COUNTRY_1',
+                    'brand_name': f'BRAND_{brand_idx}',
+                    'months_postgx': m,
+                    'y_norm': 0.5,
+                    'bucket': 1 if brand_idx < 3 else 2,
+                })
+        
+        panel_df = pd.DataFrame(panel_data)
+        gap_months = 3
+        
+        splits = create_purged_cv_split(panel_df, n_folds=3, gap_months=gap_months, min_train_months=0)
+        
+        # If we get folds, check the gap
+        for train_df, val_df in splits:
+            train_max_month = train_df['months_postgx'].max()
+            val_min_month = val_df['months_postgx'].min()
+            # Val series should have data (train is cutoff based on gap)
+            assert train_max_month < val_min_month
+
+
+class TestNestedCV:
+    """Tests for nested cross-validation (Section 6.1)."""
+    
+    def test_create_nested_cv_exists(self):
+        """Test nested CV function exists."""
+        from src.validation import create_nested_cv
+        assert callable(create_nested_cv)
+    
+    def test_create_nested_cv_basic(self):
+        """Test basic nested CV split creation."""
+        from src.validation import create_nested_cv
+        
+        panel_data = []
+        for brand_idx in range(10):
+            for m in range(24):
+                panel_data.append({
+                    'country': 'COUNTRY_1',
+                    'brand_name': f'BRAND_{brand_idx}',
+                    'months_postgx': m,
+                    'y_norm': 0.5,
+                    'bucket': 1 if brand_idx < 5 else 2,
+                })
+        
+        panel_df = pd.DataFrame(panel_data)
+        
+        nested_splits = create_nested_cv(panel_df, outer_folds=3, inner_folds=2)
+        
+        # Should have outer_folds entries
+        assert len(nested_splits) == 3
+        
+        # Each outer fold should have outer_train, outer_val, inner_folds
+        for fold_dict in nested_splits:
+            assert 'outer_train' in fold_dict
+            assert 'outer_val' in fold_dict
+            assert 'inner_folds' in fold_dict
+            assert len(fold_dict['outer_train']) > 0
+            assert len(fold_dict['outer_val']) > 0
+
+
+class TestCVAggregation:
+    """Tests for CV result aggregation (Section 6.6)."""
+    
+    def test_aggregate_cv_scores_exists(self):
+        """Test CV aggregation function exists."""
+        from src.validation import aggregate_cv_scores
+        assert callable(aggregate_cv_scores)
+    
+    def test_aggregate_cv_scores_basic(self):
+        """Test CV result aggregation with confidence intervals."""
+        from src.validation import aggregate_cv_scores
+        
+        fold_results = [
+            {'metric': 0.15, 'rmse': 0.08},
+            {'metric': 0.18, 'rmse': 0.09},
+            {'metric': 0.12, 'rmse': 0.07},
+            {'metric': 0.16, 'rmse': 0.085},
+            {'metric': 0.14, 'rmse': 0.075},
+        ]
+        
+        aggregated = aggregate_cv_scores(fold_results, metric_names=['metric'])
+        
+        assert 'metric' in aggregated
+        assert 'mean' in aggregated['metric']
+        assert 'std' in aggregated['metric']
+        assert 'ci_lower' in aggregated['metric']
+        assert 'ci_upper' in aggregated['metric']
+        
+        # CI should bracket the mean
+        metric_result = aggregated['metric']
+        assert metric_result['ci_lower'] < metric_result['mean'] < metric_result['ci_upper']
+
+
+class TestScenarioDetectionWarning:
+    """Tests for scenario detection warning (Section 6.2)."""
+    
+    def test_expected_counts_in_docstring(self):
+        """Test that expected S1 and S2 counts are documented."""
+        from src.inference import detect_test_scenarios
+        
+        # Check docstring mentions expected counts
+        assert '228' in detect_test_scenarios.__doc__
+        assert '112' in detect_test_scenarios.__doc__
+
+
+class TestMetricBreakdowns:
+    """Tests for metric breakdowns by therapeutic area and country (Section 6.3)."""
+    
+    def test_compute_metric_by_ther_area_exists(self):
+        """Test that metric by therapeutic area function exists."""
+        from src.evaluate import compute_metric_by_ther_area
+        assert callable(compute_metric_by_ther_area)
+    
+    def test_compute_metric_by_country_exists(self):
+        """Test that metric by country function exists."""
+        from src.evaluate import compute_metric_by_country
+        assert callable(compute_metric_by_country)
+    
+    def test_metric_by_ther_area_basic(self):
+        """Test basic metric breakdown by therapeutic area."""
+        from src.evaluate import compute_metric_by_ther_area
+        
+        # Create test data
+        df_actual = pd.DataFrame({
+            'country': ['US', 'US', 'DE', 'DE'],
+            'brand_name': ['A', 'B', 'C', 'D'],
+            'm1': [0.9, 0.8, 0.7, 0.6],
+            'm2': [0.85, 0.75, 0.65, 0.55],
+        })
+        
+        df_pred = pd.DataFrame({
+            'country': ['US', 'US', 'DE', 'DE'],
+            'brand_name': ['A', 'B', 'C', 'D'],
+            'm1': [0.88, 0.78, 0.68, 0.58],
+            'm2': [0.83, 0.73, 0.63, 0.53],
+        })
+        
+        df_aux = pd.DataFrame({
+            'country': ['US', 'US', 'DE', 'DE'],
+            'brand_name': ['A', 'B', 'C', 'D'],
+            'm1': [100, 200, 150, 250],
+            'm2': [110, 210, 160, 260],
+        })
+        
+        panel_df = pd.DataFrame({
+            'country': ['US', 'US', 'DE', 'DE'],
+            'brand_name': ['A', 'B', 'C', 'D'],
+            'ther_area': ['AREA_1', 'AREA_1', 'AREA_2', 'AREA_2'],
+        })
+        
+        result = compute_metric_by_ther_area(df_actual, df_pred, df_aux, panel_df, scenario=1)
+        
+        assert isinstance(result, dict)
+        assert 'AREA_1' in result or 'AREA_2' in result or len(result) > 0
+    
+    def test_metric_by_country_basic(self):
+        """Test basic metric breakdown by country."""
+        from src.evaluate import compute_metric_by_country
+        
+        df_actual = pd.DataFrame({
+            'country': ['US', 'US', 'DE', 'DE'],
+            'brand_name': ['A', 'B', 'C', 'D'],
+            'm1': [0.9, 0.8, 0.7, 0.6],
+            'm2': [0.85, 0.75, 0.65, 0.55],
+        })
+        
+        df_pred = pd.DataFrame({
+            'country': ['US', 'US', 'DE', 'DE'],
+            'brand_name': ['A', 'B', 'C', 'D'],
+            'm1': [0.88, 0.78, 0.68, 0.58],
+            'm2': [0.83, 0.73, 0.63, 0.53],
+        })
+        
+        df_aux = pd.DataFrame({
+            'country': ['US', 'US', 'DE', 'DE'],
+            'brand_name': ['A', 'B', 'C', 'D'],
+            'm1': [100, 200, 150, 250],
+            'm2': [110, 210, 160, 260],
+        })
+        
+        result = compute_metric_by_country(df_actual, df_pred, df_aux, scenario=1)
+        
+        assert isinstance(result, dict)
+        # Should have country keys
+        assert 'US' in result or 'DE' in result or len(result) > 0
+
+
+class TestEvaluationDataFrame:
+    """Tests for evaluation DataFrame creation (Section 6.5)."""
+    
+    def test_create_evaluation_dataframe_exists(self):
+        """Test that evaluation DataFrame function exists."""
+        from src.evaluate import create_evaluation_dataframe
+        assert callable(create_evaluation_dataframe)
+    
+    def test_create_evaluation_dataframe_basic(self):
+        """Test basic evaluation DataFrame creation."""
+        from src.evaluate import create_evaluation_dataframe
+        
+        # Create test data with months_postgx columns (matching expected format)
+        df_actual = pd.DataFrame({
+            'country': ['US', 'DE'],
+            'brand_name': ['A', 'B'],
+            'months_postgx': [0, 0],
+            'volume': [0.9, 0.7],
+        })
+        
+        df_pred = pd.DataFrame({
+            'country': ['US', 'DE'],
+            'brand_name': ['A', 'B'],
+            'months_postgx': [0, 0],
+            'volume': [0.88, 0.68],
+        })
+        
+        df_aux = pd.DataFrame({
+            'country': ['US', 'DE'],
+            'brand_name': ['A', 'B'],
+            'avg_vol': [100, 150],
+        })
+        
+        panel_df = pd.DataFrame({
+            'country': ['US', 'DE'],
+            'brand_name': ['A', 'B'],
+            'ther_area': ['AREA_1', 'AREA_2'],
+        })
+        
+        result = create_evaluation_dataframe(df_actual, df_pred, df_aux, panel_df, scenario=1)
+        
+        assert isinstance(result, pd.DataFrame)
+        assert 'country' in result.columns
+        assert 'brand_name' in result.columns
+
+
+class TestUnifiedMetricsLogging:
+    """Tests for unified metrics logging schema (Section 6.7)."""
+    
+    def test_make_metric_record_basic(self):
+        """Test basic metric record creation."""
+        from src.evaluate import make_metric_record
+        
+        record = make_metric_record(
+            phase='train',
+            split='fold_0',
+            scenario=1,
+            model_name='lgbm',
+            metric_name='metric1_official',
+            value=0.15,
+            run_id='test_run_001',
+        )
+        
+        assert isinstance(record, dict)
+        assert record['run_id'] == 'test_run_001'
+        assert record['phase'] == 'train'
+        assert record['split'] == 'fold_0'
+        assert record['scenario'] == 1
+        assert record['model'] == 'lgbm'
+        assert record['metric'] == 'metric1_official'
+        assert record['value'] == 0.15
+        assert 'timestamp' in record
+    
+    def test_make_metric_record_with_optional_fields(self):
+        """Test metric record with optional fields."""
+        from src.evaluate import make_metric_record
+        
+        record = make_metric_record(
+            phase='val',
+            split='fold_1',
+            scenario=2,
+            model_name='xgb',
+            metric_name='rmse',
+            value=0.08,
+            run_id='test_run_002',
+            step=100,
+            bucket='m1-m6',
+            series_id='US_BRAND_A',
+            extra={'learning_rate': 0.01}
+        )
+        
+        assert record['step'] == 100
+        assert record['bucket'] == 'm1-m6'
+        assert record['series_id'] == 'US_BRAND_A'
+        assert record['extra'] == {'learning_rate': 0.01}
+    
+    def test_save_and_load_metric_records(self, tmp_path):
+        """Test saving and loading metric records."""
+        from src.evaluate import make_metric_record, save_metric_records, load_metric_records
+        
+        records = [
+            make_metric_record('train', 'fold_0', 1, 'lgbm', 'metric1', 0.15, run_id='run1'),
+            make_metric_record('train', 'fold_1', 1, 'lgbm', 'metric1', 0.18, run_id='run1'),
+            make_metric_record('val', 'fold_0', 1, 'lgbm', 'metric1', 0.20, run_id='run1'),
+        ]
+        
+        path = tmp_path / 'metrics.csv'
+        save_metric_records(records, path, append=False)
+        
+        loaded = load_metric_records(path)
+        
+        assert len(loaded) == 3
+        assert loaded['run_id'].iloc[0] == 'run1'
+        assert loaded['metric'].iloc[0] == 'metric1'
+    
+    def test_save_metric_records_append(self, tmp_path):
+        """Test appending metric records to existing file."""
+        from src.evaluate import make_metric_record, save_metric_records, load_metric_records
+        
+        records1 = [
+            make_metric_record('train', 'fold_0', 1, 'lgbm', 'metric1', 0.15, run_id='run1'),
+        ]
+        records2 = [
+            make_metric_record('train', 'fold_1', 1, 'lgbm', 'metric1', 0.18, run_id='run1'),
+        ]
+        
+        path = tmp_path / 'metrics_append.csv'
+        save_metric_records(records1, path, append=False)
+        save_metric_records(records2, path, append=True)
+        
+        loaded = load_metric_records(path)
+        
+        assert len(loaded) == 2
+
+
+class TestConfigMetricsSection:
+    """Tests for metrics config section (Section 6.7.1)."""
+    
+    def test_metrics_config_exists(self):
+        """Test that metrics section exists in run_defaults config."""
+        import yaml
+        
+        config_path = Path(__file__).parent.parent / 'configs' / 'run_defaults.yaml'
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        assert 'metrics' in config
+        assert 'primary' in config['metrics']
+        assert 'secondary' in config['metrics']
+        assert 'log_per_series' in config['metrics']
+        assert 'log_dir_pattern' in config['metrics']
+    
+    def test_metrics_config_values(self):
+        """Test that metrics config has expected values."""
+        import yaml
+        
+        config_path = Path(__file__).parent.parent / 'configs' / 'run_defaults.yaml'
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        # Primary should include official metrics
+        assert 'metric1_official' in config['metrics']['primary']
+        
+        # Secondary should include auxiliary metrics
+        secondary = config['metrics']['secondary']
+        assert any('rmse' in m.lower() for m in secondary)
+
+
+class TestTrainScenarioModelUnifiedLogging:
+    """Tests for unified logging wired into train_scenario_model (Section 6.7.3)."""
+    
+    def test_train_scenario_model_signature_has_metrics_params(self):
+        """Test that train_scenario_model has run_id, metrics_dir, fold_idx params."""
+        import inspect
+        from src.train import train_scenario_model
+        
+        sig = inspect.signature(train_scenario_model)
+        params = list(sig.parameters.keys())
+        
+        assert 'run_id' in params
+        assert 'metrics_dir' in params
+        assert 'fold_idx' in params
+    
+    def test_train_scenario_model_saves_metrics_when_metrics_dir_provided(self, tmp_path):
+        """Test that train_scenario_model saves metrics when metrics_dir is provided."""
+        from src.train import train_scenario_model
+        from src.evaluate import load_metric_records
+        
+        # Create minimal training data
+        n_train = 100
+        n_val = 30
+        
+        X_train = pd.DataFrame({
+            'feature_1': np.random.randn(n_train),
+            'feature_2': np.random.randn(n_train),
+        })
+        y_train = pd.Series(np.random.rand(n_train) * 0.5 + 0.25)
+        meta_train = pd.DataFrame({
+            'country': ['US'] * n_train,
+            'brand_name': [f'BRAND_{i % 5}' for i in range(n_train)],
+            'months_postgx': list(range(24)) * (n_train // 24) + list(range(n_train % 24)),
+            'avg_vol_12m': [1000.0] * n_train,
+            'bucket': [1 if i < n_train // 2 else 2 for i in range(n_train)],
+        })
+        
+        X_val = pd.DataFrame({
+            'feature_1': np.random.randn(n_val),
+            'feature_2': np.random.randn(n_val),
+        })
+        y_val = pd.Series(np.random.rand(n_val) * 0.5 + 0.25)
+        meta_val = pd.DataFrame({
+            'country': ['US'] * n_val,
+            'brand_name': [f'BRAND_{i % 3}' for i in range(n_val)],
+            'months_postgx': list(range(24)) * (n_val // 24) + list(range(n_val % 24)),
+            'avg_vol_12m': [1000.0] * n_val,
+            'bucket': [1 if i < n_val // 2 else 2 for i in range(n_val)],
+        })
+        
+        metrics_dir = tmp_path / 'metrics'
+        
+        model, metrics = train_scenario_model(
+            X_train, y_train, meta_train,
+            X_val, y_val, meta_val,
+            scenario=1,
+            model_type='linear',
+            run_id='test_run_unified',
+            metrics_dir=metrics_dir,
+            fold_idx=0
+        )
+        
+        # Verify metrics file was created
+        metrics_file = metrics_dir / 'metrics.csv'
+        assert metrics_file.exists()
+        
+        # Load and verify records
+        records_df = load_metric_records(metrics_file)
+        assert len(records_df) >= 3  # At least official, rmse, mae
+        assert 'run_id' in records_df.columns
+        assert records_df['run_id'].iloc[0] == 'test_run_unified'
+
+
+class TestRunCrossValidationUnifiedLogging:
+    """Tests for unified logging in run_cross_validation (Section 6.7.3)."""
+    
+    def test_run_cross_validation_signature_has_metrics_params(self):
+        """Test that run_cross_validation has run_id and metrics_dir params."""
+        import inspect
+        from src.train import run_cross_validation
+        
+        sig = inspect.signature(run_cross_validation)
+        params = list(sig.parameters.keys())
+        
+        assert 'run_id' in params
+        assert 'metrics_dir' in params
+
+
+class TestAdversarialValidationUnifiedLogging:
+    """Tests for unified logging in adversarial_validation (Section 6.7.4)."""
+    
+    def test_adversarial_validation_signature_has_metrics_params(self):
+        """Test that adversarial_validation has run_id and metrics_dir params."""
+        import inspect
+        from src.validation import adversarial_validation
+        
+        sig = inspect.signature(adversarial_validation)
+        params = list(sig.parameters.keys())
+        
+        assert 'run_id' in params
+        assert 'metrics_dir' in params
+    
+    def test_adversarial_validation_saves_metrics_when_metrics_dir_provided(self, tmp_path):
+        """Test adversarial_validation saves metrics when metrics_dir is provided."""
+        from src.validation import adversarial_validation
+        from src.evaluate import load_metric_records
+        
+        # Create synthetic train and test features
+        n = 50
+        train_features = pd.DataFrame({
+            'feat_1': np.random.randn(n),
+            'feat_2': np.random.randn(n) + 0.1,  # Slight shift
+        })
+        test_features = pd.DataFrame({
+            'feat_1': np.random.randn(n),
+            'feat_2': np.random.randn(n) + 0.2,  # Different shift
+        })
+        
+        metrics_dir = tmp_path / 'adv_metrics'
+        
+        result = adversarial_validation(
+            train_features, test_features,
+            n_folds=2,
+            run_id='adv_test_run',
+            metrics_dir=metrics_dir
+        )
+        
+        # Verify metrics file was created
+        metrics_file = metrics_dir / 'metrics.csv'
+        assert metrics_file.exists()
+        
+        # Load and verify records
+        records_df = load_metric_records(metrics_file)
+        assert len(records_df) >= 2  # auc_mean and auc_std
+        assert records_df['run_id'].iloc[0] == 'adv_test_run'
+        assert 'auc' in records_df['metric'].iloc[0].lower()
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
 
