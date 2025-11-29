@@ -1,0 +1,7 @@
+official_metric,rmse_norm,mae_norm,scenario,model_type,train_time_seconds,n_train_samples,n_val_samples,n_features,run_id,axes,index,total,is_sweep
+0.2762,0.20561553639789704,0.126660070509282,2,catboost,8.886442184448242,28116,7038,101,2025-11-29_06-09_catboost_scenario2_depth6_lr0p03,"{'params.depth': 6, 'params.learning_rate': 0.03}",3,6,True
+0.2791,0.20714305642458014,0.12849348361848548,2,catboost,5.60767388343811,28116,7038,101,2025-11-29_06-09_catboost_scenario2_depth4_lr0p03,"{'params.depth': 4, 'params.learning_rate': 0.03}",1,6,True
+0.2851,0.20459115438190795,0.1263264576092917,2,catboost,17.086005926132202,28116,7038,101,2025-11-29_06-09_catboost_scenario2_depth8_lr0p03,"{'params.depth': 8, 'params.learning_rate': 0.03}",5,6,True
+0.2959,0.20796600383420047,0.12980023208670946,2,catboost,10.005821943283081,28116,7038,101,2025-11-29_06-09_catboost_scenario2_depth6_lr0p01,"{'params.depth': 6, 'params.learning_rate': 0.01}",2,6,True
+0.2973,0.2067654620554702,0.12851820275116996,2,catboost,21.67449688911438,28116,7038,101,2025-11-29_06-09_catboost_scenario2_depth8_lr0p01,"{'params.depth': 8, 'params.learning_rate': 0.01}",4,6,True
+0.3059,0.21030934636713267,0.13243570778067068,2,catboost,5.315723896026611,28116,7038,101,2025-11-29_06-09_catboost_scenario2_depth4_lr0p01,"{'params.depth': 4, 'params.learning_rate': 0.01}",0,6,True

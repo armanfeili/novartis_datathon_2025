@@ -59,11 +59,11 @@ def _metric1(df_actual: pd.DataFrame, df_pred: pd.DataFrame, df_aux: pd.DataFram
         suffixes=("_actual", "_predict")
     ).merge(df_aux, on=["country", "brand_name"], how="left")
 
-    merged["start_month"] = merged.groupby(["country", "brand_name"])["months_postgx"].transform("min")
+    merged["start_month"] = merged.groupby(["country", "brand_name"], observed=False)["months_postgx"].transform("min")
     merged = merged[merged["start_month"] == 0].copy()
 
     pe_results = (
-        merged.groupby(["country", "brand_name", "bucket"])
+        merged.groupby(["country", "brand_name", "bucket"], observed=False)
         .apply(_compute_pe_phase1a, include_groups=False)
         .reset_index(name="PE")
     )
@@ -139,11 +139,11 @@ def _metric2(df_actual: pd.DataFrame, df_pred: pd.DataFrame, df_aux: pd.DataFram
         suffixes=("_actual", "_predict")
     ).merge(df_aux, on=["country", "brand_name"], how="left")
 
-    merged_data["start_month"] = merged_data.groupby(["country", "brand_name"])["months_postgx"].transform("min")
+    merged_data["start_month"] = merged_data.groupby(["country", "brand_name"], observed=False)["months_postgx"].transform("min")
     merged_data = merged_data[merged_data["start_month"] == 6].copy()
 
     pe_results = (
-        merged_data.groupby(["country", "brand_name", "bucket"])
+        merged_data.groupby(["country", "brand_name", "bucket"], observed=False)
         .apply(_compute_pe_phase1b, include_groups=False)
         .reset_index(name="PE")
     )

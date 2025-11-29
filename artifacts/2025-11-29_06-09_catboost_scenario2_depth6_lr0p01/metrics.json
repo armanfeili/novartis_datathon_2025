@@ -1,0 +1,21 @@
+{
+  "official_metric": 0.2959,
+  "rmse_norm": 0.20796600383420047,
+  "mae_norm": 0.12980023208670946,
+  "scenario": 2,
+  "model_type": "catboost",
+  "train_time_seconds": 10.005821943283081,
+  "n_train_samples": 28116,
+  "n_val_samples": 7038,
+  "n_features": 101,
+  "run_id": "2025-11-29_06-09_catboost_scenario2_depth6_lr0p01",
+  "sweep_params": {
+    "axes": {
+      "params.depth": 6,
+      "params.learning_rate": 0.01
+    },
+    "index": 2,
+    "total": 6,
+    "is_sweep": true
+  }
+}

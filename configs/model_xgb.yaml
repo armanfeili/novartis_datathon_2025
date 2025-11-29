@@ -1,29 +1,72 @@
-# XGBoost model configuration for Novartis Datathon 2025
+# =============================================================================
+# XGBoost Model Configuration - Novartis Datathon 2025
+# =============================================================================
+# PRIMARY MODEL - Best performance on official metric
+#
+# Best configurations from sweeps:
+#   Scenario 1: max_depth=6, learning_rate=0.03 → official_metric: 0.7499
+#   Scenario 2: max_depth=4, learning_rate=0.05 → official_metric: 0.2659
+#
+# Usage:
+#   - Single run: Set sweep.enabled=false, use scalar params
+#   - Sweep mode: Set sweep.enabled=true, use list params for sweep axes
+#   - GPU mode:   Set gpu.enabled=true (auto-configured in notebook)
+# =============================================================================
 
 model:
   name: "xgboost"
-  task: "regression"  # regression, binary, multiclass
+  task: "regression"
+  priority: 1  # Primary model - highest priority
 
-# XGBoost hyperparameters
+# =============================================================================
+# GPU CONFIGURATION
+# =============================================================================
+gpu:
+  enabled: false  # Set true for GPU training (auto-set by notebook)
+  device_id: 0
+
+# =============================================================================
+# SWEEP CONFIGURATION
+# =============================================================================
+# Selection criterion: official_metric (PE), NOT RMSE
+# K-fold CV: Use n_folds for robust hyperparameter selection
+sweep:
+  enabled: false
+  selection_metric: "official_metric"  # PRIMARY: Use official PE metric
+  n_folds: 3                           # K-fold CV for robustness
+  # Sweep axes with values (from sweep_presets.full)
+  axes:
+    max_depth: [3, 4, 5, 6]
+    learning_rate: [0.02, 0.03, 0.05, 0.07]
+    reg_lambda: [1, 3, 5]
+
+# =============================================================================
+# MODEL HYPERPARAMETERS
+# =============================================================================
 params:
-  # Core parameters
-  booster: "gbtree"           # gbtree, gblinear, dart
-  objective: "reg:squarederror"  # reg:squarederror, binary:logistic, multi:softprob
-  eval_metric: "rmse"
+  # Core
+  booster: "gbtree"
+  objective: "reg:squarederror"
+  eval_metric: "rmse"  # Early stopping metric (fast/stable)
   
-  # Tree parameters
+  # Tree structure - SWEEPABLE
+  # Recommended sweep: [3, 4, 5, 6]
   max_depth: 6
   min_child_weight: 1
-  max_leaves: 0               # 0 means no limit
+  max_leaves: 0  # 0 = no limit
   
-  # Learning parameters
-  learning_rate: 0.05
-  n_estimators: 1000
+  # Learning - SWEEPABLE
+  # Recommended sweep: [0.02, 0.03, 0.05, 0.07]
+  learning_rate: 0.03
+  n_estimators: 3000  # High value, rely on early stopping
   
-  # Regularization
-  gamma: 0                    # Minimum loss reduction for split
-  reg_alpha: 0                # L1 regularization
-  reg_lambda: 1               # L2 regularization
+  # Regularization - SWEEPABLE
+  # Recommended sweep: [1, 3, 5]
+  gamma: 0
+  reg_alpha: 0
+  reg_lambda: 1
+  
+  # Subsampling
   subsample: 0.8
   colsample_bytree: 0.8
   colsample_bylevel: 1.0
@@ -32,31 +75,63 @@ params:
   # Early stopping
   early_stopping_rounds: 50
   
-  # Other
+  # System
   verbosity: 0
   n_jobs: -1
   seed: 42
   
-  # GPU (uncomment for GPU training)
-  # tree_method: "gpu_hist"
+  # GPU settings (applied when gpu.enabled=true)
+  # tree_method: "gpu_hist"  # Set programmatically
   # gpu_id: 0
 
-# Training settings
+# =============================================================================
+# TRAINING SETTINGS
+# =============================================================================
 training:
   use_early_stopping: true
-  eval_metric: "rmse"
+  eval_metric: "rmse"       # Early stopping on RMSE (fast)
   verbose_eval: 100
+  use_sample_weights: true  # Align with official metric
 
-# Hyperparameter tuning (Optuna)
-tuning:
-  enabled: false
-  n_trials: 100
-  timeout: 3600
-  search_space:
-    max_depth: [3, 12]
-    learning_rate: [0.01, 0.3]
-    subsample: [0.5, 1.0]
-    colsample_bytree: [0.5, 1.0]
-    reg_alpha: [0.0, 10.0]
-    reg_lambda: [0.0, 10.0]
-    min_child_weight: [1, 10]
+# =============================================================================
+# SCENARIO-SPECIFIC BEST PARAMS (for quick reference)
+# =============================================================================
+# Use these when running final models, not sweeps
+best_params:
+  scenario1:
+    max_depth: 6
+    learning_rate: 0.03
+    reg_lambda: 1
+  scenario2:
+    max_depth: 4
+    learning_rate: 0.05
+    reg_lambda: 1
+
+# =============================================================================
+# SWEEP PRESETS
+# =============================================================================
+# Quick sweep configurations for different compute budgets
+sweep_presets:
+  # Fast sweep: 16 combinations (4 x 4)
+  fast:
+    max_depth: [4, 5, 6, 7]
+    learning_rate: [0.02, 0.03, 0.05, 0.07]
+  
+  # Full sweep: 48 combinations (4 x 4 x 3)
+  full:
+    max_depth: [3, 4, 5, 6]
+    learning_rate: [0.02, 0.03, 0.05, 0.07]
+    reg_lambda: [1, 3, 5]
+  
+  # Focused sweep: 9 combinations around best params
+  focused:
+    max_depth: [5, 6, 7]
+    learning_rate: [0.02, 0.03, 0.04]
+
+# =============================================================================
+# ENSEMBLE SETTINGS
+# =============================================================================
+ensemble:
+  include: true           # Include in XGB+LGBM ensemble
+  weight_optimization: true
+  default_weight: 0.5     # Starting weight for ensemble

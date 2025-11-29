@@ -1,24 +1,59 @@
-# CatBoost model configuration for Novartis Datathon 2025
-# Primary hero model for the competition
+# =============================================================================
+# CatBoost Model Configuration - Novartis Datathon 2025
+# =============================================================================
+# TERTIARY MODEL - Native categorical handling, ensemble diversity
+#
+# Note: CatBoost consistently underperforms XGBoost on official_metric.
+# Keep ONE good config per scenario for ensemble diversity, but don't
+# spend time sweeping. Use for ensemble only if it improves official_metric.
+#
+# Usage:
+#   - Single run: Set sweep.enabled=false, use scalar params
+#   - Sweep mode: Set sweep.enabled=true (not recommended - low ROI)
+#   - GPU mode:   Set gpu.enabled=true (auto-configured in notebook)
+# =============================================================================
 
 model:
   name: "catboost"
   task: "regression"
+  priority: 3  # Tertiary model - for ensemble diversity only
 
-# CatBoost hyperparameters
+# =============================================================================
+# GPU CONFIGURATION
+# =============================================================================
+gpu:
+  enabled: false  # Set true for GPU training (auto-set by notebook)
+  device_id: 0
+
+# =============================================================================
+# SWEEP CONFIGURATION
+# =============================================================================
+# NOTE: Sweeping CatBoost has low ROI - XGBoost/LightGBM are better.
+# Only use for final ensemble diversity check.
+sweep:
+  enabled: false
+  selection_metric: "official_metric"  # PRIMARY: Use official PE metric
+  n_folds: 3                           # K-fold CV for robustness
+  # Sweep axes with values (minimal - low priority)
+  axes:
+    depth: [4, 6]
+    learning_rate: [0.03, 0.05]
+
+# =============================================================================
+# MODEL HYPERPARAMETERS
+# =============================================================================
 params:
-  # Core parameters
+  # Core
   loss_function: "RMSE"
-  eval_metric: "RMSE"
+  eval_metric: "RMSE"  # Early stopping metric
   
-  # Tree parameters - conservative to prevent overfitting
+  # Tree structure - SWEEPABLE (low priority)
   depth: 6
   min_data_in_leaf: 20
-  max_leaves: 31
   
-  # Learning parameters - slower learning for better generalization
+  # Learning - SWEEPABLE (low priority)
   learning_rate: 0.03
-  iterations: 2000
+  iterations: 3000  # High value, rely on early stopping
   
   # Regularization
   l2_leaf_reg: 3.0
@@ -28,20 +63,26 @@ params:
   # Early stopping
   early_stopping_rounds: 100
   
-  # Reproducibility
+  # System
   random_seed: 42
-  
-  # Output
   verbose: 100
   thread_count: -1
+  
+  # GPU settings (applied when gpu.enabled=true)
+  # task_type: "GPU"  # Set programmatically
+  # devices: "0"
 
-# Training settings
+# =============================================================================
+# TRAINING SETTINGS
+# =============================================================================
 training:
   use_early_stopping: true
-  use_sample_weights: true            # CRITICAL: use sample weights aligned with metric
   eval_metric: "RMSE"
+  use_sample_weights: true  # Align with official metric
 
-# Categorical features to pass to CatBoost
+# =============================================================================
+# CATEGORICAL FEATURES
+# =============================================================================
 # CatBoost handles categoricals natively - no encoding needed
 categorical_features:
   - "ther_area"
@@ -50,15 +91,32 @@ categorical_features:
   - "hospital_rate_bin"
   - "n_gxs_bin"
 
-# Hyperparameter tuning (Optuna)
-tuning:
-  enabled: false
-  n_trials: 100
-  timeout: 3600
-  search_space:
-    depth: [4, 8]
-    learning_rate: [0.01, 0.1]
-    l2_leaf_reg: [1.0, 10.0]
-    min_data_in_leaf: [10, 50]
-    random_strength: [0.0, 5.0]
-    bagging_temperature: [0.0, 5.0]
+# =============================================================================
+# SCENARIO-SPECIFIC BEST PARAMS (for quick reference)
+# =============================================================================
+best_params:
+  scenario1:
+    depth: 6
+    learning_rate: 0.03
+    l2_leaf_reg: 3.0
+  scenario2:
+    depth: 6
+    learning_rate: 0.03
+    l2_leaf_reg: 3.0
+
+# =============================================================================
+# SWEEP PRESETS (LOW PRIORITY - only for final validation)
+# =============================================================================
+sweep_presets:
+  # Minimal sweep: 4 combinations
+  minimal:
+    depth: [4, 6]
+    learning_rate: [0.03, 0.05]
+
+# =============================================================================
+# ENSEMBLE SETTINGS
+# =============================================================================
+ensemble:
+  include: false          # Only include if improves official_metric
+  weight_optimization: true
+  default_weight: 0.2     # Lower weight - less reliable than XGB/LGBM

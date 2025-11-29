@@ -1,0 +1,17 @@
+{
+  "timestamp": "2025-11-29T06:11:13.437927",
+  "git_commit": "8a6521d0",
+  "scenario": 1,
+  "model_type": "lightgbm",
+  "sweep_metadata": {
+    "axes": {
+      "params.num_leaves": 31,
+      "params.learning_rate": 0.03
+    },
+    "index": 0,
+    "total": 4,
+    "is_sweep": true
+  },
+  "n_train_samples": 37488,
+  "n_val_samples": 9384
+}
