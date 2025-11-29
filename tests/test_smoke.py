@@ -6316,6 +6316,456 @@ class TestDocumentation:
         assert readme_path.exists(), "submissions/README.md should exist"
 
 
+# =============================================================================
+# Section 11: Colab/Production Readiness Tests
+# =============================================================================
+
+class TestSection11EnvironmentDetection:
+    """Tests for Section 11.1 - Environment Detection."""
+    
+    def test_is_colab_function_exists(self):
+        """Test that is_colab function exists."""
+        from src.utils import is_colab
+        assert callable(is_colab)
+    
+    def test_is_colab_returns_bool(self):
+        """Test that is_colab returns boolean."""
+        from src.utils import is_colab
+        result = is_colab()
+        assert isinstance(result, bool)
+    
+    def test_is_jupyter_function_exists(self):
+        """Test that is_jupyter function exists."""
+        from src.utils import is_jupyter
+        assert callable(is_jupyter)
+        result = is_jupyter()
+        assert isinstance(result, bool)
+    
+    def test_get_platform_info_function(self):
+        """Test get_platform_info returns expected keys."""
+        from src.utils import get_platform_info
+        info = get_platform_info()
+        
+        assert isinstance(info, dict)
+        assert 'python_version' in info
+        assert 'platform' in info
+        assert 'is_colab' in info
+        assert 'is_jupyter' in info
+        assert 'cpu_count' in info
+        assert 'total_ram_gb' in info
+
+
+class TestSection11GPUDetection:
+    """Tests for Section 11.1 - GPU Detection."""
+    
+    def test_get_device_function_exists(self):
+        """Test that get_device function exists."""
+        from src.utils import get_device
+        assert callable(get_device)
+    
+    def test_get_device_returns_valid_type(self):
+        """Test that get_device returns valid type."""
+        from src.utils import get_device
+        device = get_device()
+        # Should be None if no torch, or a torch.device
+        if device is not None:
+            assert hasattr(device, 'type')
+    
+    def test_get_gpu_info_function(self):
+        """Test that get_gpu_info returns expected structure."""
+        from src.utils import get_gpu_info
+        info = get_gpu_info()
+        
+        assert isinstance(info, dict)
+        assert 'gpu_available' in info
+        assert 'device_name' in info
+        assert 'mps_available' in info
+        assert isinstance(info['gpu_available'], bool)
+    
+    def test_print_gpu_info_no_error(self):
+        """Test that print_gpu_info runs without error."""
+        from src.utils import print_gpu_info
+        # Should not raise any errors
+        print_gpu_info()
+    
+    def test_enable_gpu_for_catboost(self):
+        """Test enable_gpu_for_catboost returns valid config."""
+        from src.utils import enable_gpu_for_catboost
+        config = enable_gpu_for_catboost()
+        
+        assert isinstance(config, dict)
+        # If GPU available, should have task_type
+        if config:
+            assert 'task_type' in config
+            assert config['task_type'] == 'GPU'
+    
+    def test_enable_gpu_for_xgboost(self):
+        """Test enable_gpu_for_xgboost returns valid config."""
+        from src.utils import enable_gpu_for_xgboost
+        config = enable_gpu_for_xgboost()
+        
+        assert isinstance(config, dict)
+        if config:
+            assert 'tree_method' in config
+            assert config['tree_method'] == 'gpu_hist'
+    
+    def test_enable_gpu_for_lightgbm(self):
+        """Test enable_gpu_for_lightgbm returns valid config."""
+        from src.utils import enable_gpu_for_lightgbm
+        config = enable_gpu_for_lightgbm()
+        
+        assert isinstance(config, dict)
+        if config:
+            assert 'device' in config
+            assert config['device'] == 'gpu'
+
+
+class TestSection11MemoryManagement:
+    """Tests for Section 11.1 - Memory Management."""
+    
+    def test_clear_memory_function_exists(self):
+        """Test that clear_memory function exists."""
+        from src.utils import clear_memory
+        assert callable(clear_memory)
+    
+    def test_clear_memory_returns_dict(self):
+        """Test that clear_memory returns dictionary with stats."""
+        from src.utils import clear_memory
+        result = clear_memory()
+        
+        assert isinstance(result, dict)
+        assert 'gc_collected' in result
+        assert 'gpu_cache_cleared' in result
+    
+    def test_get_memory_usage_function(self):
+        """Test that get_memory_usage returns memory stats."""
+        from src.utils import get_memory_usage
+        mem = get_memory_usage()
+        
+        assert isinstance(mem, dict)
+        assert 'process_rss_gb' in mem
+        assert 'system_total_gb' in mem
+        assert mem['process_rss_gb'] > 0
+    
+    def test_log_memory_usage_no_error(self):
+        """Test that log_memory_usage runs without error."""
+        from src.utils import log_memory_usage
+        log_memory_usage("test")
+    
+    def test_memory_monitor_context_manager(self):
+        """Test memory_monitor context manager."""
+        from src.utils import memory_monitor
+        
+        with memory_monitor("test_operation", log_before=False, log_after=False):
+            # Allocate some memory
+            x = [i for i in range(100000)]
+        
+        # Should complete without error
+        assert True
+    
+    def test_optimize_dataframe_memory(self):
+        """Test DataFrame memory optimization."""
+        from src.utils import optimize_dataframe_memory
+        import pandas as pd
+        
+        # Create test DataFrame
+        df = pd.DataFrame({
+            'int_col': [1, 2, 3] * 100,
+            'float_col': [1.1, 2.2, 3.3] * 100,
+            'str_col': ['a', 'b', 'c'] * 100,
+        })
+        
+        df_optimized, stats = optimize_dataframe_memory(df, deep_copy=True)
+        
+        assert isinstance(stats, dict)
+        assert 'original_memory_mb' in stats
+        assert 'optimized_memory_mb' in stats
+        assert 'memory_reduction_percent' in stats
+        assert stats['columns_optimized'] >= 0
+
+
+class TestSection11ProgressBars:
+    """Tests for Section 11.1 - Progress Bars."""
+    
+    def test_get_progress_bar_function_exists(self):
+        """Test that get_progress_bar function exists."""
+        from src.utils import get_progress_bar
+        assert callable(get_progress_bar)
+    
+    def test_get_progress_bar_with_iterable(self):
+        """Test get_progress_bar with iterable."""
+        from src.utils import get_progress_bar
+        
+        items = [1, 2, 3, 4, 5]
+        result = list(get_progress_bar(items, desc="test", disable=True))
+        assert result == items
+    
+    def test_get_progress_bar_with_total(self):
+        """Test get_progress_bar with total."""
+        from src.utils import get_progress_bar
+        
+        pbar = get_progress_bar(range(5), total=5, desc="test", disable=True)
+        result = list(pbar)
+        assert result == [0, 1, 2, 3, 4]
+
+
+class TestSection11EnvironmentVerification:
+    """Tests for Section 11.2 - Environment Verification."""
+    
+    def test_verify_environment_function_exists(self):
+        """Test that verify_environment function exists."""
+        from src.utils import verify_environment
+        assert callable(verify_environment)
+    
+    def test_verify_environment_returns_dict(self):
+        """Test that verify_environment returns proper structure."""
+        from src.utils import verify_environment
+        result = verify_environment()
+        
+        assert isinstance(result, dict)
+        assert 'python_version' in result
+        assert 'python_ok' in result
+        assert 'packages' in result
+        assert 'all_ok' in result
+    
+    def test_verify_environment_checks_required_packages(self):
+        """Test that verify_environment checks required packages."""
+        from src.utils import verify_environment
+        result = verify_environment()
+        
+        packages = result['packages']
+        assert 'numpy' in packages
+        assert 'pandas' in packages
+        assert 'scikit-learn' in packages
+        assert 'pyyaml' in packages
+        
+        # Required packages should be marked as required
+        assert packages['numpy']['required'] == True
+        assert packages['pandas']['required'] == True
+    
+    def test_verify_environment_all_required_installed(self):
+        """Test that all required packages are installed."""
+        from src.utils import verify_environment
+        result = verify_environment()
+        
+        # This should pass since we're running tests
+        assert result['all_ok'] == True
+    
+    def test_print_environment_info_no_error(self):
+        """Test that print_environment_info runs without error."""
+        from src.utils import print_environment_info
+        # Should not raise any errors
+        print_environment_info()
+
+
+class TestSection11PerformanceOptimization:
+    """Tests for Section 11.3 - Performance Optimization."""
+    
+    def test_get_optimal_n_jobs(self):
+        """Test get_optimal_n_jobs function."""
+        from src.utils import get_optimal_n_jobs
+        
+        n_jobs = get_optimal_n_jobs(memory_per_job_gb=1.0)
+        assert isinstance(n_jobs, int)
+        assert n_jobs >= 1
+    
+    def test_get_optimal_n_jobs_with_max(self):
+        """Test get_optimal_n_jobs respects max_jobs."""
+        from src.utils import get_optimal_n_jobs
+        
+        n_jobs = get_optimal_n_jobs(memory_per_job_gb=1.0, max_jobs=2)
+        assert n_jobs <= 2
+    
+    def test_chunked_apply_function_exists(self):
+        """Test that chunked_apply function exists."""
+        from src.utils import chunked_apply
+        assert callable(chunked_apply)
+    
+    def test_chunked_apply_works(self):
+        """Test that chunked_apply processes DataFrame."""
+        from src.utils import chunked_apply
+        import pandas as pd
+        
+        df = pd.DataFrame({'a': range(100)})
+        
+        def add_one(chunk):
+            chunk = chunk.copy()
+            chunk['b'] = chunk['a'] + 1
+            return chunk
+        
+        result = chunked_apply(df, add_one, chunk_size=25, show_progress=False)
+        
+        assert 'b' in result.columns
+        assert len(result) == len(df)
+        assert list(result['b']) == list(range(1, 101))
+
+
+class TestSection11ColabUtilities:
+    """Tests for Section 11 - Colab-specific Utilities."""
+    
+    def test_mount_google_drive_exists(self):
+        """Test that mount_google_drive function exists."""
+        from src.utils import mount_google_drive
+        assert callable(mount_google_drive)
+    
+    def test_sync_to_drive_exists(self):
+        """Test that sync_to_drive function exists."""
+        from src.utils import sync_to_drive
+        assert callable(sync_to_drive)
+    
+    def test_download_file_exists(self):
+        """Test that download_file function exists."""
+        from src.utils import download_file
+        assert callable(download_file)
+    
+    def test_upload_files_exists(self):
+        """Test that upload_files function exists."""
+        from src.utils import upload_files
+        assert callable(upload_files)
+    
+    def test_colab_functions_handle_non_colab(self):
+        """Test that Colab functions handle non-Colab environment gracefully."""
+        from src.utils import mount_google_drive, sync_to_drive, download_file, upload_files
+        
+        # These should not raise errors when not in Colab
+        result = mount_google_drive()
+        assert result is None  # Not in Colab
+        
+        result = sync_to_drive()
+        assert result == False  # Not in Colab
+        
+        result = download_file("/tmp/test.txt")
+        assert result == False  # Not in Colab
+        
+        result = upload_files()
+        assert result == {}  # Not in Colab
+
+
+class TestSection11RequirementsFiles:
+    """Tests for Section 11.2 - Environment Management requirements files."""
+    
+    def test_colab_requirements_exists(self):
+        """Test that env/colab_requirements.txt exists."""
+        req_path = Path(__file__).parent.parent / 'env' / 'colab_requirements.txt'
+        assert req_path.exists(), "env/colab_requirements.txt should exist"
+    
+    def test_colab_requirements_has_core_packages(self):
+        """Test that colab_requirements.txt has core packages."""
+        req_path = Path(__file__).parent.parent / 'env' / 'colab_requirements.txt'
+        content = req_path.read_text()
+        
+        core_packages = ['numpy', 'pandas', 'scikit-learn', 'catboost', 'lightgbm', 'xgboost']
+        for pkg in core_packages:
+            assert pkg in content, f"colab_requirements.txt should have {pkg}"
+    
+    def test_environment_yml_exists(self):
+        """Test that env/environment.yml exists."""
+        env_path = Path(__file__).parent.parent / 'env' / 'environment.yml'
+        assert env_path.exists(), "env/environment.yml should exist"
+    
+    def test_environment_yml_valid(self):
+        """Test that environment.yml is valid YAML."""
+        import yaml
+        env_path = Path(__file__).parent.parent / 'env' / 'environment.yml'
+        
+        with open(env_path, 'r') as f:
+            content = yaml.safe_load(f)
+        
+        assert 'name' in content
+        assert 'channels' in content
+        assert 'dependencies' in content
+    
+    def test_environment_yml_has_python_version(self):
+        """Test that environment.yml specifies Python version."""
+        env_path = Path(__file__).parent.parent / 'env' / 'environment.yml'
+        content = env_path.read_text()
+        
+        assert 'python' in content.lower(), "environment.yml should specify Python version"
+
+
+class TestSection11ColabNotebook:
+    """Tests for Section 11.1 - Colab Notebook."""
+    
+    def test_colab_notebook_exists(self):
+        """Test that Colab notebook exists."""
+        notebook_path = Path(__file__).parent.parent / 'notebooks' / 'colab' / 'main.ipynb'
+        assert notebook_path.exists(), "notebooks/colab/main.ipynb should exist"
+    
+    def test_colab_notebook_valid_json(self):
+        """Test that Colab notebook is valid JSON."""
+        import json
+        notebook_path = Path(__file__).parent.parent / 'notebooks' / 'colab' / 'main.ipynb'
+        
+        with open(notebook_path, 'r') as f:
+            content = json.load(f)
+        
+        assert 'cells' in content, "Notebook should have cells"
+        assert len(content['cells']) > 0, "Notebook should have at least one cell"
+    
+    def test_colab_notebook_has_required_sections(self):
+        """Test that Colab notebook has required sections."""
+        import json
+        notebook_path = Path(__file__).parent.parent / 'notebooks' / 'colab' / 'main.ipynb'
+        
+        with open(notebook_path, 'r') as f:
+            content = json.load(f)
+        
+        # Get all cell sources as text
+        all_text = ""
+        for cell in content['cells']:
+            source = cell.get('source', [])
+            if isinstance(source, list):
+                all_text += ''.join(source)
+            else:
+                all_text += source
+        
+        all_text_lower = all_text.lower()
+        
+        # Check for required sections
+        assert 'environment setup' in all_text_lower, "Should have Environment Setup section"
+        assert 'import' in all_text_lower, "Should have import section"
+        assert 'training' in all_text_lower or 'train' in all_text_lower, "Should have training section"
+        assert 'submission' in all_text_lower, "Should have submission section"
+    
+    def test_colab_notebook_has_drive_mounting(self):
+        """Test that Colab notebook has Drive mounting code."""
+        import json
+        notebook_path = Path(__file__).parent.parent / 'notebooks' / 'colab' / 'main.ipynb'
+        
+        with open(notebook_path, 'r') as f:
+            content = json.load(f)
+        
+        all_text = ""
+        for cell in content['cells']:
+            source = cell.get('source', [])
+            if isinstance(source, list):
+                all_text += ''.join(source)
+            else:
+                all_text += source
+        
+        assert 'drive.mount' in all_text, "Should have Drive mounting code"
+    
+    def test_colab_notebook_imports_project_modules(self):
+        """Test that Colab notebook imports project modules."""
+        import json
+        notebook_path = Path(__file__).parent.parent / 'notebooks' / 'colab' / 'main.ipynb'
+        
+        with open(notebook_path, 'r') as f:
+            content = json.load(f)
+        
+        all_text = ""
+        for cell in content['cells']:
+            source = cell.get('source', [])
+            if isinstance(source, list):
+                all_text += ''.join(source)
+            else:
+                all_text += source
+        
+        # Should import from src
+        assert 'from src' in all_text or 'import src' in all_text, \
+            "Should import from src package"
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
 
