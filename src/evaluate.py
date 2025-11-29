@@ -1181,3 +1181,285 @@ def compute_diagnostic_metrics(
         'pred_count': len(values),
         'pred_null_count': values.isna().sum()
     }
+
+
+# =============================================================================
+# RESILIENCE METRICS (Ghannem et al., 2023)
+# =============================================================================
+
+from dataclasses import dataclass
+
+
+@dataclass
+class ResilienceResult:
+    """
+    Result container for resilience metrics computation.
+    
+    Attributes:
+        scenario: Scenario number (1 or 2)
+        series_key: Tuple (country, brand_name)
+        under_forecast_count: Number of months with under-forecasting
+        under_forecast_pct: Percentage of months with under-forecasting
+        max_under_forecast: Maximum under-forecast magnitude
+        avg_under_forecast: Average under-forecast magnitude
+        stock_out_risk_score: Estimated stock-out risk (0-1)
+        recovery_time: Months to recover from max under-forecast
+        resilience_score: Overall resilience score (0-1, higher is better)
+    """
+    scenario: int
+    series_key: Tuple[str, str]
+    under_forecast_count: int
+    under_forecast_pct: float
+    max_under_forecast: float
+    avg_under_forecast: float
+    stock_out_risk_score: float
+    recovery_time: int
+    resilience_score: float
+
+
+def compute_resilience_metrics(
+    df_actual: pd.DataFrame,
+    df_pred: pd.DataFrame,
+    scenario: int = 1,
+    under_forecast_threshold: float = 0.0,
+    critical_under_forecast_pct: float = 0.1,
+) -> Dict[str, Any]:
+    """
+    Compute supply-chain resilience metrics for forecasts.
+    
+    Based on Ghannem et al. (2023) - focuses on under-forecasting risk
+    which leads to stock-outs and supply chain disruptions.
+    
+    Args:
+        df_actual: Actual volume data [country, brand_name, months_postgx, volume]
+        df_pred: Predicted volume data [country, brand_name, months_postgx, volume]
+        scenario: 1 or 2
+        under_forecast_threshold: Error threshold to consider as under-forecast
+                                 (default 0: any pred < actual is under-forecast)
+        critical_under_forecast_pct: Threshold for critical under-forecast 
+                                     (as fraction of actual volume)
+        
+    Returns:
+        Dict containing:
+        - overall: Aggregate resilience metrics
+        - per_series: List of ResilienceResult per series
+        - summary: Summary statistics
+    """
+    # Merge actual and predicted
+    merged = df_actual.merge(
+        df_pred,
+        on=['country', 'brand_name', 'months_postgx'],
+        suffixes=('_actual', '_pred'),
+        how='inner'
+    )
+    
+    # Compute forecast error (positive = under-forecast)
+    merged['error'] = merged['volume_actual'] - merged['volume_pred']
+    merged['error_pct'] = merged['error'] / (merged['volume_actual'] + 1e-6)
+    
+    # Identify under-forecasts
+    merged['is_under_forecast'] = merged['error'] > under_forecast_threshold
+    merged['is_critical_under'] = merged['error_pct'] > critical_under_forecast_pct
+    
+    # Per-series resilience
+    series_keys = ['country', 'brand_name']
+    per_series_results = []
+    
+    for (country, brand), group in merged.groupby(series_keys):
+        n_months = len(group)
+        under_count = group['is_under_forecast'].sum()
+        
+        # Under-forecast metrics
+        under_forecast_pct = under_count / n_months if n_months > 0 else 0
+        
+        under_errors = group.loc[group['is_under_forecast'], 'error_pct']
+        max_under = under_errors.max() if len(under_errors) > 0 else 0
+        avg_under = under_errors.mean() if len(under_errors) > 0 else 0
+        
+        # Stock-out risk score (based on frequency and severity of under-forecasts)
+        critical_count = group['is_critical_under'].sum()
+        stock_out_risk = (0.6 * under_forecast_pct + 
+                         0.4 * (critical_count / n_months if n_months > 0 else 0))
+        
+        # Recovery time: months after max under-forecast to reach normal error
+        sorted_group = group.sort_values('months_postgx')
+        max_under_idx = sorted_group['error_pct'].idxmax() if len(sorted_group) > 0 else None
+        recovery_time = 0
+        
+        if max_under_idx is not None and max_under > critical_under_forecast_pct:
+            after_max = sorted_group.loc[max_under_idx:, 'is_critical_under']
+            # Count months until first non-critical month
+            for i, is_critical in enumerate(after_max):
+                if not is_critical:
+                    recovery_time = i
+                    break
+            else:
+                recovery_time = len(after_max)  # Never recovered
+        
+        # Resilience score (higher is better)
+        resilience_score = 1.0 - (
+            0.4 * under_forecast_pct +
+            0.3 * min(max_under, 1.0) +
+            0.2 * stock_out_risk +
+            0.1 * min(recovery_time / 12, 1.0)
+        )
+        resilience_score = max(0, min(1, resilience_score))
+        
+        result = ResilienceResult(
+            scenario=scenario,
+            series_key=(country, brand),
+            under_forecast_count=int(under_count),
+            under_forecast_pct=float(under_forecast_pct),
+            max_under_forecast=float(max_under),
+            avg_under_forecast=float(avg_under),
+            stock_out_risk_score=float(stock_out_risk),
+            recovery_time=int(recovery_time),
+            resilience_score=float(resilience_score)
+        )
+        per_series_results.append(result)
+    
+    # Overall metrics
+    overall = {
+        'total_series': len(per_series_results),
+        'total_under_forecasts': sum(r.under_forecast_count for r in per_series_results),
+        'avg_under_forecast_pct': np.mean([r.under_forecast_pct for r in per_series_results]),
+        'avg_stock_out_risk': np.mean([r.stock_out_risk_score for r in per_series_results]),
+        'avg_resilience_score': np.mean([r.resilience_score for r in per_series_results]),
+        'min_resilience_score': min(r.resilience_score for r in per_series_results) if per_series_results else 0,
+        'pct_high_risk_series': sum(1 for r in per_series_results if r.stock_out_risk_score > 0.3) / len(per_series_results) if per_series_results else 0,
+    }
+    
+    # Summary DataFrame
+    summary_df = pd.DataFrame([
+        {
+            'country': r.series_key[0],
+            'brand_name': r.series_key[1],
+            'under_forecast_count': r.under_forecast_count,
+            'under_forecast_pct': r.under_forecast_pct,
+            'max_under_forecast': r.max_under_forecast,
+            'stock_out_risk_score': r.stock_out_risk_score,
+            'resilience_score': r.resilience_score,
+        }
+        for r in per_series_results
+    ])
+    
+    return {
+        'overall': overall,
+        'per_series': per_series_results,
+        'summary': summary_df,
+    }
+
+
+def detect_under_forecast_patterns(
+    df_actual: pd.DataFrame,
+    df_pred: pd.DataFrame,
+    threshold_pct: float = 0.1,
+) -> pd.DataFrame:
+    """
+    Detect patterns in under-forecasting across series.
+    
+    Identifies which series/months are most prone to under-forecasting
+    and potential systematic biases.
+    
+    Args:
+        df_actual: Actual volume data
+        df_pred: Predicted volume data
+        threshold_pct: Threshold percentage for under-forecasting
+        
+    Returns:
+        DataFrame with under-forecast analysis per month
+    """
+    merged = df_actual.merge(
+        df_pred,
+        on=['country', 'brand_name', 'months_postgx'],
+        suffixes=('_actual', '_pred'),
+        how='inner'
+    )
+    
+    merged['error'] = merged['volume_actual'] - merged['volume_pred']
+    merged['error_pct'] = merged['error'] / (merged['volume_actual'] + 1e-6)
+    merged['is_under_forecast'] = merged['error_pct'] > threshold_pct
+    
+    # Aggregate by month
+    monthly = merged.groupby('months_postgx').agg({
+        'is_under_forecast': ['sum', 'mean'],
+        'error_pct': ['mean', 'std', 'max'],
+        'error': 'mean'
+    }).reset_index()
+    
+    monthly.columns = [
+        'months_postgx',
+        'under_forecast_count',
+        'under_forecast_rate',
+        'mean_error_pct',
+        'std_error_pct',
+        'max_error_pct',
+        'mean_error'
+    ]
+    
+    return monthly
+
+
+def identify_high_risk_series(
+    resilience_results: Dict[str, Any],
+    risk_threshold: float = 0.3,
+) -> List[Tuple[str, str]]:
+    """
+    Identify series with high stock-out risk.
+    
+    Args:
+        resilience_results: Output from compute_resilience_metrics()
+        risk_threshold: Stock-out risk threshold for high-risk classification
+        
+    Returns:
+        List of (country, brand_name) tuples for high-risk series
+    """
+    per_series = resilience_results.get('per_series', [])
+    
+    high_risk = [
+        r.series_key
+        for r in per_series
+        if r.stock_out_risk_score >= risk_threshold
+    ]
+    
+    return high_risk
+
+
+def compute_forecast_bias(
+    df_actual: pd.DataFrame,
+    df_pred: pd.DataFrame,
+) -> Dict[str, float]:
+    """
+    Compute forecast bias metrics to detect systematic under/over-forecasting.
+    
+    Args:
+        df_actual: Actual volume data
+        df_pred: Predicted volume data
+        
+    Returns:
+        Dict with bias metrics
+    """
+    merged = df_actual.merge(
+        df_pred,
+        on=['country', 'brand_name', 'months_postgx'],
+        suffixes=('_actual', '_pred'),
+        how='inner'
+    )
+    
+    errors = merged['volume_actual'] - merged['volume_pred']
+    
+    mean_error = errors.mean()
+    pct_under = (errors > 0).mean()  # Positive error = under-forecast
+    pct_over = (errors < 0).mean()   # Negative error = over-forecast
+    
+    # Mean bias ratio (positive = under-forecasting, negative = over-forecasting)
+    mean_bias_ratio = mean_error / (merged['volume_actual'].mean() + 1e-6)
+    
+    return {
+        'mean_error': mean_error,
+        'mean_bias_ratio': mean_bias_ratio,
+        'pct_under_forecast': pct_under,
+        'pct_over_forecast': pct_over,
+        'pct_exact': 1 - pct_under - pct_over,
+        'bias_direction': 'under' if mean_bias_ratio > 0.01 else ('over' if mean_bias_ratio < -0.01 else 'balanced'),
+    }

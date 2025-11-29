@@ -1,0 +1,274 @@
+# =============================================================================
+# KG-GCN-LSTM Model Configuration - Novartis Datathon 2025
+# =============================================================================
+# Knowledge Graph + Graph Convolutional Network + LSTM for pharmaceutical
+# demand forecasting. Reference: KG-GCN-LSTM paper.
+#
+# Architecture:
+#   1. Knowledge Graph encodes drug relationships (therapeutic area, etc.)
+#   2. GCN learns graph embeddings from drug similarity
+#   3. LSTM processes temporal sequences
+#   4. Fusion layer combines graph and temporal features
+#
+# Usage:
+#   - Single run: Set sweep.enabled=false, use params directly
+#   - Named config: Set active_config_id to use a preset from sweep_configs
+#   - Sweep mode: Set sweep.enabled=true to iterate over all sweep_configs
+#   - GPU mode: Set device='cuda' (auto-configured in notebook)
+#
+# CLI Examples:
+#   python -m src.train --scenario 1 --model kg_gcn_lstm
+#   python -m src.train --scenario 1 --model kg_gcn_lstm --config-id gat
+#   python -m src.train --scenario 1 --model kg_gcn_lstm --sweep
+# =============================================================================
+
+model:
+  name: "kg_gcn_lstm"
+  framework: "pytorch"
+  task: "regression"
+  priority: 4  # Lower priority - experimental deep learning
+
+# =============================================================================
+# ACTIVE CONFIGURATION ID
+# =============================================================================
+# Set this to use a specific named configuration from sweep_configs.
+# Set to null or "default" to use the base params below.
+active_config_id: null
+
+# =============================================================================
+# GPU CONFIGURATION
+# =============================================================================
+gpu:
+  enabled: false  # Set true for GPU training (auto-set by notebook)
+  device_id: 0
+
+# =============================================================================
+# SWEEP CONFIGURATION
+# =============================================================================
+# Selection criterion: official_metric (PE), NOT RMSE
+# K-fold CV: Use n_folds for robust hyperparameter selection
+#
+# Modes:
+#   - "configs": Iterate over sweep_configs list (explicit configs)
+#   - "grid": Expand sweep.grid into Cartesian product of all combinations
+sweep:
+  enabled: false
+  mode: "configs"  # "configs" or "grid"
+  selection_metric: "official_metric"  # PRIMARY: Use official PE metric
+  n_folds: 3  # K-fold CV for robustness
+  
+  # Grid mode: Expand all combinations of these values
+  grid:
+    gcn_type: ["gcn", "gat"]
+    lstm_hidden_dim: [32, 64, 128]
+    learning_rate: [0.001, 0.0005, 0.0001]
+    gcn_dropout: [0.1, 0.2, 0.3]
+
+# =============================================================================
+# NAMED SWEEP CONFIGURATIONS (explicit config list)
+# =============================================================================
+# Each config has: id, description (optional), and param overrides.
+# Use with --config-id <id> or --sweep to iterate all.
+sweep_configs:
+  - id: "default"
+    description: "Default GCN configuration"
+    params:
+      gcn_type: "gcn"
+      gcn_hidden_dims: [64, 32]
+      lstm_hidden_dim: 64
+      learning_rate: 0.001
+
+  - id: "gat"
+    description: "Graph Attention Network instead of GCN"
+    params:
+      gcn_type: "gat"
+      gcn_hidden_dims: [64, 32]
+      gat_heads: 4
+      lstm_hidden_dim: 64
+      learning_rate: 0.001
+
+  - id: "small"
+    description: "Smaller model for faster training"
+    params:
+      gcn_type: "gcn"
+      gcn_hidden_dims: [32, 16]
+      lstm_hidden_dim: 32
+      lstm_num_layers: 1
+      learning_rate: 0.001
+
+  - id: "large"
+    description: "Larger model for complex patterns"
+    params:
+      gcn_type: "gcn"
+      gcn_hidden_dims: [128, 64, 32]
+      lstm_hidden_dim: 128
+      lstm_num_layers: 3
+      learning_rate: 0.0005
+
+  - id: "attention_fusion"
+    description: "Use attention for feature fusion"
+    params:
+      gcn_type: "gcn"
+      gcn_hidden_dims: [64, 32]
+      lstm_hidden_dim: 64
+      fusion_type: "attention"
+      learning_rate: 0.001
+
+  - id: "deep_gcn"
+    description: "Deeper GCN with skip connections"
+    params:
+      gcn_type: "gcn"
+      gcn_hidden_dims: [64, 64, 32, 32]
+      gcn_skip_connection: true
+      lstm_hidden_dim: 64
+      learning_rate: 0.0005
+
+  - id: "s1_best"
+    description: "Best configuration for Scenario 1"
+    params:
+      gcn_type: "gcn"
+      gcn_hidden_dims: [64, 32]
+      lstm_hidden_dim: 64
+      learning_rate: 0.001
+
+  - id: "s2_best"
+    description: "Best configuration for Scenario 2"
+    params:
+      gcn_type: "gcn"
+      gcn_hidden_dims: [64, 32]
+      lstm_hidden_dim: 64
+      learning_rate: 0.0005
+
+# =============================================================================
+# MODEL HYPERPARAMETERS (Base Configuration)
+# =============================================================================
+# These are the default parameters used when active_config_id is null.
+# Named configs in sweep_configs override specific values.
+params:
+  # GCN configuration
+  gcn_type: "gcn"  # 'gcn' or 'gat'
+  gcn_hidden_dims: [64, 32]
+  gcn_dropout: 0.2
+  gcn_activation: "relu"
+  gcn_skip_connection: false
+  gcn_layer_norm: true
+  gat_heads: 4  # only used if gcn_type is 'gat'
+  
+  # LSTM configuration
+  lstm_hidden_dim: 64
+  lstm_num_layers: 2
+  lstm_dropout: 0.2
+  lstm_bidirectional: false
+  
+  # Feature dimensions
+  node_feature_dim: 16
+  seq_feature_dim: 32
+  static_feature_dim: 8
+  
+  # Graph embedding
+  graph_embed_dim: 32
+  
+  # Fusion configuration
+  fusion_type: "concat"  # 'concat', 'attention', or 'gate'
+  fusion_hidden_dim: 64
+  
+  # Output configuration
+  forecast_horizon: 1
+  output_dim: 1
+  
+  # Sequence configuration
+  lookback_window: 12
+
+# =============================================================================
+# TRAINING SETTINGS
+# =============================================================================
+training:
+  learning_rate: 0.001
+  weight_decay: 0.00001
+  batch_size: 32
+  max_epochs: 100
+  early_stopping_patience: 10
+  use_sample_weights: true
+  device: "auto"  # 'auto', 'cpu', or 'cuda'
+
+# =============================================================================
+# FEATURE CONFIGURATION
+# =============================================================================
+features:
+  # Time-varying features to use (subset of available features)
+  time_varying:
+    - n_generics
+    - avg_generic_price
+    - min_generic_price
+    - generic_penetration
+    - months_since_loe
+    - market_hhi
+    - brand_price
+    - volume_lag_1
+    - volume_lag_3
+    - volume_lag_6
+    - volume_ma_3
+    - volume_ma_6
+    - volume_trend
+  
+  # Static features (constant per drug/brand pair)
+  static:
+    - therapeutic_area_encoded
+    - route_encoded
+    - dosage_form_encoded
+
+# =============================================================================
+# GRAPH CONSTRUCTION CONFIGURATION
+# =============================================================================
+graph:
+  # Edge types to include
+  edge_types:
+    - therapeutic_area  # Connect drugs in same therapeutic area
+    - manufacturer      # Connect drugs from same manufacturer
+    - package_form     # Connect drugs with same dosage form
+  
+  # Edge weights
+  edge_weights:
+    therapeutic_area: 1.0
+    manufacturer: 0.5
+    package_form: 0.3
+  
+  # Self-loops
+  add_self_loops: true
+
+# =============================================================================
+# SCENARIO-SPECIFIC BEST PARAMS (for quick reference)
+# =============================================================================
+best_params:
+  scenario1:
+    gcn_type: "gcn"
+    gcn_hidden_dims: [64, 32]
+    lstm_hidden_dim: 64
+    learning_rate: 0.001
+  scenario2:
+    gcn_type: "gcn"
+    gcn_hidden_dims: [64, 32]
+    lstm_hidden_dim: 64
+    learning_rate: 0.0005
+
+# =============================================================================
+# ENSEMBLE SETTINGS
+# =============================================================================
+ensemble:
+  include: false  # Only include if improves official_metric
+  initial_weight: 0.1
+  min_weight: 0.0
+  max_weight: 0.3
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+logging:
+  level: INFO
+  save_attention_weights: true
+  save_graph_embeddings: true
+
+# =============================================================================
+# REPRODUCIBILITY
+# =============================================================================
+seed: 42

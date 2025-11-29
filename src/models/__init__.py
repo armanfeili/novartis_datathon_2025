@@ -25,6 +25,11 @@ Specialized models:
 - HybridPhysicsMLModel: Physics-based decay + ML residual learning
 - ARIHOWModel: ARIMA + Holt-Winters hybrid for time series
 
+Deep Learning models (require PyTorch):
+- KGGCNLSTMModel: Knowledge Graph GCN + LSTM (KG-GCN-LSTM paper)
+- CNNLSTMModel: CNN-LSTM for drug sales prediction (Li et al. 2024)
+- LSTMModel: Pure LSTM for ablation comparison
+
 Ensemble models:
 - AveragingEnsemble: Simple averaging of predictions
 - WeightedAveragingEnsemble: Weighted average with optimizable weights
@@ -73,6 +78,9 @@ _CatBoostModel = None
 _LGBMModel = None
 _XGBModel = None
 _NNModel = None
+_KGGCNLSTMModel = None
+_CNNLSTMModel = None
+_LSTMModel = None
 
 
 def _import_catboost():
@@ -107,6 +115,30 @@ def _import_nn():
     return _NNModel
 
 
+def _import_kg_gcn_lstm():
+    global _KGGCNLSTMModel
+    if _KGGCNLSTMModel is None:
+        from .kg_gcn_lstm import KGGCNLSTMModel
+        _KGGCNLSTMModel = KGGCNLSTMModel
+    return _KGGCNLSTMModel
+
+
+def _import_cnn_lstm():
+    global _CNNLSTMModel
+    if _CNNLSTMModel is None:
+        from .cnn_lstm import CNNLSTMModel
+        _CNNLSTMModel = CNNLSTMModel
+    return _CNNLSTMModel
+
+
+def _import_lstm():
+    global _LSTMModel
+    if _LSTMModel is None:
+        from .cnn_lstm import LSTMModel
+        _LSTMModel = LSTMModel
+    return _LSTMModel
+
+
 __all__ = [
     # Base class
     'BaseModel',
@@ -120,6 +152,10 @@ __all__ = [
     'BaselineModels',
     'HybridPhysicsMLModel',
     'ARIHOWModel',  # Lazy import - requires statsmodels
+    # Deep learning models (lazy import - require PyTorch)
+    'KGGCNLSTMModel',  # KG-GCN-LSTM paper
+    'CNNLSTMModel',  # Li et al. 2024
+    'LSTMModel',  # Ablation model
     # Ensemble models
     'AveragingEnsemble',
     'WeightedAveragingEnsemble',
@@ -145,6 +181,12 @@ def __getattr__(name: str):
         return _import_xgb()
     elif name == 'NNModel':
         return _import_nn()
+    elif name == 'KGGCNLSTMModel':
+        return _import_kg_gcn_lstm()
+    elif name == 'CNNLSTMModel':
+        return _import_cnn_lstm()
+    elif name == 'LSTMModel':
+        return _import_lstm()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -157,6 +199,7 @@ def get_model_class(name: str):
             - Tree boosters: 'catboost', 'cat', 'lightgbm', 'lgbm', 'xgboost', 'xgb'
             - Linear: 'linear', 'ridge', 'lasso', 'elasticnet', 'huber'
             - Neural: 'nn', 'neural', 'mlp'
+            - Deep learning: 'kg_gcn_lstm', 'cnn_lstm', 'lstm'
             - Baselines: 'global_mean', 'flat', 'trend', 'historical_curve', 'knn_curve'
             - Specialized: 'hybrid_lgbm', 'hybrid_xgb', 'arihow'
             - Ensembles: 'averaging', 'weighted', 'stacking', 'blending'
@@ -179,6 +222,14 @@ def get_model_class(name: str):
         'nn': _import_nn,
         'neural': _import_nn,
         'mlp': _import_nn,
+        # Deep learning models (lazy import - require PyTorch)
+        'kg_gcn_lstm': _import_kg_gcn_lstm,
+        'kggcnlstm': _import_kg_gcn_lstm,
+        'gcn_lstm': _import_kg_gcn_lstm,
+        'cnn_lstm': _import_cnn_lstm,
+        'cnnlstm': _import_cnn_lstm,
+        'lstm': _import_lstm,
+        'lstm_only': _import_lstm,
         # Linear models (eager import - no native deps)
         'linear': lambda: LinearModel,
         'ridge': lambda: LinearModel,

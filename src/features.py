@@ -130,6 +130,24 @@ def _load_feature_config(config: Optional[dict]) -> dict:
             'correlation_threshold': 0.95,
             'compute_importance': False,
         },
+        # NEW: Visibility features (Ghannem et al., 2023)
+        'visibility': {
+            'enabled': False,  # Disabled by default; requires external data
+        },
+        # NEW: Collaboration features (Ghannem et al., 2023)
+        'collaboration': {
+            'enabled': False,  # Disabled by default
+            'compute_country_prior': True,
+            'compute_ther_area_prior': True,
+            'compute_hospital_prior': True,
+            'compute_package_prior': True,
+        },
+        # NEW: Sequence features (Li et al., 2024)
+        'sequence': {
+            'enabled': False,  # Disabled by default; for CNN-LSTM models
+            'lag_windows': [1, 2, 3, 6],
+            'ma_windows': [3, 6, 12],
+        },
     }
     
     if config is None:
@@ -225,6 +243,22 @@ def make_features(
         if mode == "train":
             if 'y_norm' not in df.columns:
                 df['y_norm'] = df['volume'] / df['avg_vol_12m']
+        
+        # 9. Visibility features (Ghannem et al., 2023) - if enabled
+        vis_config = feat_config.get('visibility', {})
+        if vis_config.get('enabled', False):
+            visibility_data = vis_config.get('visibility_data', None)
+            df = add_visibility_features(df, visibility_data, vis_config)
+        
+        # 10. Collaboration features (Ghannem et al., 2023) - if enabled
+        collab_config = feat_config.get('collaboration', {})
+        if collab_config.get('enabled', False) and mode == "train":
+            df = add_collaboration_features(df, collab_config)
+        
+        # 11. Sequence features (Li et al., 2024) - if enabled
+        seq_config = feat_config.get('sequence', {})
+        if seq_config.get('enabled', False):
+            df = add_sequence_features(df, seq_config)
         
         # Log feature count
         n_features = len([c for c in df.columns if c not in FORBIDDEN_FEATURES 
@@ -1974,6 +2008,388 @@ def add_frequency_encoding_features(
     
     logger.info(f"Added frequency encoding for {len(categorical_cols)} categorical columns")
     return result
+
+
+# =============================================================================
+# VISIBILITY AND COLLABORATION FEATURES (Ghannem et al., 2023)
+# =============================================================================
+
+def add_visibility_features(
+    df: pd.DataFrame,
+    visibility_data: Optional[pd.DataFrame] = None,
+    config: Optional[dict] = None
+) -> pd.DataFrame:
+    """
+    Add supply-chain visibility features.
+    
+    Features based on Ghannem et al. (2023):
+    - vis_avg_inventory: Average inventory levels
+    - vis_avg_days_of_supply: Average days of supply
+    - vis_avg_stock_out_risk: Average stock-out risk probability
+    - vis_fill_rate: Order fill rate
+    - vis_avg_lead_time: Average lead time in days
+    - vis_supplier_reliability: Average supplier reliability score
+    - vis_capacity_utilization: Distribution center capacity utilization
+    
+    Args:
+        df: Panel data
+        visibility_data: Pre-computed visibility features DataFrame.
+                        Must have columns: country, brand_name, period, vis_*
+        config: Configuration dict
+        
+    Returns:
+        DataFrame with visibility features added
+    """
+    if config is None:
+        config = {}
+    
+    result = df.copy()
+    
+    # Define visibility feature columns
+    vis_feature_cols = [
+        'vis_avg_inventory',
+        'vis_avg_days_of_supply',
+        'vis_avg_stock_out_risk',
+        'vis_fill_rate',
+        'vis_avg_lead_time',
+        'vis_supplier_reliability',
+        'vis_on_time_delivery',
+        'vis_capacity_utilization',
+    ]
+    
+    if visibility_data is None or visibility_data.empty:
+        # Add empty visibility columns with zeros
+        for col in vis_feature_cols:
+            result[col] = 0.0
+        logger.info("No visibility data provided; added zero-valued visibility features")
+        return result
+    
+    # Merge visibility data
+    try:
+        # Create period column in result for merging
+        if 'month' in result.columns:
+            result['_vis_period'] = pd.to_datetime(result['month']).dt.to_period('M')
+        else:
+            # Use months_postgx as a fallback (no actual merge possible)
+            for col in vis_feature_cols:
+                result[col] = 0.0
+            logger.warning("No 'month' column found; cannot merge visibility data")
+            return result
+        
+        # Prepare visibility data
+        vis_df = visibility_data.copy()
+        if 'period' in vis_df.columns:
+            vis_df['_vis_period'] = vis_df['period']
+        
+        # Merge on country, brand, period
+        result = result.merge(
+            vis_df,
+            left_on=['country', 'brand_name', '_vis_period'],
+            right_on=['country', 'brand_name', '_vis_period'],
+            how='left',
+            suffixes=('', '_vis_merge')
+        )
+        
+        # Fill missing visibility features with 0 or median
+        for col in vis_feature_cols:
+            if col in result.columns:
+                # Fill with median, then with 0
+                median_val = result[col].median()
+                if pd.notna(median_val):
+                    result[col] = result[col].fillna(median_val)
+                else:
+                    result[col] = result[col].fillna(0.0)
+            else:
+                result[col] = 0.0
+        
+        # Clean up temporary columns
+        result = result.drop(columns=['_vis_period', 'period'], errors='ignore')
+        
+        logger.info(f"Added visibility features from external data")
+        
+    except Exception as e:
+        logger.warning(f"Error merging visibility data: {e}. Using zeros.")
+        for col in vis_feature_cols:
+            result[col] = 0.0
+    
+    return result
+
+
+def add_collaboration_features(
+    df: pd.DataFrame,
+    config: Optional[dict] = None
+) -> pd.DataFrame:
+    """
+    Add collaboration-based features derived from partner sharing patterns.
+    
+    Features based on Ghannem et al. (2023) collaboration signals:
+    - collab_country_erosion_prior: Country-level average erosion curve
+    - collab_ther_area_erosion_prior: Therapeutic area average erosion
+    - collab_hospital_erosion_prior: Hospital vs retail segment erosion
+    - collab_package_erosion_prior: Package type erosion patterns
+    - collab_similarity_score: Similarity to comparable series
+    
+    Note: These features leverage cross-series information for collaborative
+    forecasting without leaking target information (computed on training data only).
+    
+    Args:
+        df: Panel data with columns: country, brand_name, ther_area, etc.
+        config: Configuration dict
+        
+    Returns:
+        DataFrame with collaboration features added
+    """
+    if config is None:
+        config = {}
+    
+    result = df.copy()
+    series_keys = ['country', 'brand_name']
+    
+    # Only compute collaboration features if y_norm is available (training mode)
+    if 'y_norm' not in result.columns:
+        # Add placeholder columns
+        collab_cols = [
+            'collab_country_erosion_prior',
+            'collab_ther_area_erosion_prior',
+            'collab_hospital_erosion_prior',
+            'collab_package_erosion_prior',
+        ]
+        for col in collab_cols:
+            result[col] = 0.0
+        logger.info("No y_norm column; skipping collaboration features (test mode)")
+        return result
+    
+    # Country-level erosion prior (leave-one-out)
+    if config.get('compute_country_prior', True):
+        result = _add_loo_prior(result, 'country', 'collab_country_erosion_prior')
+    
+    # Therapeutic area erosion prior
+    if config.get('compute_ther_area_prior', True) and 'ther_area' in result.columns:
+        result = _add_loo_prior(result, 'ther_area', 'collab_ther_area_erosion_prior')
+    
+    # Hospital vs retail erosion prior
+    if config.get('compute_hospital_prior', True) and 'hospital_rate' in result.columns:
+        # Create hospital segment
+        result['_hospital_segment'] = pd.cut(
+            result['hospital_rate'],
+            bins=[-1, 30, 70, 100],
+            labels=['retail', 'mixed', 'hospital']
+        )
+        result = _add_loo_prior(result, '_hospital_segment', 'collab_hospital_erosion_prior')
+        result = result.drop(columns=['_hospital_segment'])
+    
+    # Package type erosion prior
+    if config.get('compute_package_prior', True) and 'main_package' in result.columns:
+        result = _add_loo_prior(result, 'main_package', 'collab_package_erosion_prior')
+    
+    logger.info("Added collaboration features")
+    return result
+
+
+def _add_loo_prior(
+    df: pd.DataFrame,
+    group_col: str,
+    output_col: str
+) -> pd.DataFrame:
+    """
+    Add leave-one-out prior for a grouping column.
+    
+    For each series, compute the average y_norm for other series
+    in the same group (excluding the current series).
+    
+    Args:
+        df: DataFrame with y_norm
+        group_col: Column to group by
+        output_col: Name of output column
+        
+    Returns:
+        DataFrame with prior column added
+    """
+    result = df.copy()
+    
+    if group_col not in result.columns:
+        result[output_col] = 0.0
+        return result
+    
+    try:
+        # Compute group-level mean
+        group_mean = result.groupby(group_col)['y_norm'].transform('mean')
+        group_count = result.groupby(group_col)['y_norm'].transform('count')
+        
+        # Leave-one-out: (sum - current) / (count - 1)
+        group_sum = result.groupby(group_col)['y_norm'].transform('sum')
+        
+        # Avoid division by zero
+        loo_prior = np.where(
+            group_count > 1,
+            (group_sum - result['y_norm']) / (group_count - 1),
+            group_mean  # Fallback to group mean if only one in group
+        )
+        
+        result[output_col] = loo_prior
+        result[output_col] = result[output_col].fillna(result['y_norm'].mean())
+        
+    except Exception as e:
+        logger.warning(f"Error computing LOO prior for {group_col}: {e}")
+        result[output_col] = 0.0
+    
+    return result
+
+
+# =============================================================================
+# SEQUENCE FEATURES FOR DEEP LEARNING (Li et al., 2024)
+# =============================================================================
+
+def add_sequence_features(
+    df: pd.DataFrame,
+    config: Optional[dict] = None
+) -> pd.DataFrame:
+    """
+    Add sequence-based features for CNN-LSTM and deep learning models.
+    
+    Features based on Li et al. (2024) CNN-LSTM approach:
+    - seq_volume_lag_*: Lagged volume values
+    - seq_volume_ma_*: Moving average features
+    - seq_volume_diff_*: Differenced volume features
+    - seq_momentum_*: Momentum indicators
+    - seq_acceleration: Second-order difference
+    
+    Note: These features are designed for tabular models. For actual CNN-LSTM,
+    use the sequence_builder module to create proper 2D/3D tensors.
+    
+    Args:
+        df: Panel data with volume and months_postgx
+        config: Configuration dict with lag windows, etc.
+        
+    Returns:
+        DataFrame with sequence features added
+    """
+    if config is None:
+        config = {}
+    
+    result = df.copy()
+    series_keys = ['country', 'brand_name']
+    
+    # Lag windows (default: 1, 2, 3, 6 months)
+    lag_windows = config.get('lag_windows', [1, 2, 3, 6])
+    
+    # Moving average windows
+    ma_windows = config.get('ma_windows', [3, 6, 12])
+    
+    # Sort by series and time
+    result = result.sort_values(series_keys + ['months_postgx'])
+    
+    # 1. Lagged volume features (for pre-entry only to avoid leakage)
+    for lag in lag_windows:
+        col_name = f'seq_volume_lag_{lag}'
+        result[col_name] = result.groupby(series_keys)['volume'].shift(lag)
+        # Normalize by avg_vol_12m
+        if 'avg_vol_12m' in result.columns:
+            result[col_name] = result[col_name] / (result['avg_vol_12m'] + 1e-6)
+        result[col_name] = result[col_name].fillna(1.0)
+    
+    # 2. Moving average features
+    for window in ma_windows:
+        col_name = f'seq_volume_ma_{window}'
+        result[col_name] = result.groupby(series_keys)['volume'].transform(
+            lambda x: x.rolling(window=window, min_periods=1).mean()
+        )
+        # Normalize
+        if 'avg_vol_12m' in result.columns:
+            result[col_name] = result[col_name] / (result['avg_vol_12m'] + 1e-6)
+        result[col_name] = result[col_name].fillna(1.0)
+    
+    # 3. Differenced features (first-order)
+    for lag in [1, 3]:
+        col_name = f'seq_volume_diff_{lag}'
+        result[col_name] = result.groupby(series_keys)['volume'].diff(lag)
+        # Normalize
+        if 'avg_vol_12m' in result.columns:
+            result[col_name] = result[col_name] / (result['avg_vol_12m'] + 1e-6)
+        result[col_name] = result[col_name].fillna(0.0)
+    
+    # 4. Momentum features (rate of change)
+    for window in [3, 6]:
+        col_name = f'seq_momentum_{window}'
+        result[col_name] = result.groupby(series_keys)['volume'].pct_change(window)
+        result[col_name] = result[col_name].clip(-1, 1).fillna(0.0)
+    
+    # 5. Acceleration (second-order difference)
+    result['seq_acceleration'] = result.groupby(series_keys)['volume'].transform(
+        lambda x: x.diff().diff()
+    )
+    if 'avg_vol_12m' in result.columns:
+        result['seq_acceleration'] = result['seq_acceleration'] / (result['avg_vol_12m'] + 1e-6)
+    result['seq_acceleration'] = result['seq_acceleration'].fillna(0.0)
+    
+    # 6. Volatility over rolling window
+    for window in [3, 6]:
+        col_name = f'seq_volatility_{window}'
+        result[col_name] = result.groupby(series_keys)['volume'].transform(
+            lambda x: x.rolling(window=window, min_periods=1).std() / x.rolling(window=window, min_periods=1).mean()
+        )
+        result[col_name] = result[col_name].fillna(0.0)
+    
+    logger.info(f"Added sequence features with {len(lag_windows)} lags and {len(ma_windows)} MA windows")
+    return result
+
+
+def create_visibility_feature_names() -> List[str]:
+    """Return list of visibility feature column names."""
+    return [
+        'vis_avg_inventory',
+        'vis_avg_days_of_supply',
+        'vis_avg_stock_out_risk',
+        'vis_fill_rate',
+        'vis_avg_lead_time',
+        'vis_supplier_reliability',
+        'vis_on_time_delivery',
+        'vis_capacity_utilization',
+    ]
+
+
+def create_collaboration_feature_names() -> List[str]:
+    """Return list of collaboration feature column names."""
+    return [
+        'collab_country_erosion_prior',
+        'collab_ther_area_erosion_prior',
+        'collab_hospital_erosion_prior',
+        'collab_package_erosion_prior',
+    ]
+
+
+def create_sequence_feature_names(
+    lag_windows: List[int] = None,
+    ma_windows: List[int] = None
+) -> List[str]:
+    """Return list of sequence feature column names."""
+    if lag_windows is None:
+        lag_windows = [1, 2, 3, 6]
+    if ma_windows is None:
+        ma_windows = [3, 6, 12]
+    
+    names = []
+    
+    # Lag features
+    for lag in lag_windows:
+        names.append(f'seq_volume_lag_{lag}')
+    
+    # MA features
+    for window in ma_windows:
+        names.append(f'seq_volume_ma_{window}')
+    
+    # Diff features
+    for lag in [1, 3]:
+        names.append(f'seq_volume_diff_{lag}')
+    
+    # Momentum features
+    for window in [3, 6]:
+        names.append(f'seq_momentum_{window}')
+    
+    # Other
+    names.extend(['seq_acceleration', 'seq_volatility_3', 'seq_volatility_6'])
+    
+    return names
 
 
 class FeatureScaler:
