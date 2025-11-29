@@ -25,6 +25,12 @@ catboost==1.2.8
 scikit-learn==1.7.2
 joblib==1.5.2
 
+# Time series models
+statsmodels==0.14.4
+
+# Optimization
+scipy==1.15.3
+
 # Deep learning utilities
 tqdm==4.67.1
 

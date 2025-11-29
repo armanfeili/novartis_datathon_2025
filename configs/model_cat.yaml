@@ -8,15 +8,27 @@
 # spend time sweeping. Use for ensemble only if it improves official_metric.
 #
 # Usage:
-#   - Single run: Set sweep.enabled=false, use scalar params
-#   - Sweep mode: Set sweep.enabled=true (not recommended - low ROI)
-#   - GPU mode:   Set gpu.enabled=true (auto-configured in notebook)
+#   - Single run: Set sweep.enabled=false, use params directly
+#   - Named config: Set active_config_id to use a preset from sweep_configs
+#   - Sweep mode: Set sweep.enabled=true to iterate (not recommended - low ROI)
+#   - GPU mode: Set gpu.enabled=true (auto-configured in notebook)
+#
+# CLI Examples:
+#   python -m src.train --scenario 1 --model catboost
+#   python -m src.train --scenario 1 --model catboost --config-id conservative
 # =============================================================================
 
 model:
   name: "catboost"
   task: "regression"
   priority: 3  # Tertiary model - for ensemble diversity only
+
+# =============================================================================
+# ACTIVE CONFIGURATION ID
+# =============================================================================
+# Set this to use a specific named configuration from sweep_configs.
+# Set to null or "default" to use the base params below.
+active_config_id: null
 
 # =============================================================================
 # GPU CONFIGURATION
@@ -30,28 +42,77 @@ gpu:
 # =============================================================================
 # NOTE: Sweeping CatBoost has low ROI - XGBoost/LightGBM are better.
 # Only use for final ensemble diversity check.
+#
+# Modes:
+#   - "configs": Iterate over sweep_configs list (explicit configs)
+#   - "grid": Expand sweep.grid into Cartesian product of all combinations
 sweep:
   enabled: false
+  mode: "configs"  # "configs" or "grid"
   selection_metric: "official_metric"  # PRIMARY: Use official PE metric
-  n_folds: 3                           # K-fold CV for robustness
-  # Sweep axes with values (minimal - low priority)
-  axes:
+  n_folds: 3  # K-fold CV for robustness
+  
+  # Grid mode: Expand all combinations (minimal - low priority)
+  grid:
     depth: [4, 6]
     learning_rate: [0.03, 0.05]
 
 # =============================================================================
-# MODEL HYPERPARAMETERS
+# NAMED SWEEP CONFIGURATIONS (explicit config list)
 # =============================================================================
+# Each config has: id, description (optional), and param overrides.
+sweep_configs:
+  - id: "default"
+    description: "Default balanced configuration"
+    params:
+      depth: 6
+      learning_rate: 0.03
+      l2_leaf_reg: 3.0
+
+  - id: "shallow"
+    description: "Shallow trees for simpler patterns"
+    params:
+      depth: 4
+      learning_rate: 0.05
+      l2_leaf_reg: 1.0
+
+  - id: "conservative"
+    description: "Conservative settings with strong regularization"
+    params:
+      depth: 5
+      learning_rate: 0.02
+      l2_leaf_reg: 10.0
+      random_strength: 2.0
+
+  - id: "s1_best"
+    description: "Best configuration for Scenario 1"
+    params:
+      depth: 6
+      learning_rate: 0.03
+      l2_leaf_reg: 3.0
+
+  - id: "s2_best"
+    description: "Best configuration for Scenario 2"
+    params:
+      depth: 6
+      learning_rate: 0.03
+      l2_leaf_reg: 3.0
+
+# =============================================================================
+# MODEL HYPERPARAMETERS (Base Configuration)
+# =============================================================================
+# These are the default parameters used when active_config_id is null.
+# Named configs in sweep_configs override specific values.
 params:
   # Core
   loss_function: "RMSE"
   eval_metric: "RMSE"  # Early stopping metric
   
-  # Tree structure - SWEEPABLE (low priority)
+  # Tree structure
   depth: 6
   min_data_in_leaf: 20
   
-  # Learning - SWEEPABLE (low priority)
+  # Learning
   learning_rate: 0.03
   iterations: 3000  # High value, rely on early stopping
   
@@ -67,10 +128,6 @@ params:
   random_seed: 42
   verbose: 100
   thread_count: -1
-  
-  # GPU settings (applied when gpu.enabled=true)
-  # task_type: "GPU"  # Set programmatically
-  # devices: "0"
 
 # =============================================================================
 # TRAINING SETTINGS
@@ -94,6 +151,7 @@ categorical_features:
 # =============================================================================
 # SCENARIO-SPECIFIC BEST PARAMS (for quick reference)
 # =============================================================================
+# Mapped to sweep_configs: s1_best, s2_best
 best_params:
   scenario1:
     depth: 6
