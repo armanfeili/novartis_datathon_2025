@@ -11,11 +11,16 @@
 |------|--------|-------|--------|------|
 | 1 | `config.py` | None | Constants, paths, params | Central configuration |
 | 2 | `data_loader.py` | Raw CSVs | Merged DataFrame | Load & combine all data |
+| 2a | Data Cleaning 🆕 | Merged DataFrame | Cleaned DataFrame | Remove duplicates, validate ranges |
 | 3 | `bucket_calculator.py` | Merged DataFrame | `aux_bucket_avgvol.csv` | Calculate pre-entry avg & buckets |
-| 4 | `feature_engineering.py` | Merged DataFrame + aux | DataFrame + 40 features | Create ML-ready features |
+| 4 | `feature_engineering.py` | Merged DataFrame + aux | DataFrame + **76 features** 🆕 | Create ML-ready features |
+| 4a | FeatureScaler 🆕 | Feature DataFrame | Scaled DataFrame | Standardize/normalize features |
+| 4b | Target Encoding 🆕 | Categorical columns | Encoded DataFrame | Leakage-safe target encoding |
 | 5 | `models.py` | Features (X) + Target (y) | Trained model + predictions | Train prediction model |
 | 5b | `HybridPhysicsMLModel` | Features + avg_vol + months | Hybrid model + predictions | Physics + ML combined |
-| 5c | `ARIHOWModel` 🆕 | Time-series per brand | ARHOW predictions | SARIMAX + Holt-Winters ensemble |
+| 5c | `ARIHOWModel` | Time-series per brand | ARHOW predictions | SARIMAX + Holt-Winters ensemble |
+| 5d | GroupKFold CV 🆕 | Features + groups | CV scores | Brand-aware cross-validation |
+| 5e | EnsembleBlender 🆕 | Multiple model preds | Blended predictions | Learn optimal ensemble weights |
 | 6 | `evaluation.py` | Predictions + Actuals | PE Score | Measure prediction quality |
 | 7 | `submission.py` | Test predictions | CSV + JSON summary | Format for competition |
 | 8 | `pipeline.py` | All modules | End-to-end execution | Orchestrate workflow |
@@ -57,6 +62,90 @@ Novartis needs to:
 Think of it like weather forecasting:
 - **Scenario 1** = Predicting next week's weather with only historical data
 - **Scenario 2** = Predicting next week's weather knowing today's weather
+
+---
+
+## 📂 Train vs Test Data: How They're Used
+
+### **NO, We Don't Merge Train + Test Together**
+
+The project keeps them **separate** for different purposes:
+
+### 🔵 TRAINING Data (`train=True`)
+
+| File | Purpose |
+|------|---------|
+| `df_volume_train.csv` | Historical sales (months -24 to +23) |
+| `df_generics_train.csv` | Competitor info |
+| `df_medicine_info.csv` | Drug characteristics |
+
+**Used for:**
+- **Learning patterns** - Train your ML models
+- **Feature engineering** - Compute avg_vol baselines  
+- **Validation** - Split into train/val to tune hyperparameters
+- **1,953 brands** with full history (before AND after generic entry)
+
+### 🟢 TEST Data (`train=False`)
+
+| File | Purpose |
+|------|---------|
+| `df_volume_test.csv` | Pre-entry data ONLY (months -24 to -1) |
+| `df_generics_test.csv` | Competitor info |
+| `df_medicine_info.csv` | Drug characteristics |
+
+**Used for:**
+- **Generating predictions** - Apply trained model to new brands
+- **Submission** - Create the CSV files you upload
+- **340 brands** - NO post-entry actuals (that's what you predict!)
+
+### 📋 Visual Data Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    TRAINING PHASE                               │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+    df_volume_TRAIN ──────────┼───► merge ───► features ───► train model
+    df_generics_TRAIN ────────┤                    │
+    df_medicine_info ─────────┘                    │
+                                                   │
+                              ┌─────────────────────┘
+                              │
+                    Train/Val Split (80/20 by brand)
+                              │
+                    ├── Train brands: learn patterns
+                    └── Val brands: evaluate PE score
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    SUBMISSION PHASE                             │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+    df_volume_TEST ───────────┼───► merge ───► features ───► predict
+    df_generics_TEST ─────────┤         │
+    df_medicine_info ─────────┘         │
+                                        │
+                         Only PRE-ENTRY data available!
+                         (months -24 to -1)
+                                        │
+                                        ▼
+                         Generate months 0-23 (Scenario 1)
+                         Generate months 6-23 (Scenario 2)
+                                        │
+                                        ▼
+                         submission CSV files
+```
+
+### Key Differences
+
+| Aspect | Training | Test |
+|--------|----------|------|
+| **Brands** | 1,953 | 340 |
+| **Post-entry data** | ✅ Has months 0-23 | ❌ Must predict |
+| **Pre-entry data** | ✅ Has months -24 to -1 | ✅ Has months -24 to -1 |
+| **Used for** | Learning | Predicting |
+| **avg_vol source** | Train brands | Test brands (separate calculation) |
+
+**Important:** Each test brand's predictions are normalized by **its own** pre-entry average!
 
 ---
 
@@ -120,7 +209,27 @@ MODELS_ENABLED = {
 }
 
 # =============================================================================
-# 3-13. Other sections: Paths, Constants, Model Parameters, etc.
+# 3. TIME-WINDOW SAMPLE WEIGHTS (NEW!) 🆕
+# =============================================================================
+USE_TIME_WINDOW_WEIGHTS = True  # Enable time-window based sample weighting
+
+# Scenario 1: Months 0-5 most important (50% of PE score!)
+S1_TIME_WINDOW_WEIGHTS = {
+    '0_5': 2.5,        # Months 0-5: 2.5× weight (matches PE formula)
+    '6_11': 1.0,       # Months 6-11: normal weight
+    '12_23': 0.5,      # Months 12-23: lower weight
+    'pre_entry': 0.1   # Pre-entry months: minimal weight
+}
+
+# Scenario 2: Months 6-11 most important (50% of PE score!)
+S2_TIME_WINDOW_WEIGHTS = {
+    '6_11': 2.5,       # Months 6-11: 2.5× weight (matches PE formula)
+    '12_23': 1.5,      # Months 12-23: higher weight (30% of PE)
+    'pre_entry': 0.1   # Pre-entry months: minimal weight
+}
+
+# =============================================================================
+# 4-14. Other sections: Paths, Constants, Model Parameters, etc.
 # =============================================================================
 ```
 
@@ -167,6 +276,64 @@ merged = merge_datasets(volume, generics, medicine)
 **In simple terms:** Like gathering ingredients from 3 different shelves and putting them on ONE cutting board.
 
 **Output:** A single DataFrame with ALL information per (country, brand, month).
+
+#### 2a. Data Cleaning Functions 🆕
+
+New data cleaning utilities to ensure data quality before feature engineering:
+
+```python
+from data_loader import (
+    remove_duplicates,
+    verify_months_postgx_range,
+    check_multiple_rows_per_month,
+    create_time_to_50pct_features,
+    impute_avg_vol_regression,
+    create_vol_norm_gt1_flag,
+    clean_data
+)
+```
+
+**`remove_duplicates(df)`** - Drops exact duplicate rows
+```python
+df_clean = remove_duplicates(df)
+# Logs: "Removed X duplicate rows (Y% of data)"
+```
+
+**`verify_months_postgx_range(df, expected_min=-9, expected_max=23)`** - Validates month range
+```python
+is_valid = verify_months_postgx_range(df)
+# Returns: True if all months_postgx in [-9, 23], else False with warning
+```
+
+**`check_multiple_rows_per_month(df)`** - Detects duplicate (brand, month) pairs
+```python
+duplicates = check_multiple_rows_per_month(df)
+# Returns: DataFrame of duplicate entries or empty if clean
+```
+
+**`create_time_to_50pct_features(df)`** - Calculate erosion speed metrics
+```python
+df = create_time_to_50pct_features(df)
+# Adds columns: time_to_50pct, reached_50pct, erosion_speed_category
+```
+
+**`impute_avg_vol_regression(df)`** - Fill missing avg_vol using ML regression
+```python
+df = impute_avg_vol_regression(df)
+# Uses GBT regressor to predict missing avg_vol from other features
+```
+
+**`create_vol_norm_gt1_flag(df)`** - Flag anomalous volume growth
+```python
+df = create_vol_norm_gt1_flag(df)
+# Adds: vol_norm_gt1 (binary flag for volume exceeding pre-entry baseline)
+```
+
+**`clean_data(df)`** - Run all cleaning steps in sequence
+```python
+df_clean = clean_data(df)
+# Combines: remove_duplicates → verify_months_postgx_range → etc.
+```
 
 ---
 
@@ -238,10 +405,10 @@ else:
 | | Description |
 |---|---|
 | 📥 **INPUT** | Merged DataFrame + `aux_bucket_avgvol.csv` (for avg_vol baseline) |
-| 📤 **OUTPUT** | DataFrame with original columns + ~40 NEW feature columns |
+| 📤 **OUTPUT** | DataFrame with original columns + **76 NEW feature columns** 🆕 |
 | 🎯 **GOAL** | Transform raw data into ML-friendly patterns that capture erosion dynamics |
 
-**What it does:** Creates ~40 features for the ML model to learn from.
+**What it does:** Creates **76 features** for the ML model to learn from.
 
 **Feature Categories:**
 
@@ -268,6 +435,7 @@ rolling_mean_12 = average of last 12 months
 n_gxs              = number of generic competitors NOW
 n_gxs_cummax       = maximum competitors seen so far
 months_with_generics = how long generics have been in market
+max_n_gxs_post     = max competitors the brand will ever face (brand-level) 🆕
 ```
 **Why?** More competitors = more erosion.
 
@@ -276,6 +444,8 @@ months_with_generics = how long generics have been in market
 avg_vol            = pre-entry average (the baseline)
 pre_entry_slope    = was sales growing or declining BEFORE generics?
 pre_entry_volatility = how stable were sales before?
+log_avg_vol        = log transform of avg_vol (reduces skew) 🆕
+pre_loe_growth_flag = 1 if pre-entry slope > 0 (growing brand) 🆕
 ```
 **Why?** In Scenario 1, this is ALL you have to predict with!
 
@@ -286,7 +456,122 @@ month_sin/cos = capture seasonality
 is_early_postgx = is this in first 6 months? (binary)
 ```
 
-**Output:** DataFrame with original data + ~40 new feature columns.
+#### F. Early Post-LOE Features (For Scenario 2) 🆕
+```python
+# Aggregate features from months 0-5 for Scenario 2 predictions
+early_vol_mean   = mean volume in months 0-5
+early_vol_min    = minimum volume in months 0-5
+early_vol_max    = maximum volume in months 0-5
+early_vol_last   = volume at month 5 (last known value)
+early_vol_slope  = linear trend in months 0-5
+early_erosion_ratio = (avg_vol - early_vol_mean) / avg_vol
+early_n_gxs_max  = max competitors seen in months 0-5
+early_volatility = std deviation in months 0-5
+```
+**Why?** In Scenario 2, we have actual months 0-5 - use them to predict 6-23!
+
+#### G. Anomaly & Quality Flags 🆕
+```python
+vol_norm_gt1     = binary flag for volume > pre-entry baseline
+time_to_50pct    = months until erosion reached 50%
+erosion_speed_category = 'fast', 'medium', 'slow', 'none'
+```
+
+**Output:** DataFrame with original data + **76 new feature columns**.
+
+#### 4a. FeatureScaler Class 🆕
+
+New class for standardized feature scaling:
+
+```python
+from feature_engineering import FeatureScaler, scale_features
+
+# Initialize scaler with different modes
+scaler = FeatureScaler(
+    mode='standard',      # 'standard', 'minmax', or 'log'
+    clip_outliers=True,   # Clip to 3 std deviations before scaling
+    epsilon=1e-8          # Smoothing for log transform
+)
+
+# Fit on training data
+scaler.fit(X_train)
+
+# Transform training and validation data
+X_train_scaled = scaler.transform(X_train)
+X_val_scaled = scaler.transform(X_val)
+
+# Or use convenience function
+X_scaled = scale_features(X_train, mode='standard')
+```
+
+**Scaling Modes:**
+- `standard`: Zero mean, unit variance (StandardScaler)
+- `minmax`: Scale to [0, 1] range (MinMaxScaler)
+- `log`: Log transform (good for skewed distributions like volume)
+
+#### 4b. Target Encoding (Leakage-Safe) 🆕
+
+Cross-validated target encoding to prevent data leakage:
+
+```python
+from feature_engineering import target_encode_cv, create_target_encoded_features
+
+# Within CV folds - encodes using only training data in each fold
+df_encoded = target_encode_cv(
+    df, 
+    col='ther_area',           # Column to encode
+    target='vol_norm',         # Target variable
+    cv=5,                      # Number of CV folds
+    smoothing=10               # Bayesian smoothing parameter
+)
+# Adds: ther_area_target_encoded
+
+# Batch encode multiple categorical columns
+df = create_target_encoded_features(df, target='vol_norm')
+# Encodes: ther_area, country, nfc_code (if present)
+```
+
+**Why target encoding?** Converts high-cardinality categoricals (like country) to meaningful numeric values based on target correlation, without label leakage.
+
+#### 4c. Sample Weighting (Time-Window Based) 🆕
+
+Configurable sample weights that emphasize important time periods:
+
+```python
+from feature_engineering import (
+    compute_time_window_weights,
+    compute_combined_sample_weights
+)
+
+# Time-window only weights
+weights = compute_time_window_weights(df, scenario=1)
+# Uses config.S1_TIME_WINDOW_WEIGHTS:
+#   months 0-5:   2.5x weight (MOST important for scoring!)
+#   months 6-11:  1.0x weight
+#   months 12-23: 0.5x weight
+#   pre-entry:    0.1x weight
+
+# Combined bucket × time-window weights
+weights = compute_combined_sample_weights(df, scenario=1)
+# Multiplies bucket weights × time-window weights
+```
+
+**Why weighting?** PE scoring weights months 0-5 at 50% - train model to prioritize these!
+
+#### 4d. Horizon-as-Row Dataset 🆕
+
+Alternative dataset structure for forecasting models:
+
+```python
+from feature_engineering import create_horizon_as_row_dataset
+
+# Convert time-series to cross-sectional format
+df_horizon = create_horizon_as_row_dataset(df, horizons=[0, 6, 12, 18])
+# Each row is (brand, horizon) with features from observation point
+# Useful for: gradient boosting treating each horizon as independent prediction
+```
+
+**Output:** DataFrame with original data + **76 new feature columns**.
 
 ---
 
@@ -450,6 +735,91 @@ weights = arhow.get_brand_weights()
 
 ---
 
+### 5d. GroupKFold Cross-Validation 🆕
+
+**Prevent Brand Leakage in CV!**
+
+Standard KFold can split the same brand's months across train/val, causing leakage. GroupKFold ensures all months of a brand stay together:
+
+```python
+from models import GBTModel
+
+model = GBTModel(model_type='lightgbm')
+
+# GroupKFold CV - brands stay together in folds
+cv_results = model.cross_validate_grouped(
+    X, y,
+    groups=df['brand_id'],  # Brand identifier column
+    n_splits=5,             # Number of CV folds
+    sample_weight=weights   # Optional sample weights
+)
+
+# Returns dict with:
+# - 'fold_scores': list of fold validation scores
+# - 'mean_score': average across folds
+# - 'std_score': standard deviation
+# - 'fold_models': trained model per fold (optional)
+```
+
+**Why GroupKFold?**
+- Standard CV leaks future information when brand months span train/val
+- GroupKFold treats each brand as an atomic unit
+- More realistic estimate of generalization to NEW brands
+
+---
+
+### 5e. EnsembleBlender Class 🆕
+
+**Learn Optimal Model Combination Weights!**
+
+Instead of guessing ensemble weights, learn them from validation data:
+
+```python
+from models import EnsembleBlender, optimize_ensemble_weights
+
+# Get predictions from multiple models
+preds_dict = {
+    'exp_decay': baseline_model.predict(X_val),
+    'lightgbm': lgb_model.predict(X_val),
+    'hybrid': hybrid_model.predict(X_val)
+}
+
+# Option 1: EnsembleBlender class
+blender = EnsembleBlender(method='ridge')  # 'ridge', 'nnls', or 'simple'
+blender.fit(preds_dict, y_val, avg_vol=avg_vol_val)
+
+# Get learned weights
+print(blender.weights_)
+# {'exp_decay': 0.65, 'lightgbm': 0.25, 'hybrid': 0.10}
+
+# Blend predictions for test set
+test_preds_dict = {
+    'exp_decay': baseline_model.predict(X_test),
+    'lightgbm': lgb_model.predict(X_test),
+    'hybrid': hybrid_model.predict(X_test)
+}
+final_preds = blender.predict(test_preds_dict)
+
+# Option 2: Convenience function
+weights, blender = optimize_ensemble_weights(
+    preds_dict, y_val, 
+    method='ridge',
+    return_blender=True
+)
+```
+
+**Blending Methods:**
+- `ridge`: Ridge regression (handles correlated predictions)
+- `nnls`: Non-negative least squares (weights ≥ 0)
+- `simple`: Equal weights (baseline)
+
+**Why Ensemble Blending?**
+- Different models capture different patterns
+- Learned weights adapt to your specific data
+- Often beats best single model
+
+---
+
 ### 6️⃣ `src/evaluation.py` - The Scoring System
 
 | | Description |
@@ -495,6 +865,92 @@ Final Score = (2 × avg_PE_bucket1 + 1 × avg_PE_bucket2) / total_weighted_brand
 - Bucket 2 average PE: 0.3 (100 brands)
 - Final = (2×0.5×10 + 1×0.3×100) / (2×10 + 1×100) = (10 + 30) / 120 = 0.33
 
+#### 📊 Detailed PE Calculation Example
+
+**Setup: One Brand Example**
+
+Let's say you're predicting for **Brand_ABC** in **Country_001**:
+
+| Pre-Entry Data (months -12 to -1) | Volume |
+|-----------------------------------|--------|
+| Month -12 | 1000 |
+| Month -11 | 1100 |
+| ... | ... |
+| Month -1 | 1200 |
+| **Avg_j (pre-entry average)** | **1000** |
+
+**Your Predictions vs Actuals (Scenario 1):**
+
+| Month | Prediction | Actual | Error |
+|-------|------------|--------|-------|
+| 0 | 800 | 750 | 50 |
+| 1 | 750 | 700 | 50 |
+| 2-5 | ... | ... | ... |
+| 6-23 | ... | ... | ... |
+
+**Step 1: Calculate Each PE Term**
+
+```
+Term 1 (Monthly): 0.2 × (Σ|errors| / 24 / avg_vol) = 0.2 × (600/24/1000) = 0.005
+Term 2 (Sum 0-5): 0.5 × (|Σerr| / 6 / avg_vol) = 0.5 × (270/6/1000) = 0.0225  ⭐ 50%!
+Term 3 (Sum 6-11): 0.2 × (|Σerr| / 6 / avg_vol) = 0.2 × (150/6/1000) = 0.005
+Term 4 (Sum 12-23): 0.1 × (|Σerr| / 12 / avg_vol) = 0.1 × (100/12/1000) = 0.00083
+
+PE_brand = 0.005 + 0.0225 + 0.005 + 0.00083 = 0.0333
+```
+
+**Step 2: Aggregate with Bucket Weighting**
+
+```
+Bucket 1 (40 brands): avg PE = 0.04  →  weighted: 2 × 0.04 = 0.08
+Bucket 2 (300 brands): avg PE = 0.025 → weighted: 1 × 0.025 = 0.025
+
+Final Score = 0.08 + 0.025 = 0.105
+```
+
+**Visual Summary:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    PE CALCULATION FLOW                       │
+└─────────────────────────────────────────────────────────────┘
+
+For EACH brand:
+┌─────────────────────────────────────────────────────────────┐
+│  Monthly errors (0-23)     ──► 0.2 × (Σ|err|/24/avg_vol)    │ → 20%
+│  Sum error months 0-5      ──► 0.5 × (|Σerr|/6/avg_vol)     │ → 50% ⭐
+│  Sum error months 6-11     ──► 0.2 × (|Σerr|/6/avg_vol)     │ → 20%
+│  Sum error months 12-23    ──► 0.1 × (|Σerr|/12/avg_vol)    │ → 10%
+│                                                              │
+│  PE_brand = Term1 + Term2 + Term3 + Term4                    │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  BUCKET WEIGHTING                                            │
+│                                                              │
+│  Bucket 1 (high erosion):  2× weight  ← FOCUS HERE!         │
+│  Bucket 2 (normal erosion): 1× weight                        │
+│                                                              │
+│  Final = (2/n_B1)×Σ(PE_B1) + (1/n_B2)×Σ(PE_B2)              │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                    🎯 LOWER = BETTER 🎯
+                    
+        0.0 = Perfect    |    3.0+ = Very Bad
+```
+
+**Key Takeaways for Winning:**
+
+| Priority | Focus Area | Why |
+|----------|------------|-----|
+| **#1** | Months 0-5 accuracy | 50% of your PE score! |
+| **#2** | Bucket 1 brands | Errors count 2× |
+| **#3** | Early erosion pattern | Get the "cliff" shape right |
+| **#4** | Months 6-11 | 20% of score |
+| **#5** | Months 12-23 | Only 10% of score |
+
 ---
 
 ### 7️⃣ `src/submission.py` - The Output Generator
@@ -530,6 +986,28 @@ Final Score = (2 × avg_PE_bucket1 + 1 × avg_PE_bucket2) / total_weighted_brand
 **Example output:**
 - Scenario 1: 340 brands × 24 months = 8,160 rows
 - Scenario 2: 340 brands × 18 months = 6,120 rows
+
+#### 📤 Files to Upload (Competition Submission)
+
+You need to upload **2 CSV files**:
+
+| File | Predicts | For |
+|------|----------|-----|
+| `scenario1_[model]_final.csv` | Months **0-23** (24 months) | 228 test brands |
+| `scenario2_[model]_final.csv` | Months **6-23** (18 months) | 112 test brands |
+
+**Expected Row Counts:**
+
+| Submission | Brands | Months | Total Rows |
+|------------|--------|--------|------------|
+| **Scenario 1** | 228 | 24 (0-23) | **5,472 rows** |
+| **Scenario 2** | 112 | 18 (6-23) | **2,016 rows** |
+
+**Generate & Validate:**
+```powershell
+python scripts/generate_final_submissions.py  # Generate both files
+python scripts/validate_submissions.py        # Validate before upload
+```
 
 ---
 
@@ -1256,6 +1734,62 @@ Main_project/
 ### 6. **Pandas FutureWarning Fix**
 - Updated `feature_engineering.py` to use `include_groups=False` in groupby operations
 - Prevents deprecation warnings in newer pandas versions
+
+### 7. **Data Cleaning Functions** 🆕🔥
+- **`remove_duplicates()`** - Removes exact duplicate rows
+- **`verify_months_postgx_range()`** - Validates months_postgx values are in expected range
+- **`check_multiple_rows_per_month()`** - Detects duplicate (brand, month) combinations
+- **`create_time_to_50pct_features()`** - Calculates time to 50% erosion and speed category
+- **`impute_avg_vol_regression()`** - ML-based imputation for missing avg_vol
+- **`create_vol_norm_gt1_flag()`** - Flags anomalous volume growth above baseline
+- **`clean_data()`** - Master function that runs all cleaning steps
+
+### 8. **Feature Engineering Enhancements** 🆕🔥
+- **Feature count increased from 40 to 76 features!**
+- **`FeatureScaler` class** - StandardScaler, MinMaxScaler, and log transforms with outlier clipping
+- **`target_encode_cv()`** - Leakage-safe target encoding within CV folds
+- **`create_log_avg_vol()`** - Log transform of avg_vol (reduces skew)
+- **`create_pre_loe_growth_flag()`** - Binary flag for brands with positive pre-LOE growth
+- **`create_max_n_gxs_post_feature()`** - Brand-level max competitors post-LOE
+- **`create_early_postloe_features()`** - 8 new features from months 0-5 for Scenario 2
+- **`compute_time_window_weights()`** - Sample weights aligned with PE scoring formula
+- **`create_horizon_as_row_dataset()`** - Alternative dataset structure for forecasting
+
+### 9. **Time-Window Sample Weighting** 🆕🔥
+- New config parameters: `USE_TIME_WINDOW_WEIGHTS`, `S1_TIME_WINDOW_WEIGHTS`, `S2_TIME_WINDOW_WEIGHTS`
+- Weights align with PE scoring formula:
+  - **Scenario 1:** months 0-5 get 2.5× weight (50% of PE score)
+  - **Scenario 2:** months 6-11 get 2.5× weight (50% of PE score)
+- Trains models to focus on time periods that matter most for competition scoring
+
+### 10. **GroupKFold Cross-Validation** 🆕
+- **`cross_validate_grouped()`** method in `GBTModel` class
+- Ensures all months of a brand stay together in CV folds
+- Prevents data leakage from brand months spanning train/val splits
+- More realistic estimate of generalization to new brands
+
+### 11. **EnsembleBlender Class** 🆕
+- **`EnsembleBlender`** - Learns optimal ensemble weights from validation data
+- **`optimize_ensemble_weights()`** - Convenience function for weight optimization
+- Three blending methods: `ridge`, `nnls` (non-negative), `simple` (equal)
+- Replaces manual weight tuning with data-driven optimization
+
+---
+
+## 📊 Feature Summary (76 Total)
+
+| Category | Count | Examples |
+|----------|-------|----------|
+| Lag Features | 4 | volume_lag_1, volume_lag_3, volume_lag_6, volume_lag_12 |
+| Rolling Features | 8 | rolling_mean_3, rolling_std_3, rolling_mean_6, rolling_mean_12 |
+| Competition Features | 5 | n_gxs, n_gxs_cummax, months_with_generics, max_n_gxs_post |
+| Pre-Entry Features | 6 | avg_vol, log_avg_vol, pre_entry_slope, pre_entry_volatility, pre_loe_growth_flag |
+| Time Features | 5 | months_postgx, month_sin, month_cos, is_early_postgx |
+| Early Post-LOE Features | 8 | early_vol_mean, early_vol_min, early_vol_max, early_erosion_ratio |
+| Categorical Encodings | 12 | ther_area_encoded, country_encoded, nfc_code_encoded |
+| Interaction Features | 15 | avg_vol_x_n_gxs, pre_slope_x_months, bucket_x_time |
+| Normalized Features | 8 | vol_norm, vol_norm_diff, vol_norm_pct_change |
+| Quality Flags | 5 | vol_norm_gt1, reached_50pct, erosion_speed_category |
 
 ---
 

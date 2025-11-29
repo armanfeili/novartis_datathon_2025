@@ -1081,6 +1081,111 @@ class GradientBoostingModel:
         
         return results
     
+    def cross_validate_grouped(self, X: pd.DataFrame, y: pd.Series,
+                                groups: pd.Series,
+                                n_splits: int = 5,
+                                stratify_col: pd.Series = None) -> dict:
+        """
+        Perform cross-validation with GroupKFold to ensure brands stay together.
+        
+        From Todo Section 4 (Cross-Validation Design):
+        - Use GroupKFold or StratifiedGroupKFold for CV
+        - Group by brand_name
+        - All months for each brand appear in only one fold
+        
+        Args:
+            X: Features DataFrame
+            y: Target Series
+            groups: Group labels (brand_name) for each row
+            n_splits: Number of CV folds
+            stratify_col: Optional column for stratification (e.g., bucket)
+            
+        Returns:
+            Dictionary with CV results
+        """
+        from sklearn.model_selection import GroupKFold, StratifiedGroupKFold
+        
+        if self.model_type == 'lightgbm':
+            base_model = lgb.LGBMRegressor(**self.params)
+        else:
+            base_model = xgb.XGBRegressor(**self.params)
+        
+        # Choose CV strategy
+        if stratify_col is not None:
+            try:
+                cv = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=42)
+                cv_splits = cv.split(X, stratify_col, groups)
+                cv_name = "StratifiedGroupKFold"
+            except:
+                # Fall back to GroupKFold if stratification fails
+                cv = GroupKFold(n_splits=n_splits)
+                cv_splits = cv.split(X, y, groups)
+                cv_name = "GroupKFold (stratification failed)"
+        else:
+            cv = GroupKFold(n_splits=n_splits)
+            cv_splits = cv.split(X, y, groups)
+            cv_name = "GroupKFold"
+        
+        # Manual cross-validation to get detailed metrics
+        fold_results = []
+        
+        for fold_idx, (train_idx, val_idx) in enumerate(cv_splits):
+            X_train_fold = X.iloc[train_idx]
+            X_val_fold = X.iloc[val_idx]
+            y_train_fold = y.iloc[train_idx]
+            y_val_fold = y.iloc[val_idx]
+            
+            # Clone and fit model
+            if self.model_type == 'lightgbm':
+                model = lgb.LGBMRegressor(**self.params)
+            else:
+                model = xgb.XGBRegressor(**self.params)
+            
+            model.fit(X_train_fold, y_train_fold)
+            y_pred = model.predict(X_val_fold)
+            
+            # Compute metrics
+            rmse = np.sqrt(np.mean((y_val_fold - y_pred) ** 2))
+            mae = np.mean(np.abs(y_val_fold - y_pred))
+            
+            # Count unique brands in fold
+            n_train_brands = groups.iloc[train_idx].nunique()
+            n_val_brands = groups.iloc[val_idx].nunique()
+            
+            fold_results.append({
+                'fold': fold_idx + 1,
+                'rmse': rmse,
+                'mae': mae,
+                'n_train_brands': n_train_brands,
+                'n_val_brands': n_val_brands,
+                'n_train_samples': len(train_idx),
+                'n_val_samples': len(val_idx)
+            })
+        
+        # Aggregate results
+        rmse_values = [r['rmse'] for r in fold_results]
+        mae_values = [r['mae'] for r in fold_results]
+        
+        results = {
+            'cv_method': cv_name,
+            'n_splits': n_splits,
+            'rmse_mean': np.mean(rmse_values),
+            'rmse_std': np.std(rmse_values),
+            'mae_mean': np.mean(mae_values),
+            'mae_std': np.std(mae_values),
+            'fold_details': fold_results
+        }
+        
+        print(f"✅ {cv_name} Cross-validation results ({n_splits} folds):")
+        print(f"   RMSE: {results['rmse_mean']:.4f} ± {results['rmse_std']:.4f}")
+        print(f"   MAE:  {results['mae_mean']:.4f} ± {results['mae_std']:.4f}")
+        print(f"   Fold details:")
+        for r in fold_results:
+            print(f"     Fold {r['fold']}: RMSE={r['rmse']:.4f}, "
+                  f"Train={r['n_train_brands']} brands, Val={r['n_val_brands']} brands")
+        
+        return results
+    
     def save(self, name: str) -> Path:
         """Save model to disk with timestamp and latest copy."""
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -1149,6 +1254,154 @@ def prepare_training_data(df: pd.DataFrame,
     
     print(f"✅ Prepared training data: X={X.shape}, y={y.shape}")
     return X, y
+
+
+# =============================================================================
+# ENSEMBLE BLENDING WEIGHTS (Section 3.5 - Hybrid/Ensemble Strategy)
+# =============================================================================
+
+class EnsembleBlender:
+    """
+    Ensemble blender that learns optimal weights for combining model predictions.
+    
+    From Todo Section 3.5 (Ensemble Strategy):
+    - Combine: y_pred = w_phys * y_phys + w_ml * y_ml + w_ts * y_ts
+    - Fit blending weights on validation data
+    - Constrain weights to sum to 1
+    """
+    
+    def __init__(self, constrain_weights: bool = True):
+        """
+        Initialize blender.
+        
+        Args:
+            constrain_weights: If True, weights must sum to 1
+        """
+        self.constrain_weights = constrain_weights
+        self.weights = None
+        self.model_names = None
+        
+    def fit(self, predictions: dict, y_true: np.ndarray,
+            sample_weights: np.ndarray = None) -> 'EnsembleBlender':
+        """
+        Learn optimal blending weights from validation data.
+        
+        Args:
+            predictions: Dict of {model_name: predictions_array}
+            y_true: True target values
+            sample_weights: Optional sample weights
+            
+        Returns:
+            self
+        """
+        from scipy.optimize import minimize
+        
+        self.model_names = list(predictions.keys())
+        pred_matrix = np.column_stack([predictions[name] for name in self.model_names])
+        
+        def loss_fn(weights):
+            """Weighted MSE loss."""
+            blended = pred_matrix @ weights
+            errors = (y_true - blended) ** 2
+            if sample_weights is not None:
+                errors = errors * sample_weights
+            return np.mean(errors)
+        
+        # Initial weights: equal
+        n_models = len(self.model_names)
+        x0 = np.ones(n_models) / n_models
+        
+        # Constraints
+        constraints = []
+        if self.constrain_weights:
+            # Weights sum to 1
+            constraints.append({'type': 'eq', 'fun': lambda w: np.sum(w) - 1})
+        
+        # Bounds: weights between 0 and 1
+        bounds = [(0, 1) for _ in range(n_models)]
+        
+        # Optimize
+        result = minimize(loss_fn, x0, method='SLSQP', bounds=bounds, constraints=constraints)
+        self.weights = result.x
+        
+        # Compute metrics
+        blended_pred = pred_matrix @ self.weights
+        rmse = np.sqrt(np.mean((y_true - blended_pred) ** 2))
+        mae = np.mean(np.abs(y_true - blended_pred))
+        
+        # Individual model RMSEs
+        individual_rmse = {}
+        for i, name in enumerate(self.model_names):
+            individual_rmse[name] = np.sqrt(np.mean((y_true - pred_matrix[:, i]) ** 2))
+        
+        print(f"✅ Ensemble blending weights learned:")
+        for i, name in enumerate(self.model_names):
+            print(f"   {name}: {self.weights[i]:.3f} (solo RMSE: {individual_rmse[name]:.4f})")
+        print(f"   Blended RMSE: {rmse:.4f} | MAE: {mae:.4f}")
+        
+        # Check if blending improves over best single model
+        best_single_rmse = min(individual_rmse.values())
+        improvement = (best_single_rmse - rmse) / best_single_rmse * 100
+        if improvement > 0:
+            print(f"   ✅ Blending improves over best single model by {improvement:.1f}%")
+        else:
+            print(f"   ⚠️ Blending worse than best single model by {-improvement:.1f}%")
+        
+        return self
+    
+    def predict(self, predictions: dict) -> np.ndarray:
+        """
+        Generate blended predictions.
+        
+        Args:
+            predictions: Dict of {model_name: predictions_array}
+            
+        Returns:
+            Blended predictions
+        """
+        if self.weights is None:
+            raise ValueError("Must call fit() before predict()")
+        
+        pred_matrix = np.column_stack([predictions[name] for name in self.model_names])
+        return pred_matrix @ self.weights
+    
+    def get_weights(self) -> dict:
+        """Get learned weights as dictionary."""
+        if self.weights is None:
+            return {}
+        return {name: weight for name, weight in zip(self.model_names, self.weights)}
+
+
+def optimize_ensemble_weights(val_df: pd.DataFrame,
+                               model_predictions: dict,
+                               target_col: str = 'volume',
+                               sample_weights: np.ndarray = None) -> dict:
+    """
+    Optimize ensemble weights using validation data.
+    
+    Convenience function that wraps EnsembleBlender.
+    
+    Args:
+        val_df: Validation DataFrame
+        model_predictions: Dict of {model_name: predictions_array}
+        target_col: Target column name
+        sample_weights: Optional sample weights
+        
+    Returns:
+        Dictionary with optimized weights and metrics
+    """
+    y_true = val_df[target_col].values
+    
+    blender = EnsembleBlender(constrain_weights=True)
+    blender.fit(model_predictions, y_true, sample_weights)
+    
+    blended_pred = blender.predict(model_predictions)
+    
+    return {
+        'weights': blender.get_weights(),
+        'blended_predictions': blended_pred,
+        'blender': blender
+    }
 
 
 def train_and_evaluate(X_train: pd.DataFrame, y_train: pd.Series,

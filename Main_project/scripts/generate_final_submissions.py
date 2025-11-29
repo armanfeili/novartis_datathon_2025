@@ -21,40 +21,110 @@ from submission import generate_submission, save_submission
 
 
 def get_full_config() -> dict:
-    """Get all configuration settings as a dictionary."""
+    """Get ALL configuration settings as a dictionary for reproducibility."""
     return {
+        # Section 1: Run Mode & Toggles
+        "run_mode": {
+            "run_scenario": RUN_SCENARIO,
+            "test_mode": TEST_MODE,
+            "test_mode_brands": TEST_MODE_BRANDS,
+            "run_eda": RUN_EDA,
+            "run_training": RUN_TRAINING,
+            "run_submission": RUN_SUBMISSION,
+            "run_validation": RUN_VALIDATION,
+        },
+        
+        # Section 2: Model Toggles
+        "models_enabled": MODELS_ENABLED,
+        "submissions_enabled": SUBMISSIONS_ENABLED,
+        
+        # Section 3: Paths
         "paths": {
             "project_root": str(PROJECT_ROOT),
             "data_raw": str(DATA_RAW),
             "data_processed": str(DATA_PROCESSED),
             "models_dir": str(MODELS_DIR),
             "submissions_dir": str(SUBMISSIONS_DIR),
-            "reports_dir": str(REPORTS_DIR)
+            "reports_dir": str(REPORTS_DIR),
         },
-        "constants": {
+        
+        # Section 5: Competition Constants
+        "competition_constants": {
             "pre_entry_months": PRE_ENTRY_MONTHS,
             "post_entry_months": POST_ENTRY_MONTHS,
             "bucket_1_threshold": BUCKET_1_THRESHOLD,
             "bucket_1_weight": BUCKET_1_WEIGHT,
-            "bucket_2_weight": BUCKET_2_WEIGHT
+            "bucket_2_weight": BUCKET_2_WEIGHT,
         },
+        
+        # Section 5b: Sample Weights
+        "sample_weights": {
+            "use_sample_weights": USE_SAMPLE_WEIGHTS,
+            "bucket_1_sample_weight": BUCKET_1_SAMPLE_WEIGHT,
+            "bucket_2_sample_weight": BUCKET_2_SAMPLE_WEIGHT,
+        },
+        
+        # Section 5c: Time-Window Weights
+        "time_window_weights": {
+            "use_time_window_weights": USE_TIME_WINDOW_WEIGHTS,
+            "s1_time_window_weights": S1_TIME_WINDOW_WEIGHTS,
+            "s2_time_window_weights": S2_TIME_WINDOW_WEIGHTS,
+        },
+        
+        # Section 6: Scoring Weights (PE Metric)
         "metric_weights_scenario1": {
             "monthly_weight": S1_MONTHLY_WEIGHT,
             "sum_0_5_weight": S1_SUM_0_5_WEIGHT,
             "sum_6_11_weight": S1_SUM_6_11_WEIGHT,
-            "sum_12_23_weight": S1_SUM_12_23_WEIGHT
+            "sum_12_23_weight": S1_SUM_12_23_WEIGHT,
         },
         "metric_weights_scenario2": {
             "monthly_weight": S2_MONTHLY_WEIGHT,
             "sum_6_11_weight": S2_SUM_6_11_WEIGHT,
-            "sum_12_23_weight": S2_SUM_12_23_WEIGHT
+            "sum_12_23_weight": S2_SUM_12_23_WEIGHT,
         },
+        
+        # Section 7: Baseline Model Parameters
+        "baseline_params": {
+            "decay_rate_range": DECAY_RATE_RANGE,
+            "decay_rate_steps": DECAY_RATE_STEPS,
+            "default_decay_rate": DEFAULT_DECAY_RATE,
+        },
+        
+        # Section 8 & 9: ML Model Parameters
         "model_params": {
             "random_state": RANDOM_STATE,
             "test_size": TEST_SIZE,
             "n_splits_cv": N_SPLITS_CV,
             "lgbm_params": LGBM_PARAMS,
-            "xgb_params": XGB_PARAMS
+            "xgb_params": XGB_PARAMS,
+        },
+        
+        # Section 10: Hybrid Model Parameters
+        "hybrid_params": HYBRID_PARAMS,
+        
+        # Section 11: ARHOW Model Parameters
+        "arihow_params": ARIHOW_PARAMS,
+        
+        # Section 12: Feature Engineering Parameters
+        "feature_engineering": {
+            "lag_windows": LAG_WINDOWS,
+            "rolling_windows": ROLLING_WINDOWS,
+            "pct_change_windows": PCT_CHANGE_WINDOWS,
+            "n_gxs_cap": N_GXS_CAP,
+            "high_competition_threshold": HIGH_COMPETITION_THRESHOLD,
+            "pre_entry_features": PRE_ENTRY_FEATURES,
+            "feature_settings": FEATURE_ENGINEERING_SETTINGS,
+        },
+        
+        # Section 13: Column Definitions
+        "columns": {
+            "id_cols": ID_COLS,
+            "time_cols": TIME_COLS,
+            "target_col": TARGET_COL,
+            "categorical_cols": CATEGORICAL_COLS,
+            "binary_cols": BINARY_COLS,
+            "numeric_cols": NUMERIC_COLS,
         }
     }
 

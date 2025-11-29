@@ -8,15 +8,17 @@
 #    - Lag features (1, 3, 6, 12 month lags)
 #    - Rolling statistics (mean, std, min, max)
 #    - Interaction features (time × competition, etc.)
-#    - Target encoding for categorical variables
+#    - Target encoding for categorical variables (leakage-safe)
 #    - Hospital rate bucketing
 #    - Therapeutic area erosion ranking
 #    - Outlier handling (n_gxs capping)
+#    - Scaling utilities for neural/linear models
 # =============================================================================
 
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, StandardScaler, MinMaxScaler
+from sklearn.model_selection import KFold
 from pathlib import Path
 import sys
 import warnings
@@ -124,6 +126,100 @@ def compute_sample_weights(df: pd.DataFrame,
     print(f"   Bucket 2: {n_bucket2} samples × {bucket2_weight}×")
     
     return weights
+
+
+def compute_time_window_weights(df: pd.DataFrame,
+                                 scenario: int = 1,
+                                 months_col: str = 'months_postgx') -> np.ndarray:
+    """
+    Compute time-window based sample weights to align with competition metric.
+    
+    From Todo Section 3.4 (Align Loss with Competition Metric):
+    - Scenario 1: months 0-5 (50%), 6-11 (20%), 12-23 (10%) of metric
+    - Scenario 2: months 6-11 (50%), 12-23 (30%) of metric
+    
+    Higher weights for early months since they contribute more to the score.
+    
+    Args:
+        df: DataFrame with months_postgx column
+        scenario: 1 or 2
+        months_col: Column containing months_postgx
+        
+    Returns:
+        numpy array of time-window weights
+    """
+    from config import (USE_TIME_WINDOW_WEIGHTS, 
+                        S1_TIME_WINDOW_WEIGHTS, S2_TIME_WINDOW_WEIGHTS)
+    
+    if not USE_TIME_WINDOW_WEIGHTS:
+        return np.ones(len(df))
+    
+    if months_col not in df.columns:
+        print(f"⚠️ Column '{months_col}' not found, returning uniform weights")
+        return np.ones(len(df))
+    
+    weights = np.ones(len(df))
+    months = df[months_col].values
+    
+    if scenario == 1:
+        tw = S1_TIME_WINDOW_WEIGHTS
+        # Pre-entry
+        weights[months < 0] = tw.get('pre_entry', 0.1)
+        # Months 0-5
+        weights[(months >= 0) & (months <= 5)] = tw.get('months_0_5', 2.5)
+        # Months 6-11
+        weights[(months >= 6) & (months <= 11)] = tw.get('months_6_11', 1.0)
+        # Months 12-23
+        weights[(months >= 12) & (months <= 23)] = tw.get('months_12_23', 0.5)
+    else:  # Scenario 2
+        tw = S2_TIME_WINDOW_WEIGHTS
+        # Months 6-11
+        weights[(months >= 6) & (months <= 11)] = tw.get('months_6_11', 2.5)
+        # Months 12-23
+        weights[(months >= 12) & (months <= 23)] = tw.get('months_12_23', 1.5)
+    
+    print(f"📊 Time-window weights computed (Scenario {scenario}):")
+    for period, w in (S1_TIME_WINDOW_WEIGHTS if scenario == 1 else S2_TIME_WINDOW_WEIGHTS).items():
+        mask_map = {
+            'pre_entry': months < 0,
+            'months_0_5': (months >= 0) & (months <= 5),
+            'months_6_11': (months >= 6) & (months <= 11),
+            'months_12_23': (months >= 12) & (months <= 23),
+        }
+        if period in mask_map:
+            count = mask_map[period].sum()
+            print(f"   {period}: {count} samples × {w}×")
+    
+    return weights
+
+
+def compute_combined_sample_weights(df: pd.DataFrame,
+                                     scenario: int = 1,
+                                     bucket_col: str = 'bucket',
+                                     months_col: str = 'months_postgx') -> np.ndarray:
+    """
+    Compute combined sample weights from bucket and time-window weights.
+    
+    Final weight = bucket_weight × time_window_weight
+    
+    Args:
+        df: DataFrame
+        scenario: 1 or 2
+        bucket_col: Column with bucket assignment
+        months_col: Column with months_postgx
+        
+    Returns:
+        numpy array of combined sample weights
+    """
+    bucket_weights = compute_sample_weights(df, bucket_col)
+    time_weights = compute_time_window_weights(df, scenario, months_col)
+    
+    combined = bucket_weights * time_weights
+    
+    print(f"📊 Combined sample weights:")
+    print(f"   Min: {combined.min():.2f}, Max: {combined.max():.2f}, Mean: {combined.mean():.2f}")
+    
+    return combined
 
 
 def compute_bucket_from_data(df: pd.DataFrame, threshold: float = 0.25) -> pd.DataFrame:
@@ -355,6 +451,410 @@ def create_pre_entry_features(df: pd.DataFrame, avg_j_df: pd.DataFrame) -> pd.Da
     
     print(f"✅ Created 7 pre-entry features for {len(features)} brands")
     return features
+
+
+# =============================================================================
+# BRAND-LEVEL COMPETITION FEATURES (Section 2.2 - max_n_gxs_post)
+# =============================================================================
+
+def create_max_n_gxs_post_feature(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Create brand-level maximum number of generics post-LOE.
+    
+    From Todo Section 2.2:
+    - max_n_gxs_post = max n_gxs post-LOE for each brand
+    - Useful indicator of ultimate competition level
+    
+    Args:
+        df: DataFrame with n_gxs and months_postgx columns
+        
+    Returns:
+        DataFrame with max_n_gxs_post per brand
+    """
+    post_loe = df[df['months_postgx'] >= 0].copy()
+    
+    max_gxs = post_loe.groupby(['country', 'brand_name'])['n_gxs'].max().reset_index()
+    max_gxs.columns = ['country', 'brand_name', 'max_n_gxs_post']
+    
+    print(f"✅ Created max_n_gxs_post feature for {len(max_gxs)} brands")
+    return max_gxs
+
+
+# =============================================================================
+# SCENARIO 2 EARLY POST-LOE FEATURES (Section 3.2 - Scenario 2 Pipeline)
+# =============================================================================
+
+def create_early_postloe_features(df: pd.DataFrame, 
+                                   target_col: str = 'volume') -> pd.DataFrame:
+    """
+    Create early post-LOE features for Scenario 2.
+    
+    From Todo Section 3.2 (Scenario 2):
+    At forecast origin (month 6), include features from months 0-5:
+    - mean_vol_0_5: Mean volume in months 0-5
+    - slope_0_5: Linear trend in months 0-5
+    - last_vol_5: Last observed volume at month 5
+    - std_vol_0_5: Standard deviation in months 0-5
+    - min_vol_0_5: Minimum volume in months 0-5
+    - pct_drop_0_5: Percentage drop from month 0 to month 5
+    - n_gxs_month_5: Number of generics at month 5
+    - mean_n_gxs_0_5: Mean number of generics in months 0-5
+    
+    These features capture early post-LOE behavior that helps predict
+    months 6-23 in Scenario 2.
+    
+    Args:
+        df: DataFrame with volume and months_postgx columns
+        target_col: Target column to compute features on
+        
+    Returns:
+        DataFrame with early post-LOE features per brand
+    """
+    # Filter to months 0-5 only
+    early_post = df[df['months_postgx'].between(0, 5)].copy()
+    
+    if len(early_post) == 0:
+        print("⚠️ No data in months 0-5, returning empty DataFrame")
+        return pd.DataFrame()
+    
+    # 1. Mean volume in months 0-5
+    mean_vol = early_post.groupby(['country', 'brand_name'])[target_col].mean().reset_index()
+    mean_vol.columns = ['country', 'brand_name', 'mean_vol_0_5']
+    
+    # 2. Linear slope in months 0-5
+    def calc_slope(group):
+        if len(group) < 2:
+            return 0
+        x = group['months_postgx'].values
+        y = group[target_col].values
+        if np.std(y) == 0:
+            return 0
+        try:
+            return np.polyfit(x, y, 1)[0]
+        except:
+            return 0
+    
+    slopes = early_post[['country', 'brand_name']].drop_duplicates().reset_index(drop=True)
+    slopes['slope_0_5'] = early_post.groupby(['country', 'brand_name']).apply(
+        calc_slope, include_groups=False
+    ).values
+    
+    # 3. Last volume at month 5
+    month_5 = early_post[early_post['months_postgx'] == 5][['country', 'brand_name', target_col]].copy()
+    month_5.columns = ['country', 'brand_name', 'last_vol_5']
+    
+    # If month 5 not available, use max available month in 0-5
+    brands_with_5 = set(month_5['brand_name'].values)
+    missing_5 = early_post[~early_post['brand_name'].isin(brands_with_5)]
+    if len(missing_5) > 0:
+        last_available = missing_5.sort_values('months_postgx').groupby(
+            ['country', 'brand_name']
+        ).last()[[target_col]].reset_index()
+        last_available.columns = ['country', 'brand_name', 'last_vol_5']
+        month_5 = pd.concat([month_5, last_available], ignore_index=True)
+    
+    # 4. Standard deviation in months 0-5
+    std_vol = early_post.groupby(['country', 'brand_name'])[target_col].std().reset_index()
+    std_vol.columns = ['country', 'brand_name', 'std_vol_0_5']
+    
+    # 5. Minimum volume in months 0-5
+    min_vol = early_post.groupby(['country', 'brand_name'])[target_col].min().reset_index()
+    min_vol.columns = ['country', 'brand_name', 'min_vol_0_5']
+    
+    # 6. Percentage drop from month 0 to last available
+    def calc_pct_drop(group):
+        group = group.sort_values('months_postgx')
+        if len(group) < 2:
+            return 0
+        first_vol = group[target_col].iloc[0]
+        last_vol = group[target_col].iloc[-1]
+        if first_vol == 0:
+            return 0
+        return (first_vol - last_vol) / first_vol
+    
+    pct_drop = early_post[['country', 'brand_name']].drop_duplicates().reset_index(drop=True)
+    pct_drop['pct_drop_0_5'] = early_post.groupby(['country', 'brand_name']).apply(
+        calc_pct_drop, include_groups=False
+    ).values
+    
+    # 7. Number of generics at month 5 (or last available)
+    if 'n_gxs' in early_post.columns:
+        n_gxs_5 = early_post.sort_values('months_postgx').groupby(
+            ['country', 'brand_name']
+        )['n_gxs'].last().reset_index()
+        n_gxs_5.columns = ['country', 'brand_name', 'n_gxs_month_5']
+        
+        # 8. Mean n_gxs in months 0-5
+        mean_n_gxs = early_post.groupby(['country', 'brand_name'])['n_gxs'].mean().reset_index()
+        mean_n_gxs.columns = ['country', 'brand_name', 'mean_n_gxs_0_5']
+    else:
+        n_gxs_5 = None
+        mean_n_gxs = None
+    
+    # Merge all features
+    features = mean_vol.copy()
+    for feat_df in [slopes, month_5, std_vol, min_vol, pct_drop]:
+        features = features.merge(feat_df, on=['country', 'brand_name'], how='left')
+    
+    if n_gxs_5 is not None:
+        features = features.merge(n_gxs_5, on=['country', 'brand_name'], how='left')
+        features = features.merge(mean_n_gxs, on=['country', 'brand_name'], how='left')
+    
+    n_features = len(features.columns) - 2  # Exclude country, brand_name
+    print(f"✅ Created {n_features} early post-LOE features (months 0-5) for {len(features)} brands")
+    
+    return features
+
+
+# =============================================================================
+# SCALING UTILITIES (Section 1.4 - For Neural/Linear Models)
+# =============================================================================
+
+class FeatureScaler:
+    """
+    Scaler for feature preprocessing (neural/linear models).
+    
+    From Todo Section 1.4:
+    - months_postgx: raw or standardize
+    - n_gxs_capped: log1p + standardize
+    - hospital_rate: as-is or MinMax
+    - avg_vol: log1p + standardize
+    - vol_norm: keep unscaled
+    """
+    
+    def __init__(self):
+        self.scalers = {}
+        self.log_transform_cols = ['avg_vol', 'n_gxs_capped', 'volume']
+        self.standardize_cols = ['months_postgx', 'avg_vol', 'n_gxs_capped', 'n_gxs_log']
+        self.minmax_cols = ['hospital_rate']
+        self.skip_cols = ['vol_norm', 'vol_norm_gt1']  # Keep unscaled
+        
+    def fit(self, df: pd.DataFrame, columns: list = None) -> 'FeatureScaler':
+        """Fit scalers on training data."""
+        columns = columns or df.select_dtypes(include=[np.number]).columns.tolist()
+        
+        for col in columns:
+            if col in self.skip_cols:
+                continue
+            if col not in df.columns:
+                continue
+                
+            values = df[col].values.reshape(-1, 1)
+            
+            # Apply log transform first if needed
+            if col in self.log_transform_cols:
+                values = np.log1p(np.clip(values, 0, None))
+            
+            # Choose scaler
+            if col in self.minmax_cols:
+                scaler = MinMaxScaler()
+            else:
+                scaler = StandardScaler()
+            
+            scaler.fit(values)
+            self.scalers[col] = {
+                'scaler': scaler,
+                'log_transform': col in self.log_transform_cols
+            }
+        
+        print(f"✅ Fitted scalers for {len(self.scalers)} columns")
+        return self
+    
+    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Transform features using fitted scalers."""
+        df = df.copy()
+        
+        for col, info in self.scalers.items():
+            if col not in df.columns:
+                continue
+            
+            values = df[col].values.reshape(-1, 1)
+            
+            # Apply log transform if needed
+            if info['log_transform']:
+                values = np.log1p(np.clip(values, 0, None))
+            
+            # Scale
+            scaled = info['scaler'].transform(values)
+            df[f'{col}_scaled'] = scaled.flatten()
+        
+        return df
+    
+    def fit_transform(self, df: pd.DataFrame, columns: list = None) -> pd.DataFrame:
+        """Fit and transform in one step."""
+        self.fit(df, columns)
+        return self.transform(df)
+
+
+def scale_features(df: pd.DataFrame, 
+                   scaler: FeatureScaler = None,
+                   fit: bool = True) -> tuple:
+    """
+    Scale features for neural/linear models.
+    
+    Args:
+        df: DataFrame with features
+        scaler: Pre-fitted scaler (optional)
+        fit: If True, fit the scaler on this data
+        
+    Returns:
+        Tuple of (scaled_df, scaler)
+    """
+    if scaler is None:
+        scaler = FeatureScaler()
+    
+    if fit:
+        df_scaled = scaler.fit_transform(df)
+    else:
+        df_scaled = scaler.transform(df)
+    
+    return df_scaled, scaler
+
+
+# =============================================================================
+# LEAKAGE-SAFE TARGET ENCODING (Section 1.5)
+# =============================================================================
+
+def target_encode_cv(df: pd.DataFrame,
+                     cat_col: str,
+                     target_col: str = 'vol_norm',
+                     n_folds: int = 5,
+                     smoothing: float = 1.0) -> pd.Series:
+    """
+    Leakage-safe target encoding using cross-validation.
+    
+    From Todo Section 1.5:
+    - Compute encodings WITHIN CV folds (train only, apply to val)
+    - Use smoothing to handle rare categories
+    
+    For each fold:
+    - Compute mean target on training fold
+    - Apply to validation fold
+    - Avoids target leakage
+    
+    Args:
+        df: DataFrame
+        cat_col: Categorical column to encode
+        target_col: Target column for encoding
+        n_folds: Number of CV folds
+        smoothing: Smoothing parameter (higher = more regularization)
+        
+    Returns:
+        Series with target-encoded values
+    """
+    df = df.copy()
+    encoded = pd.Series(index=df.index, dtype=float)
+    
+    # Global mean for smoothing
+    global_mean = df[target_col].mean()
+    
+    kf = KFold(n_splits=n_folds, shuffle=True, random_state=42)
+    
+    for train_idx, val_idx in kf.split(df):
+        train_df = df.iloc[train_idx]
+        
+        # Compute category means on training fold
+        cat_means = train_df.groupby(cat_col)[target_col].agg(['mean', 'count'])
+        
+        # Apply smoothing: (count * mean + smoothing * global_mean) / (count + smoothing)
+        cat_means['smoothed_mean'] = (
+            (cat_means['count'] * cat_means['mean'] + smoothing * global_mean) /
+            (cat_means['count'] + smoothing)
+        )
+        
+        # Apply to validation fold
+        val_cats = df.iloc[val_idx][cat_col]
+        encoded.iloc[val_idx] = val_cats.map(cat_means['smoothed_mean']).fillna(global_mean)
+    
+    return encoded
+
+
+def create_target_encoded_features(df: pd.DataFrame,
+                                    cat_cols: list = None,
+                                    target_col: str = 'vol_norm',
+                                    n_folds: int = 5) -> pd.DataFrame:
+    """
+    Create leakage-safe target-encoded features for all categorical columns.
+    
+    Args:
+        df: DataFrame with categorical and target columns
+        cat_cols: List of categorical columns to encode
+        target_col: Target column for encoding
+        n_folds: Number of CV folds
+        
+    Returns:
+        DataFrame with target-encoded columns added
+    """
+    if cat_cols is None:
+        cat_cols = ['country', 'ther_area', 'main_package']
+    
+    df = df.copy()
+    
+    for col in cat_cols:
+        if col not in df.columns:
+            continue
+        if target_col not in df.columns:
+            continue
+            
+        encoded_col = f'{col}_target_encoded'
+        df[encoded_col] = target_encode_cv(df, col, target_col, n_folds)
+        print(f"✅ Created target encoding for {col}")
+    
+    return df
+
+
+# =============================================================================
+# ADDITIONAL BRAND-LEVEL FEATURES (Section 2.4)
+# =============================================================================
+
+def create_log_avg_vol(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Create log-transformed avg_vol feature.
+    
+    From Todo Section 2.4 / Section 5:
+    - log_avg_vol = log1p(avg_vol)
+    - Better for modeling due to skewed distribution
+    
+    Args:
+        df: DataFrame with avg_vol column
+        
+    Returns:
+        DataFrame with log_avg_vol added
+    """
+    df = df.copy()
+    
+    if 'avg_vol' in df.columns:
+        df['log_avg_vol'] = np.log1p(df['avg_vol'].clip(lower=0))
+        print(f"✅ Created log_avg_vol feature")
+    else:
+        print("⚠️ avg_vol column not found")
+    
+    return df
+
+
+def create_pre_loe_growth_flag(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Create pre-LOE growth flag.
+    
+    From Todo Section 2.4:
+    - pre_loe_growth_flag = 1 if pre-entry trend slope > 0 else 0
+    
+    Args:
+        df: DataFrame with pre_entry_slope column
+        
+    Returns:
+        DataFrame with pre_loe_growth_flag added
+    """
+    df = df.copy()
+    
+    if 'pre_entry_slope' in df.columns:
+        df['pre_loe_growth_flag'] = (df['pre_entry_slope'] > 0).astype(int)
+        n_growth = df['pre_loe_growth_flag'].sum()
+        print(f"✅ Created pre_loe_growth_flag: {n_growth} brands with positive pre-LOE growth")
+    else:
+        print("⚠️ pre_entry_slope column not found, computing from data...")
+    
+    return df
 
 
 # =============================================================================
@@ -636,6 +1136,149 @@ def create_therapeutic_area_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # =============================================================================
+# HORIZON-AS-ROW APPROACH (Section 3.2 - Scenario-Specific Pipelines)
+# =============================================================================
+
+def create_horizon_as_row_dataset(df: pd.DataFrame,
+                                   brand_features: pd.DataFrame,
+                                   horizons: list = None,
+                                   scenario: int = 1) -> pd.DataFrame:
+    """
+    Create horizon-as-row dataset for direct forecasting.
+    
+    From Todo Section 3.2 (Horizon-as-Row Strategy):
+    - Build dataset where each row = (brand, horizon h)
+    - Include brand-level static features
+    - Include pre-LOE time-series summary features
+    - Horizon h as a feature
+    - Target: vol_norm_h
+    
+    This approach allows a single model to predict all horizons directly.
+    
+    Args:
+        df: Full dataset with volume data
+        brand_features: DataFrame with brand-level static features
+        horizons: List of horizons to predict (default: 0-23 for S1, 6-23 for S2)
+        scenario: 1 or 2
+        
+    Returns:
+        DataFrame with horizon-as-row format
+    """
+    if horizons is None:
+        if scenario == 1:
+            horizons = list(range(0, 24))  # Months 0-23
+        else:
+            horizons = list(range(6, 24))  # Months 6-23
+    
+    # Get unique brands
+    brands = df[['country', 'brand_name']].drop_duplicates()
+    
+    # Create base grid: brand × horizon
+    horizon_rows = []
+    for _, brand in brands.iterrows():
+        for h in horizons:
+            horizon_rows.append({
+                'country': brand['country'],
+                'brand_name': brand['brand_name'],
+                'horizon': h
+            })
+    
+    horizon_df = pd.DataFrame(horizon_rows)
+    
+    # Merge brand features
+    horizon_df = horizon_df.merge(brand_features, on=['country', 'brand_name'], how='left')
+    
+    # Get actual volume at each horizon (target)
+    actuals = df[df['months_postgx'].isin(horizons)][
+        ['country', 'brand_name', 'months_postgx', 'volume']
+    ].rename(columns={'months_postgx': 'horizon', 'volume': 'target_volume'})
+    
+    horizon_df = horizon_df.merge(actuals, on=['country', 'brand_name', 'horizon'], how='left')
+    
+    # Add horizon-based features
+    horizon_df['horizon_squared'] = horizon_df['horizon'] ** 2
+    horizon_df['horizon_sqrt'] = np.sqrt(horizon_df['horizon'])
+    horizon_df['horizon_log'] = np.log1p(horizon_df['horizon'])
+    
+    # Period indicators for horizon
+    horizon_df['horizon_is_early'] = (horizon_df['horizon'].between(0, 5)).astype(int)
+    horizon_df['horizon_is_mid'] = (horizon_df['horizon'].between(6, 11)).astype(int)
+    horizon_df['horizon_is_late'] = (horizon_df['horizon'] >= 12).astype(int)
+    
+    n_brands = len(brands)
+    n_horizons = len(horizons)
+    
+    print(f"✅ Created horizon-as-row dataset for Scenario {scenario}:")
+    print(f"   Brands: {n_brands}")
+    print(f"   Horizons: {horizons[0]} to {horizons[-1]} ({n_horizons} months)")
+    print(f"   Total rows: {len(horizon_df)}")
+    
+    return horizon_df
+
+
+def create_brand_static_features(df: pd.DataFrame, 
+                                  avg_j_df: pd.DataFrame,
+                                  include_early_postloe: bool = False) -> pd.DataFrame:
+    """
+    Create all brand-level static features for horizon-as-row modeling.
+    
+    Combines:
+    - Pre-entry features (avg_vol, slope, volatility)
+    - Max n_gxs post-LOE
+    - time_to_50pct features (from training data)
+    - Early post-LOE features (for Scenario 2)
+    
+    Args:
+        df: Full dataset
+        avg_j_df: DataFrame with avg_vol per brand
+        include_early_postloe: Include months 0-5 features (for Scenario 2)
+        
+    Returns:
+        DataFrame with all brand-level features
+    """
+    # Start with pre-entry features
+    brand_features = create_pre_entry_features(df, avg_j_df)
+    
+    # Add max_n_gxs_post
+    max_gxs = create_max_n_gxs_post_feature(df)
+    brand_features = brand_features.merge(max_gxs, on=['country', 'brand_name'], how='left')
+    
+    # Add brand characteristics from medicine_info
+    brand_info = df[['country', 'brand_name', 'ther_area', 'hospital_rate', 
+                     'biological', 'small_molecule', 'main_package']].drop_duplicates()
+    brand_features = brand_features.merge(brand_info, on=['country', 'brand_name'], how='left')
+    
+    # Add therapeutic area features
+    brand_features['ther_area_erosion_rank'] = brand_features['ther_area'].map(THER_AREA_EROSION_RANK).fillna(10)
+    brand_features['ther_area_mean_erosion'] = brand_features['ther_area'].map(THER_AREA_MEAN_EROSION).fillna(0.615)
+    brand_features['is_high_erosion_area'] = brand_features['ther_area'].isin(HIGH_EROSION_AREAS).astype(int)
+    
+    # Hospital rate buckets
+    brand_features['hospital_rate_bucket'] = pd.cut(
+        brand_features['hospital_rate'],
+        bins=[-0.01, 0.25, 0.50, 0.75, 1.01],
+        labels=[0, 1, 2, 3]
+    ).astype(float)
+    brand_features['is_high_hospital_rate'] = (brand_features['hospital_rate'] >= 0.75).astype(int)
+    
+    # Add early post-LOE features for Scenario 2
+    if include_early_postloe:
+        early_features = create_early_postloe_features(df)
+        if len(early_features) > 0:
+            brand_features = brand_features.merge(early_features, on=['country', 'brand_name'], how='left')
+    
+    # Encode categoricals
+    for col in ['ther_area', 'main_package']:
+        if col in brand_features.columns:
+            brand_features[f'{col}_encoded'] = pd.factorize(brand_features[col])[0]
+    
+    n_features = len(brand_features.columns) - 2  # Exclude country, brand_name
+    print(f"✅ Created {n_features} brand-level static features")
+    
+    return brand_features
+
+
+# =============================================================================
 # INTERACTION FEATURES (EDA Section 12.5)
 # =============================================================================
 
@@ -757,6 +1400,12 @@ def create_all_features(df: pd.DataFrame,
     if avg_j_df is not None:
         pre_entry_feats = create_pre_entry_features(df, avg_j_df)
         df = df.merge(pre_entry_feats, on=['country', 'brand_name'], how='left')
+        
+        # 9b. Add log_avg_vol feature
+        df = create_log_avg_vol(df)
+        
+        # 9c. Add pre_loe_growth_flag
+        df = create_pre_loe_growth_flag(df)
     
     # 10. Final cleanup - drop non-numeric categoricals from feature set
     # (Keep them in df for reference, but they shouldn't be used in modeling)

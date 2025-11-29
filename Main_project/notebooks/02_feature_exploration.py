@@ -2,8 +2,9 @@
 import sys
 from pathlib import Path
 
-# Add src to path for imports
-project_root = Path.cwd().parent
+# Add src to path for imports - handle running from different directories
+script_path = Path(__file__).resolve()
+project_root = script_path.parent.parent  # notebooks/ -> Main_project/
 sys.path.insert(0, str(project_root / 'src'))
 
 # Core imports
@@ -86,7 +87,7 @@ plt.show()
 
 # Plot distributions for key features
 key_features = ['months_postgx', 'volume_lag_1', 'volume_rolling_mean_3', 
-                'num_generics', 'months_with_generics', 'avg_vol',
+                'n_gxs', 'months_with_generics', 'avg_vol',
                 'volume_rolling_std_3', 'volume_lag_6', 'hospital_rate']
 
 # Filter to existing features
@@ -201,14 +202,14 @@ plt.savefig(FIGURES_DIR / 'rolling_features_analysis.png', dpi=150, bbox_inches=
 plt.show()
 
 # Competition features
-competition_features = ['num_generics', 'months_with_generics', 'generics_growth_rate']
+competition_features = ['n_gxs', 'months_with_generics', 'generics_growth_rate']
 competition_features = [f for f in competition_features if f in featured.columns]
 
 fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
 # Num generics vs volume
-sample = featured[['num_generics', 'volume']].dropna().sample(min(5000, len(featured)))
-axes[0].scatter(sample['num_generics'], sample['volume'], alpha=0.2, s=10)
+sample = featured[['n_gxs', 'volume']].dropna().sample(min(5000, len(featured)))
+axes[0].scatter(sample['n_gxs'], sample['volume'], alpha=0.2, s=10)
 axes[0].set_xlabel('Number of Generics')
 axes[0].set_ylabel('Volume')
 axes[0].set_title('Number of Generics vs Volume')
@@ -221,8 +222,8 @@ if 'months_with_generics' in featured.columns:
     axes[1].set_ylabel('Volume')
     axes[1].set_title('Months with Generics vs Volume')
 
-# Average volume by num_generics bins
-featured['generics_bin'] = pd.cut(featured['num_generics'], bins=[0, 2, 5, 10, 20, 100], labels=['1-2', '3-5', '6-10', '11-20', '20+'])
+# Average volume by n_gxs bins
+featured['generics_bin'] = pd.cut(featured['n_gxs'], bins=[0, 2, 5, 10, 20, 100], labels=['1-2', '3-5', '6-10', '11-20', '20+'])
 avg_by_generics = featured.groupby('generics_bin')['volume'].mean()
 avg_by_generics.plot(kind='bar', ax=axes[2], color='seagreen', edgecolor='black')
 axes[2].set_xlabel('Number of Generic Competitors')

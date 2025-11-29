@@ -188,6 +188,35 @@ BUCKET_1_SAMPLE_WEIGHT = 2.0    # Weight for Bucket 1 samples (high erosion)
 BUCKET_2_SAMPLE_WEIGHT = 1.0    # Weight for Bucket 2 samples (normal)
 
 # =============================================================================
+# 5c. TIME-WINDOW SAMPLE WEIGHTS (From Todo Section 3.4)
+# =============================================================================
+# Align loss with competition metric by weighting time periods differently.
+#
+# From Competition Scoring:
+#   Scenario 1: sum_0-5 = 50%, sum_6-11 = 20%, sum_12-23 = 10%
+#   Scenario 2: sum_6-11 = 50%, sum_12-23 = 30%
+#
+# Higher weights for early months since they contribute more to the metric.
+#
+# 💡 TIP: These weights are multiplied with bucket weights for final sample weight
+
+USE_TIME_WINDOW_WEIGHTS = True  # Apply time-window based sample weights
+
+# Scenario 1 time window weights (months 0-5 most important)
+S1_TIME_WINDOW_WEIGHTS = {
+    'months_0_5': 2.5,      # 50% of metric → weight 2.5×
+    'months_6_11': 1.0,     # 20% of metric → weight 1.0×
+    'months_12_23': 0.5,    # 10% of metric → weight 0.5×
+    'pre_entry': 0.1,       # Pre-entry data less important for prediction
+}
+
+# Scenario 2 time window weights (months 6-11 most important)
+S2_TIME_WINDOW_WEIGHTS = {
+    'months_6_11': 2.5,     # 50% of metric → weight 2.5×
+    'months_12_23': 1.5,    # 30% of metric → weight 1.5×
+}
+
+# =============================================================================
 # 6. SCORING WEIGHTS (PE - Prediction Error)
 # =============================================================================
 # The competition uses a weighted scoring formula. These weights determine

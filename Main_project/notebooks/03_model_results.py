@@ -2,8 +2,9 @@
 import sys
 from pathlib import Path
 
-# Add src to path for imports
-project_root = Path.cwd().parent
+# Add src to path for imports - handle running from different directories
+script_path = Path(__file__).resolve()
+project_root = script_path.parent.parent  # notebooks/ -> Main_project/
 sys.path.insert(0, str(project_root / 'src'))
 
 # Core imports
@@ -33,7 +34,7 @@ print(f"Reports directory: {REPORTS_DIR}")
 try:
     comparison_s1 = pd.read_csv(REPORTS_DIR / 'model_comparison_scenario1.csv')
     print("✅ Loaded Scenario 1 results")
-    display(comparison_s1)
+    print(comparison_s1.to_string())
 except FileNotFoundError:
     print("⚠️ Scenario 1 results not found. Run scripts/train_models.py --scenario 1 first.")
     comparison_s1 = None
@@ -41,7 +42,7 @@ except FileNotFoundError:
 try:
     comparison_s2 = pd.read_csv(REPORTS_DIR / 'model_comparison_scenario2.csv')
     print("✅ Loaded Scenario 2 results")
-    display(comparison_s2)
+    print(comparison_s2.to_string())
 except FileNotFoundError:
     print("⚠️ Scenario 2 results not found. Run scripts/train_models.py --scenario 2 first.")
     comparison_s2 = None
