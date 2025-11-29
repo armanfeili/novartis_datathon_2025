@@ -227,7 +227,7 @@ def train_all_models(scenario: int = 1, test_mode: bool = False):
     best_rate = DEFAULT_DECAY_RATE  # Default, will be tuned if exp_decay is enabled
     
     # 1. Baseline: No erosion (persistence)
-    if MODELS_ENABLED.get('baseline_no_erosion', True):
+    if MODELS_ENABLED.get('baseline_no_erosion', False):
         print("\n" + "=" * 50)
         print("📊 Model 1: Baseline - No Erosion")
         print("=" * 50)
@@ -240,7 +240,7 @@ def train_all_models(scenario: int = 1, test_mode: bool = False):
         print("\n⏭️ Skipping Baseline-NoErosion (disabled in config)")
     
     # 2. Baseline: Exponential decay
-    if MODELS_ENABLED.get('baseline_exp_decay', True):
+    if MODELS_ENABLED.get('baseline_exp_decay', False):
         print("\n" + "=" * 50)
         print("📊 Model 2: Baseline - Exponential Decay")
         print("=" * 50)
@@ -269,7 +269,7 @@ def train_all_models(scenario: int = 1, test_mode: bool = False):
         best_rate, _ = BaselineModels.tune_decay_rate(train_actual, train_avg_j, 'exponential')
     
     # 3. LightGBM
-    if MODELS_ENABLED.get('lightgbm', True):
+    if MODELS_ENABLED.get('lightgbm', False):
         print("\n" + "=" * 50)
         print("📊 Model 3: LightGBM")
         print("=" * 50)
@@ -295,7 +295,7 @@ def train_all_models(scenario: int = 1, test_mode: bool = False):
         print("\n⏭️ Skipping LightGBM (disabled in config)")
     
     # 4. XGBoost
-    if MODELS_ENABLED.get('xgboost', True):
+    if MODELS_ENABLED.get('xgboost', False):
         print("\n" + "=" * 50)
         print("📊 Model 4: XGBoost")
         print("=" * 50)
@@ -339,7 +339,7 @@ def train_all_models(scenario: int = 1, test_mode: bool = False):
     months_val = val_pred_data_hybrid['months_postgx'].values
     
     # 5. Hybrid Model (Physics + LightGBM)
-    if MODELS_ENABLED.get('hybrid_lightgbm', True):
+    if MODELS_ENABLED.get('hybrid_lightgbm', False):
         print("\n" + "=" * 50)
         print("📊 Model 5: Hybrid (Physics + LightGBM)")
         print("=" * 50)
@@ -373,7 +373,7 @@ def train_all_models(scenario: int = 1, test_mode: bool = False):
         print("\n⏭️ Skipping Hybrid-LightGBM (disabled in config)")
     
     # 6. Hybrid Model with XGBoost
-    if MODELS_ENABLED.get('hybrid_xgboost', True):
+    if MODELS_ENABLED.get('hybrid_xgboost', False):
         print("\n" + "=" * 50)
         print("📊 Model 6: Hybrid (Physics + XGBoost)")
         print("=" * 50)
@@ -403,7 +403,7 @@ def train_all_models(scenario: int = 1, test_mode: bool = False):
         print("\n⏭️ Skipping Hybrid-XGBoost (disabled in config)")
     
     # 7. ARHOW Model (ARIMA + Holt-Winters with Learned Weights)
-    if MODELS_ENABLED.get('arihow', True):
+    if MODELS_ENABLED.get('arihow', False):
         print("\n" + "=" * 50)
         print("📊 Model 7: ARHOW (SARIMAX + HW + Weights)")
         print("=" * 50)

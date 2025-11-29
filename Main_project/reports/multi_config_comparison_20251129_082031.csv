@@ -1,0 +1,7 @@
+config_id,description,total_time
+default,Default parameters,57.84500598907471
+low_lr,Low learning rate with more trees,77.146169424057
+high_complexity,More complex trees,65.74149107933044
+regularized,Strong regularization to prevent overfitting,52.75406861305237
+slow_decay,Slower baseline decay rate,72.21834897994995
+fast_decay,Faster baseline decay rate,59.744473457336426

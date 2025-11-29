@@ -1,0 +1,110 @@
+{
+  "submission_info": {
+    "model_type": "lightgbm",
+    "timestamp": "2025-11-29 08:16:18",
+    "file": "submission_low_lr_lightgbm_20251129_081618.csv"
+  },
+  "data_stats": {
+    "total_rows": 7488,
+    "unique_brands": 340,
+    "s1_brands": 228,
+    "s2_brands": 112
+  },
+  "volume_stats": {
+    "min": 51.508103480007854,
+    "max": 126466937.99228804,
+    "mean": 2518814.8458636766,
+    "median": 151995.97214898685,
+    "std": 8942037.475560892
+  },
+  "model_config": {
+    "decay_rate": 0.02
+  },
+  "full_config": {
+    "config_id": "low_lr",
+    "multi_config_mode": true,
+    "train_mode": "separate",
+    "test_mode": false,
+    "test_mode_brands": 50,
+    "run_scenario": [
+      1,
+      2
+    ],
+    "models_enabled": {
+      "baseline_no_erosion": true,
+      "baseline_exp_decay": true,
+      "lightgbm": true,
+      "xgboost": true,
+      "hybrid_lightgbm": true,
+      "hybrid_xgboost": true,
+      "arihow": false
+    },
+    "submissions_enabled": {
+      "baseline": true,
+      "hybrid": true,
+      "lightgbm": true,
+      "xgboost": true,
+      "arihow": false
+    },
+    "competition_constants": {
+      "pre_entry_months": 12,
+      "post_entry_months": 24,
+      "bucket_1_threshold": 0.25,
+      "bucket_1_weight": 2,
+      "bucket_2_weight": 1
+    },
+    "baseline_params": {
+      "default_decay_rate": 0.02,
+      "decay_rate_range": [
+        0.005,
+        0.1
+      ],
+      "decay_rate_steps": 20
+    },
+    "lgbm_params": {
+      "objective": "regression",
+      "metric": "rmse",
+      "boosting_type": "gbdt",
+      "num_leaves": 31,
+      "learning_rate": 0.01,
+      "n_estimators": 1000,
+      "feature_fraction": 0.8,
+      "bagging_fraction": 0.8,
+      "bagging_freq": 5,
+      "verbose": -1,
+      "random_state": 42
+    },
+    "xgb_params": {
+      "objective": "reg:squarederror",
+      "eval_metric": "rmse",
+      "max_depth": 6,
+      "learning_rate": 0.01,
+      "n_estimators": 1000,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "random_state": 42
+    },
+    "hybrid_params": {},
+    "feature_params": {
+      "lag_windows": [
+        1,
+        3,
+        6,
+        12
+      ],
+      "rolling_windows": [
+        3,
+        6,
+        12
+      ],
+      "pct_change_windows": [
+        1,
+        3,
+        6
+      ]
+    },
+    "random_state": 42,
+    "test_size": 0.2,
+    "n_splits_cv": 5
+  }
+}

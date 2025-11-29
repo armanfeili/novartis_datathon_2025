@@ -1,0 +1,6 @@
+model,final_score
+Baseline-ExpDecay(0.050),1.1049
+LightGBM-Unified,12.0449
+XGBoost-Unified,1.4806
+Hybrid-LightGBM-Unified,11.4586
+Hybrid-XGBoost-Unified,5.6021

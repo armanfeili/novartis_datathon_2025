@@ -1,0 +1,36 @@
+{
+  "metadata": {
+    "generated_at": "2025-11-29T07:40:41.320271"
+  },
+  "scenario_1_best": {
+    "model": "Baseline-ExpDecay(0.050)",
+    "final_score": 1.1769,
+    "bucket1_pe": null,
+    "bucket2_pe": null
+  },
+  "scenario_2_best": {
+    "model": "Baseline-ExpDecay(0.050)",
+    "final_score": 1.1049,
+    "bucket1_pe": null,
+    "bucket2_pe": null
+  },
+  "submissions": {
+    "scenario_1": {
+      "predictions": 7488,
+      "brands": 340
+    }
+  },
+  "loaded_files": {
+    "unified": "model_comparison_unified_20251129_072545.csv",
+    "model_lightgbm": "unified_lightgbm_20251129_072525.joblib",
+    "submission_submission_baseline_20251129_072545": "submission_baseline_20251129_072545.csv"
+  },
+  "timestamp_used": "20251129_072545",
+  "figures_generated": [
+    "fig01_model_comparison.png",
+    "fig02_bucket_performance.png",
+    "fig03_feature_importance.png",
+    "fig04_submission_predictions.png",
+    "fig05_prediction_distribution.png"
+  ]
+}

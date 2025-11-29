@@ -1,0 +1,132 @@
+{
+  "metadata": {
+    "filename": "fig01_model_comparison.json",
+    "description": "Model comparison across both scenarios",
+    "generated_at": "2025-11-29T07:40:37.619808",
+    "figure_file": "figures/fig01_model_comparison.png"
+  },
+  "data": {
+    "summary": {
+      "scenario_1_available": true,
+      "scenario_2_available": true,
+      "unified_mode": true
+    },
+    "scenario_1": {
+      "best_model": "Baseline-ExpDecay(0.050)",
+      "best_score": 1.1769,
+      "all_models": [
+        {
+          "model": "Baseline-ExpDecay(0.050)",
+          "final_score": 1.1769
+        },
+        {
+          "model": "LightGBM-Unified",
+          "final_score": 11.6904
+        },
+        {
+          "model": "XGBoost-Unified",
+          "final_score": 1.2088
+        },
+        {
+          "model": "Hybrid-LightGBM-Unified",
+          "final_score": 11.5522
+        },
+        {
+          "model": "Hybrid-XGBoost-Unified",
+          "final_score": 4.2561
+        }
+      ],
+      "model_ranking": [
+        "Baseline-ExpDecay(0.050)",
+        "XGBoost-Unified",
+        "Hybrid-XGBoost-Unified",
+        "Hybrid-LightGBM-Unified",
+        "LightGBM-Unified"
+      ]
+    },
+    "scenario_2": {
+      "best_model": "Baseline-ExpDecay(0.050)",
+      "best_score": 1.1049,
+      "all_models": [
+        {
+          "model": "Baseline-ExpDecay(0.050)",
+          "final_score": 1.1049
+        },
+        {
+          "model": "LightGBM-Unified",
+          "final_score": 12.0449
+        },
+        {
+          "model": "XGBoost-Unified",
+          "final_score": 1.4806
+        },
+        {
+          "model": "Hybrid-LightGBM-Unified",
+          "final_score": 11.4586
+        },
+        {
+          "model": "Hybrid-XGBoost-Unified",
+          "final_score": 5.6021
+        }
+      ],
+      "model_ranking": [
+        "Baseline-ExpDecay(0.050)",
+        "XGBoost-Unified",
+        "Hybrid-XGBoost-Unified",
+        "Hybrid-LightGBM-Unified",
+        "LightGBM-Unified"
+      ]
+    },
+    "unified": {
+      "best_model": "Baseline-ExpDecay(0.050)",
+      "best_combined_score": 1.1409,
+      "best_s1_score": 1.1769,
+      "best_s2_score": 1.1049,
+      "all_models": [
+        {
+          "model": "Baseline-ExpDecay(0.050)",
+          "final_score": 1.1409,
+          "s1_score": 1.1769,
+          "s2_score": 1.1049
+        },
+        {
+          "model": "LightGBM-Unified",
+          "final_score": 11.86765,
+          "s1_score": 11.6904,
+          "s2_score": 12.0449
+        },
+        {
+          "model": "XGBoost-Unified",
+          "final_score": 1.3447,
+          "s1_score": 1.2088,
+          "s2_score": 1.4806
+        },
+        {
+          "model": "Hybrid-LightGBM-Unified",
+          "final_score": 11.5054,
+          "s1_score": 11.5522,
+          "s2_score": 11.4586
+        },
+        {
+          "model": "Hybrid-XGBoost-Unified",
+          "final_score": 4.9291,
+          "s1_score": 4.2561,
+          "s2_score": 5.6021
+        }
+      ],
+      "model_ranking": [
+        "Baseline-ExpDecay(0.050)",
+        "XGBoost-Unified",
+        "Hybrid-XGBoost-Unified",
+        "Hybrid-LightGBM-Unified",
+        "LightGBM-Unified"
+      ]
+    },
+    "interpretation": {
+      "metric": "Prediction Error (PE) - lower is better",
+      "bucket_weighting": "Bucket 1 (high erosion) has 2x weight",
+      "scenario_1_description": "Predict months 0-23 (full trajectory)",
+      "scenario_2_description": "Predict months 6-23 (given months 0-5)"
+    }
+  }
+}

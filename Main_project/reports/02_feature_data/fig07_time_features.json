@@ -1,0 +1,326 @@
+{
+  "metadata": {
+    "filename": "fig07_time_features.json",
+    "description": "Time features and volume trajectory analysis",
+    "generated_at": "2025-11-29T07:43:10.353265",
+    "figure_file": "figures/fig07_time_features.png"
+  },
+  "data": {
+    "summary": {
+      "months_range": [
+        -24,
+        23
+      ],
+      "total_time_points": 48
+    },
+    "volume_by_month": [
+      {
+        "months_postgx": -24,
+        "mean_volume": 2636123.6583712506,
+        "std_volume": 16730784.360508105,
+        "count": 1953
+      },
+      {
+        "months_postgx": -23,
+        "mean_volume": 2550406.3962813094,
+        "std_volume": 16232910.884500254,
+        "count": 1953
+      },
+      {
+        "months_postgx": -22,
+        "mean_volume": 2474876.6620724583,
+        "std_volume": 15429164.399473898,
+        "count": 1953
+      },
+      {
+        "months_postgx": -21,
+        "mean_volume": 2398335.5429792036,
+        "std_volume": 13752652.268965306,
+        "count": 1953
+      },
+      {
+        "months_postgx": -20,
+        "mean_volume": 2545535.462260849,
+        "std_volume": 16203844.78742568,
+        "count": 1953
+      },
+      {
+        "months_postgx": -19,
+        "mean_volume": 2505408.7944356324,
+        "std_volume": 15468981.129103675,
+        "count": 1953
+      },
+      {
+        "months_postgx": -18,
+        "mean_volume": 2643885.5044248807,
+        "std_volume": 16395632.300929874,
+        "count": 1953
+      },
+      {
+        "months_postgx": -17,
+        "mean_volume": 2561571.9109025034,
+        "std_volume": 15600525.767163709,
+        "count": 1953
+      },
+      {
+        "months_postgx": -16,
+        "mean_volume": 2568907.0720642577,
+        "std_volume": 16055557.557503259,
+        "count": 1953
+      },
+      {
+        "months_postgx": -15,
+        "mean_volume": 2747947.943256737,
+        "std_volume": 18014885.526158508,
+        "count": 1953
+      },
+      {
+        "months_postgx": -14,
+        "mean_volume": 2514272.650613777,
+        "std_volume": 14113013.35700493,
+        "count": 1953
+      },
+      {
+        "months_postgx": -13,
+        "mean_volume": 2710548.0021550357,
+        "std_volume": 16264376.722613428,
+        "count": 1953
+      },
+      {
+        "months_postgx": -12,
+        "mean_volume": 2574091.2326155016,
+        "std_volume": 15795782.417746756,
+        "count": 1953
+      },
+      {
+        "months_postgx": -11,
+        "mean_volume": 2531320.979120578,
+        "std_volume": 15832189.140731677,
+        "count": 1953
+      },
+      {
+        "months_postgx": -10,
+        "mean_volume": 2454966.746313785,
+        "std_volume": 14082314.638258988,
+        "count": 1953
+      },
+      {
+        "months_postgx": -9,
+        "mean_volume": 2398030.675846902,
+        "std_volume": 13747538.333140716,
+        "count": 1953
+      },
+      {
+        "months_postgx": -8,
+        "mean_volume": 2378634.5256534866,
+        "std_volume": 13696826.370600339,
+        "count": 1953
+      },
+      {
+        "months_postgx": -7,
+        "mean_volume": 2351082.595713667,
+        "std_volume": 13408003.166470926,
+        "count": 1953
+      },
+      {
+        "months_postgx": -6,
+        "mean_volume": 2448801.530959016,
+        "std_volume": 13902104.511142785,
+        "count": 1953
+      },
+      {
+        "months_postgx": -5,
+        "mean_volume": 2452225.8615380097,
+        "std_volume": 14772610.697430724,
+        "count": 1953
+      },
+      {
+        "months_postgx": -4,
+        "mean_volume": 2388247.994763971,
+        "std_volume": 13133145.951501677,
+        "count": 1953
+      },
+      {
+        "months_postgx": -3,
+        "mean_volume": 2420324.4191207546,
+        "std_volume": 13143064.446208188,
+        "count": 1953
+      },
+      {
+        "months_postgx": -2,
+        "mean_volume": 2380650.476926935,
+        "std_volume": 13397621.505208485,
+        "count": 1953
+      },
+      {
+        "months_postgx": -1,
+        "mean_volume": 2489962.7256828574,
+        "std_volume": 14081336.41669473,
+        "count": 1953
+      },
+      {
+        "months_postgx": 0,
+        "mean_volume": 2128504.0545950923,
+        "std_volume": 12708825.65310139,
+        "count": 1953
+      },
+      {
+        "months_postgx": 1,
+        "mean_volume": 1846973.1021819904,
+        "std_volume": 10344424.790184356,
+        "count": 1953
+      },
+      {
+        "months_postgx": 2,
+        "mean_volume": 1696470.3029118723,
+        "std_volume": 9899916.639832806,
+        "count": 1953
+      },
+      {
+        "months_postgx": 3,
+        "mean_volume": 1563254.921473838,
+        "std_volume": 9648530.938377768,
+        "count": 1953
+      },
+      {
+        "months_postgx": 4,
+        "mean_volume": 1548891.7678619805,
+        "std_volume": 9678048.968382128,
+        "count": 1953
+      },
+      {
+        "months_postgx": 5,
+        "mean_volume": 1586585.9675855872,
+        "std_volume": 11359598.977520287,
+        "count": 1953
+      },
+      {
+        "months_postgx": 6,
+        "mean_volume": 1526309.288211411,
+        "std_volume": 10165739.776638033,
+        "count": 1953
+      },
+      {
+        "months_postgx": 7,
+        "mean_volume": 1500578.535588051,
+        "std_volume": 9821465.9502328,
+        "count": 1953
+      },
+      {
+        "months_postgx": 8,
+        "mean_volume": 1480458.871166369,
+        "std_volume": 10386073.824446414,
+        "count": 1953
+      },
+      {
+        "months_postgx": 9,
+        "mean_volume": 1420693.3991051463,
+        "std_volume": 9932421.944515815,
+        "count": 1953
+      },
+      {
+        "months_postgx": 10,
+        "mean_volume": 1360339.5401424028,
+        "std_volume": 9413558.726758938,
+        "count": 1953
+      },
+      {
+        "months_postgx": 11,
+        "mean_volume": 1400815.804026552,
+        "std_volume": 9358198.986136777,
+        "count": 1953
+      },
+      {
+        "months_postgx": 12,
+        "mean_volume": 1314308.4034056994,
+        "std_volume": 9211921.267757053,
+        "count": 1953
+      },
+      {
+        "months_postgx": 13,
+        "mean_volume": 1283254.6364993649,
+        "std_volume": 9446551.565874772,
+        "count": 1953
+      },
+      {
+        "months_postgx": 14,
+        "mean_volume": 1301124.9860341337,
+        "std_volume": 9668805.57556243,
+        "count": 1953
+      },
+      {
+        "months_postgx": 15,
+        "mean_volume": 1208141.4537716676,
+        "std_volume": 8682033.969764812,
+        "count": 1953
+      },
+      {
+        "months_postgx": 16,
+        "mean_volume": 1220268.3612432864,
+        "std_volume": 8369160.037759145,
+        "count": 1953
+      },
+      {
+        "months_postgx": 17,
+        "mean_volume": 1244528.9456101654,
+        "std_volume": 9072976.235060485,
+        "count": 1953
+      },
+      {
+        "months_postgx": 18,
+        "mean_volume": 1283264.442111114,
+        "std_volume": 9542805.034354735,
+        "count": 1953
+      },
+      {
+        "months_postgx": 19,
+        "mean_volume": 1261347.942178672,
+        "std_volume": 9702038.341563942,
+        "count": 1953
+      },
+      {
+        "months_postgx": 20,
+        "mean_volume": 1136856.003321669,
+        "std_volume": 8272688.182357754,
+        "count": 1953
+      },
+      {
+        "months_postgx": 21,
+        "mean_volume": 1149491.0099134245,
+        "std_volume": 8382765.035907346,
+        "count": 1953
+      },
+      {
+        "months_postgx": 22,
+        "mean_volume": 1179488.2085999462,
+        "std_volume": 8989191.738871085,
+        "count": 1953
+      },
+      {
+        "months_postgx": 23,
+        "mean_volume": 1205080.439890652,
+        "std_volume": 9075053.359436749,
+        "count": 1953
+      }
+    ],
+    "period_analysis": {
+      "early_period_0_5": {
+        "mean_volume": 1728446.6861017265,
+        "description": "First 6 months after generic entry"
+      },
+      "mid_period_6_11": {
+        "mean_volume": 1448199.2397066555,
+        "description": "Months 6-11 after generic entry"
+      },
+      "late_period_12_23": {
+        "mean_volume": 1232262.9027149829,
+        "description": "Months 12-23 after generic entry"
+      },
+      "erosion_early_to_late": 28.706918609437576
+    },
+    "interpretation": {
+      "typical_pattern": "Volume typically declines after generic entry",
+      "steepest_decline": "Usually in first 6 months"
+    }
+  }
+}

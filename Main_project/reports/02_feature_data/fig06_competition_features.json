@@ -1,0 +1,61 @@
+{
+  "metadata": {
+    "filename": "fig06_competition_features.json",
+    "description": "Competition features analysis",
+    "generated_at": "2025-11-29T07:43:09.721363",
+    "figure_file": "figures/fig06_competition_features.png"
+  },
+  "data": {
+    "summary": {
+      "competition_features": [
+        "n_gxs",
+        "months_with_generics",
+        "has_generics",
+        "high_competition"
+      ],
+      "n_gxs_stats": {
+        "mean": 1.3935505205666496,
+        "median": 0.0,
+        "max": 43,
+        "brands_with_high_competition": 2817
+      }
+    },
+    "volume_by_competition_level": [
+      {
+        "generics_bin": "1-2",
+        "mean_volume": 1892714.1837152992,
+        "std_volume": 15072677.656918261,
+        "count": 17324
+      },
+      {
+        "generics_bin": "3-5",
+        "mean_volume": 894814.228608049,
+        "std_volume": 3279852.779481819,
+        "count": 7742
+      },
+      {
+        "generics_bin": "6-10",
+        "mean_volume": 1384491.4869490846,
+        "std_volume": 4006566.2511812476,
+        "count": 4425
+      },
+      {
+        "generics_bin": "11-20",
+        "mean_volume": 2682349.8970299237,
+        "std_volume": 4527276.892104573,
+        "count": 2361
+      },
+      {
+        "generics_bin": "20+",
+        "mean_volume": 9662260.603687828,
+        "std_volume": 10736213.748119403,
+        "count": 456
+      }
+    ],
+    "correlation_n_gxs_volume": 0.01571494257128387,
+    "interpretation": {
+      "general_trend": "Higher generic competition tends to reduce brand volume",
+      "saturation_point": "Impact may plateau after certain number of generics"
+    }
+  }
+}

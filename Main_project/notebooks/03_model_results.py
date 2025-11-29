@@ -5,14 +5,34 @@ This script saves detailed JSON data and CSV files for each figure.
 All data files are saved to reports/03_model_data/ for later interpretation.
 
 Usage:
-    python notebooks/03_model_results.py
+    python notebooks/03_model_results.py                    # Use latest files
+    python notebooks/03_model_results.py 20251129_072545    # Use specific timestamp
+
+Configuration:
+    Set RESULTS_TIMESTAMP below to use specific timestamped files,
+    or pass timestamp as command-line argument.
+    Leave as None or "latest" to auto-detect most recent files.
 """
 
 # Setup - Add src to path
 import sys
 from pathlib import Path
 import json
+import re
 from datetime import datetime
+
+# =============================================================================
+# CONFIGURATION: Specify timestamp to analyze specific run results
+# =============================================================================
+# Set to specific timestamp (e.g., "20251129_072545") or None/"latest" for most recent
+# Can also be passed as command-line argument: python 03_model_results.py 20251129_072545
+RESULTS_TIMESTAMP = None  # e.g., "20251129_072545" or None for latest
+# =============================================================================
+
+# Parse command-line argument for timestamp
+if len(sys.argv) > 1 and sys.argv[1] not in ['--help', '-h']:
+    RESULTS_TIMESTAMP = sys.argv[1]
+    print(f"📅 Using timestamp from command line: {RESULTS_TIMESTAMP}")
 
 # Add src to path for imports - handle running from different directories
 script_path = Path(__file__).resolve()
@@ -49,6 +69,131 @@ MODEL_FIGURES_DIR = MODEL_DATA_DIR / 'figures'
 MODEL_FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 print(f"📁 Model data will be saved to: {MODEL_DATA_DIR}")
+
+# =============================================================================
+# Timestamp-based File Resolution
+# =============================================================================
+
+def find_timestamped_file(directory: Path, base_pattern: str, timestamp: str = None) -> Path:
+    """
+    Find file matching pattern with optional timestamp.
+    
+    Args:
+        directory: Directory to search
+        base_pattern: Base filename pattern (e.g., "model_comparison_unified", "unified_lightgbm")
+        timestamp: Specific timestamp (YYYYMMDD_HHMMSS) or None for latest
+    
+    Returns:
+        Path to the matching file, or None if not found
+    """
+    if timestamp and timestamp.lower() != 'latest':
+        # Look for exact timestamp match
+        candidates = list(directory.glob(f"{base_pattern}_{timestamp}.*"))
+        if candidates:
+            return candidates[0]
+        # Also try without extension for joblib files
+        candidates = list(directory.glob(f"{base_pattern}_{timestamp}.joblib"))
+        if candidates:
+            return candidates[0]
+    
+    # Find all timestamped versions and get the most recent
+    pattern = re.compile(rf"{re.escape(base_pattern)}_(\d{{8}}_\d{{6}})\.\w+$")
+    timestamped_files = []
+    
+    for f in directory.glob(f"{base_pattern}_*"):
+        match = pattern.match(f.name)
+        if match:
+            timestamped_files.append((match.group(1), f))
+    
+    if timestamped_files:
+        # Sort by timestamp and return most recent
+        timestamped_files.sort(key=lambda x: x[0], reverse=True)
+        return timestamped_files[0][1]
+    
+    # Fall back to non-timestamped version
+    for ext in ['.csv', '.joblib', '.json']:
+        fallback = directory / f"{base_pattern}{ext}"
+        if fallback.exists():
+            return fallback
+    
+    return None
+
+
+def find_timestamped_submissions(directory: Path, timestamp: str = None) -> list:
+    """
+    Find submission files matching timestamp.
+    
+    Args:
+        directory: Submissions directory
+        timestamp: Specific timestamp or None for latest
+    
+    Returns:
+        List of matching submission file paths
+    """
+    if timestamp and timestamp.lower() != 'latest':
+        # Look for exact timestamp match
+        files = list(directory.glob(f"submission_*_{timestamp}.csv"))
+        if files:
+            return files
+    
+    # Find all timestamped submissions, group by model type
+    pattern = re.compile(r"submission_(\w+)_(\d{8}_\d{6})\.csv$")
+    model_files = {}  # model_type -> [(timestamp, path), ...]
+    
+    for f in directory.glob("submission_*.csv"):
+        if 'template' in f.name or 'example' in f.name:
+            continue
+        match = pattern.match(f.name)
+        if match:
+            model_type, ts = match.groups()
+            if model_type not in model_files:
+                model_files[model_type] = []
+            model_files[model_type].append((ts, f))
+    
+    # Get most recent for each model type
+    result = []
+    for model_type, files in model_files.items():
+        files.sort(key=lambda x: x[0], reverse=True)
+        result.append(files[0][1])
+    
+    # Fall back to _latest files if no timestamped found
+    if not result:
+        result = [f for f in directory.glob("submission_*_latest.csv")]
+    
+    return result
+
+
+def find_timestamped_model(directory: Path, base_name: str, timestamp: str = None) -> Path:
+    """Find model file with optional timestamp."""
+    return find_timestamped_file(directory, base_name, timestamp)
+
+
+def list_available_timestamps(directory: Path, base_pattern: str) -> list:
+    """List all available timestamps for a file pattern."""
+    pattern = re.compile(rf"{re.escape(base_pattern)}_(\d{{8}}_\d{{6}})\.\w+$")
+    timestamps = set()
+    
+    for f in directory.glob(f"{base_pattern}_*"):
+        match = pattern.match(f.name)
+        if match:
+            timestamps.add(match.group(1))
+    
+    return sorted(timestamps, reverse=True)
+
+
+# Show available timestamps
+print("\n" + "="*60)
+print("📅 TIMESTAMP CONFIGURATION")
+print("="*60)
+
+available_ts = list_available_timestamps(REPORTS_DIR, "model_comparison_unified")
+if available_ts:
+    print(f"Available unified result timestamps: {available_ts}")
+
+if RESULTS_TIMESTAMP:
+    print(f"✅ Using specified timestamp: {RESULTS_TIMESTAMP}")
+else:
+    print("ℹ️  Using latest files (set RESULTS_TIMESTAMP or pass as argument)")
 
 # =============================================================================
 # Helper Functions
@@ -111,31 +256,56 @@ print("\n" + "="*60)
 print("📂 LOADING MODEL COMPARISON RESULTS")
 print("="*60)
 
-# Load comparison results (try latest first, then fall back to old naming)
+# Load comparison results using timestamp-aware file resolution
 comparison_s1 = None
 comparison_s2 = None
+comparison_unified = None
+loaded_files_info = {}  # Track which files were loaded
 
-try:
-    # Try new naming convention first
-    if (REPORTS_DIR / 'model_comparison_scenario1_latest.csv').exists():
-        comparison_s1 = pd.read_csv(REPORTS_DIR / 'model_comparison_scenario1_latest.csv')
-    else:
-        comparison_s1 = pd.read_csv(REPORTS_DIR / 'model_comparison_scenario1.csv')
-    print("✅ Loaded Scenario 1 results")
-    print(comparison_s1.to_string())
-except FileNotFoundError:
-    print("⚠️ Scenario 1 results not found. Run scripts/train_models.py --scenario 1 first.")
+# First check for unified training mode results (with timestamp support)
+unified_file = find_timestamped_file(REPORTS_DIR, "model_comparison_unified", RESULTS_TIMESTAMP)
+if unified_file and unified_file.exists():
+    try:
+        comparison_unified = pd.read_csv(unified_file)
+        loaded_files_info['unified'] = unified_file.name
+        print(f"✅ Loaded Unified training results: {unified_file.name}")
+        print(comparison_unified.to_string())
+        # Extract S1 and S2 scores from unified results
+        if 's1_score' in comparison_unified.columns and 's2_score' in comparison_unified.columns:
+            comparison_s1 = comparison_unified[['model', 's1_score']].copy()
+            comparison_s1.columns = ['model', 'final_score']
+            comparison_s2 = comparison_unified[['model', 's2_score']].copy()
+            comparison_s2.columns = ['model', 'final_score']
+            print("   → Extracted S1 and S2 scores from unified results")
+    except Exception as e:
+        print(f"⚠️ Could not load unified results: {e}")
 
-try:
-    # Try new naming convention first
-    if (REPORTS_DIR / 'model_comparison_scenario2_latest.csv').exists():
-        comparison_s2 = pd.read_csv(REPORTS_DIR / 'model_comparison_scenario2_latest.csv')
+# Fall back to separate scenario files if unified not found
+if comparison_s1 is None:
+    s1_file = find_timestamped_file(REPORTS_DIR, "model_comparison_scenario1", RESULTS_TIMESTAMP)
+    if s1_file and s1_file.exists():
+        try:
+            comparison_s1 = pd.read_csv(s1_file)
+            loaded_files_info['scenario1'] = s1_file.name
+            print(f"✅ Loaded Scenario 1 results: {s1_file.name}")
+            print(comparison_s1.to_string())
+        except Exception as e:
+            print(f"⚠️ Scenario 1 results error: {e}")
     else:
-        comparison_s2 = pd.read_csv(REPORTS_DIR / 'model_comparison_scenario2.csv')
-    print("✅ Loaded Scenario 2 results")
-    print(comparison_s2.to_string())
-except FileNotFoundError:
-    print("⚠️ Scenario 2 results not found. Run scripts/train_models.py --scenario 2 first.")
+        print("⚠️ Scenario 1 results not found. Run training first.")
+
+if comparison_s2 is None:
+    s2_file = find_timestamped_file(REPORTS_DIR, "model_comparison_scenario2", RESULTS_TIMESTAMP)
+    if s2_file and s2_file.exists():
+        try:
+            comparison_s2 = pd.read_csv(s2_file)
+            loaded_files_info['scenario2'] = s2_file.name
+            print(f"✅ Loaded Scenario 2 results: {s2_file.name}")
+            print(comparison_s2.to_string())
+        except Exception as e:
+            print(f"⚠️ Scenario 2 results error: {e}")
+    else:
+        print("⚠️ Scenario 2 results not found. Run training first.")
 
 # =============================================================================
 # FIGURE 1: Model Comparison (Both Scenarios)
@@ -149,10 +319,12 @@ print("="*60)
 model_comparison_json = {
     'summary': {
         'scenario_1_available': comparison_s1 is not None,
-        'scenario_2_available': comparison_s2 is not None
+        'scenario_2_available': comparison_s2 is not None,
+        'unified_mode': comparison_unified is not None
     },
     'scenario_1': {},
     'scenario_2': {},
+    'unified': {},
     'interpretation': {
         'metric': 'Prediction Error (PE) - lower is better',
         'bucket_weighting': 'Bucket 1 (high erosion) has 2x weight',
@@ -180,6 +352,18 @@ if comparison_s2 is not None:
         'model_ranking': comparison_s2.sort_values('final_score')['model'].tolist()
     }
     save_model_csv(comparison_s2, 'fig01_model_comparison_s2.csv')
+
+if comparison_unified is not None:
+    best_unified = comparison_unified.loc[comparison_unified['final_score'].idxmin()]
+    model_comparison_json['unified'] = {
+        'best_model': best_unified['model'],
+        'best_combined_score': float(best_unified['final_score']),
+        'best_s1_score': float(best_unified['s1_score']) if 's1_score' in best_unified else None,
+        'best_s2_score': float(best_unified['s2_score']) if 's2_score' in best_unified else None,
+        'all_models': comparison_unified.to_dict('records'),
+        'model_ranking': comparison_unified.sort_values('final_score')['model'].tolist()
+    }
+    save_model_csv(comparison_unified, 'fig01_model_comparison_unified.csv')
 
 save_model_json(model_comparison_json, 'fig01_model_comparison.json',
                 'Model comparison across both scenarios')
@@ -338,15 +522,29 @@ feature_importance_json = {
         'importance_metric': 'Feature importance (gain/split)'
     },
     'scenario_1_importance': [],
-    'scenario_2_importance': []
+    'scenario_2_importance': [],
+    'unified_importance': []
 }
 
 fig, axes = plt.subplots(1, 2, figsize=(14, 8))
 
-for idx, scenario in enumerate([1, 2]):
-    model_path = MODELS_DIR / f'scenario{scenario}_lightgbm.joblib'
-    
-    if model_path.exists():
+# Check for unified model first, then separate scenario models (with timestamp support)
+model_paths = []
+unified_model_path = find_timestamped_model(MODELS_DIR, "unified_lightgbm", RESULTS_TIMESTAMP)
+if unified_model_path and unified_model_path.exists():
+    # Unified mode: show same model in both panels
+    model_paths = [(0, unified_model_path, 'unified'), (1, unified_model_path, 'unified')]
+    loaded_files_info['model_lightgbm'] = unified_model_path.name
+else:
+    # Separate mode
+    for idx, scenario in enumerate([1, 2]):
+        model_path = find_timestamped_model(MODELS_DIR, f"scenario{scenario}_lightgbm", RESULTS_TIMESTAMP)
+        if model_path:
+            model_paths.append((idx, model_path, scenario))
+            loaded_files_info[f'model_s{scenario}_lightgbm'] = model_path.name
+
+for idx, model_path, scenario_label in model_paths:
+    if model_path and model_path.exists():
         data = joblib.load(model_path)
         model = data['model']
         feature_names = data['feature_names']
@@ -364,23 +562,33 @@ for idx, scenario in enumerate([1, 2]):
             for _, row in top_15.iterrows()
         ]
         
-        if scenario == 1:
+        if scenario_label == 'unified':
+            feature_importance_json['unified_importance'] = importance_list
+            # Also populate scenario lists for compatibility
+            if idx == 0:
+                feature_importance_json['scenario_1_importance'] = importance_list
+            else:
+                feature_importance_json['scenario_2_importance'] = importance_list
+        elif scenario_label == 1:
             feature_importance_json['scenario_1_importance'] = importance_list
         else:
             feature_importance_json['scenario_2_importance'] = importance_list
         
         # Save full importance to CSV
-        save_model_csv(importance, f'fig03_feature_importance_s{scenario}.csv')
+        save_model_csv(importance, f'fig03_feature_importance_{scenario_label}.csv')
         
         # Plot
         axes[idx].barh(top_15['feature'], top_15['importance'], 
                        color='steelblue', edgecolor='black')
         axes[idx].set_xlabel('Importance')
-        axes[idx].set_title(f'Scenario {scenario}: Top 15 Features (LightGBM)', fontsize=12)
+        title_suffix = '(Unified Model)' if scenario_label == 'unified' else f'(LightGBM)'
+        scenario_num = idx + 1 if scenario_label == 'unified' else scenario_label
+        axes[idx].set_title(f'Scenario {scenario_num}: Top 15 Features {title_suffix}', fontsize=12)
     else:
         axes[idx].text(0.5, 0.5, f'Model not found\nRun train_models.py first',
                        ha='center', va='center', transform=axes[idx].transAxes)
-        axes[idx].set_title(f'Scenario {scenario}: Feature Importance')
+        scenario_num = idx + 1
+        axes[idx].set_title(f'Scenario {scenario_num}: Feature Importance')
 
 save_model_json(feature_importance_json, 'fig03_feature_importance.json',
                 'Feature importance from LightGBM models')
@@ -398,26 +606,52 @@ print("\n" + "="*60)
 print("📊 FIGURE 4: Submission Analysis")
 print("="*60)
 
-# Load and analyze submissions
-submission_files = list(SUBMISSIONS_DIR.glob('scenario*_*_final.csv'))
+# Load and analyze submissions - use timestamp-aware resolution
+submission_files = find_timestamped_submissions(SUBMISSIONS_DIR, RESULTS_TIMESTAMP)
+
+# Fall back to older patterns if timestamp search returns nothing
+if not submission_files:
+    submission_files = list(SUBMISSIONS_DIR.glob('scenario*_*_final.csv'))
+if not submission_files:
+    submission_files = list(SUBMISSIONS_DIR.glob('submission_*_latest.csv'))
+if not submission_files:
+    submission_files = [f for f in SUBMISSIONS_DIR.glob('submission_*.csv') 
+                       if 'template' not in f.name and 'example' not in f.name]
 
 print(f"📁 Found {len(submission_files)} submission files:")
 for f in submission_files:
     print(f"   - {f.name}")
+    loaded_files_info[f'submission_{f.stem}'] = f.name
 
 submissions = {}
 submission_analysis_json = {
     'summary': {
-        'files_found': len(submission_files)
+        'files_found': len(submission_files),
+        'timestamp_filter': RESULTS_TIMESTAMP or 'latest'
     },
     'scenario_1': {},
-    'scenario_2': {}
+    'scenario_2': {},
+    'unified_submissions': []
 }
 
 for f in submission_files:
     df = pd.read_csv(f)
-    scenario = 1 if 'scenario1' in f.name else 2
-    submissions[scenario] = df
+    
+    # Determine if it's a scenario-specific or unified submission
+    if 'scenario1' in f.name:
+        scenario = 1
+        submissions[scenario] = df
+    elif 'scenario2' in f.name:
+        scenario = 2
+        submissions[scenario] = df
+    else:
+        # Unified submission - contains all data (S1 + S2 brands)
+        # Use as combined view (assign to scenario 1 for visualization)
+        if 1 not in submissions:
+            submissions[1] = df
+            scenario = 1
+        else:
+            continue  # Skip duplicate unified submissions
     
     # Calculate statistics
     stats = {
@@ -434,10 +668,16 @@ for f in submission_files:
         'months_range': [int(df['months_postgx'].min()), int(df['months_postgx'].max())]
     }
     
-    if scenario == 1:
+    # Store in appropriate section
+    if 'scenario1' in f.name:
         submission_analysis_json['scenario_1'] = stats
-    else:
+    elif 'scenario2' in f.name:
         submission_analysis_json['scenario_2'] = stats
+    else:
+        submission_analysis_json['unified_submissions'].append(stats)
+        # Also use first unified as scenario 1 for compatibility
+        if not submission_analysis_json['scenario_1']:
+            submission_analysis_json['scenario_1'] = stats
     
     print(f"\n📊 {f.name}:")
     print(f"   Rows: {len(df):,}")
@@ -551,6 +791,8 @@ complete_summary = {
     'scenario_1_best': {},
     'scenario_2_best': {},
     'submissions': {},
+    'loaded_files': loaded_files_info,
+    'timestamp_used': RESULTS_TIMESTAMP or 'latest',
     'figures_generated': [
         'fig01_model_comparison.png',
         'fig02_bucket_performance.png',
@@ -566,7 +808,7 @@ if comparison_s1 is not None:
         'model': best_s1['model'],
         'final_score': float(best_s1['final_score']),
         'bucket1_pe': float(best_s1['bucket1_pe']) if pd.notna(best_s1.get('bucket1_pe')) else None,
-        'bucket2_pe': float(best_s1['bucket2_pe']) if pd.notna(best_s1.get('bucket2_pe')) else None
+        'bucket2_pe': float(best_s2['bucket2_pe']) if pd.notna(best_s1.get('bucket2_pe')) else None
     }
     print(f"\n🏆 SCENARIO 1 BEST MODEL:")
     print(f"   Model: {best_s1['model']}")
@@ -595,6 +837,17 @@ for scenario, df in submissions.items():
 with open(MODEL_DATA_DIR / 'model_results_complete_summary.json', 'w', encoding='utf-8') as f:
     json.dump(complete_summary, f, indent=2, ensure_ascii=False)
 print(f"\n   💾 Saved: model_results_complete_summary.json")
+
+# Print summary of loaded files
+print("\n" + "="*70)
+print("📋 FILES USED FOR THIS ANALYSIS:")
+print("="*70)
+for key, filename in loaded_files_info.items():
+    print(f"   {key}: {filename}")
+if RESULTS_TIMESTAMP:
+    print(f"\n   📅 Timestamp filter: {RESULTS_TIMESTAMP}")
+else:
+    print(f"\n   📅 Using latest available files")
 
 print(f"\n✅ All data saved to: {MODEL_DATA_DIR}")
 print(f"✅ All figures saved to: {MODEL_FIGURES_DIR}")

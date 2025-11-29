@@ -1,0 +1,16 @@
+{
+  "metadata": {
+    "filename": "fig02_bucket_performance.json",
+    "description": "Bucket-level performance comparison",
+    "generated_at": "2025-11-29T07:40:38.205024",
+    "figure_file": "figures/fig02_bucket_performance.png"
+  },
+  "data": {
+    "summary": {
+      "bucket_1_definition": "High erosion brands (2x weight in scoring)",
+      "bucket_2_definition": "Lower erosion brands (1x weight)"
+    },
+    "scenario_1_bucket_performance": [],
+    "scenario_2_bucket_performance": []
+  }
+}

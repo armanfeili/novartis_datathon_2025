@@ -1,0 +1,102 @@
+{
+  "run_info": {
+    "timestamp": "20251129_075624",
+    "date": "20251129",
+    "time": "075624",
+    "saved_at": "2025-11-29T07:56:24.187886",
+    "total_time_seconds": 389.21379828453064,
+    "num_configs": 6
+  },
+  "best_result": {
+    "config_id": "high_complexity",
+    "best_score": 0.444
+  },
+  "all_configs": [
+    {
+      "config_id": "default",
+      "description": "Default parameters",
+      "best_score": 1.1409,
+      "best_model": "Baseline-ExpDecay(0.050)",
+      "total_time": 68.07484412193298
+    },
+    {
+      "config_id": "low_lr",
+      "description": "Low learning rate with more trees",
+      "best_score": 1.1409,
+      "best_model": "Baseline-ExpDecay(0.050)",
+      "total_time": 74.88025045394897
+    },
+    {
+      "config_id": "high_complexity",
+      "description": "More complex trees",
+      "best_score": 0.444,
+      "best_model": "XGBoost-Unified",
+      "total_time": 68.99732828140259
+    },
+    {
+      "config_id": "regularized",
+      "description": "Strong regularization to prevent overfitting",
+      "best_score": 1.1409,
+      "best_model": "Baseline-ExpDecay(0.050)",
+      "total_time": 53.288779735565186
+    },
+    {
+      "config_id": "slow_decay",
+      "description": "Slower baseline decay rate",
+      "best_score": 1.1409,
+      "best_model": "Baseline-ExpDecay(0.050)",
+      "total_time": 61.98864698410034
+    },
+    {
+      "config_id": "fast_decay",
+      "description": "Faster baseline decay rate",
+      "best_score": 1.1409,
+      "best_model": "Baseline-ExpDecay(0.050)",
+      "total_time": 61.94575595855713
+    }
+  ],
+  "comparison_table": [
+    {
+      "config_id": "default",
+      "description": "Default parameters",
+      "total_time": 68.07484412193298,
+      "best_score": 1.1409,
+      "best_model": "Baseline-ExpDecay(0.050)"
+    },
+    {
+      "config_id": "low_lr",
+      "description": "Low learning rate with more trees",
+      "total_time": 74.88025045394897,
+      "best_score": 1.1409,
+      "best_model": "Baseline-ExpDecay(0.050)"
+    },
+    {
+      "config_id": "high_complexity",
+      "description": "More complex trees",
+      "total_time": 68.99732828140259,
+      "best_score": 0.444,
+      "best_model": "XGBoost-Unified"
+    },
+    {
+      "config_id": "regularized",
+      "description": "Strong regularization to prevent overfitting",
+      "total_time": 53.288779735565186,
+      "best_score": 1.1409,
+      "best_model": "Baseline-ExpDecay(0.050)"
+    },
+    {
+      "config_id": "slow_decay",
+      "description": "Slower baseline decay rate",
+      "total_time": 61.98864698410034,
+      "best_score": 1.1409,
+      "best_model": "Baseline-ExpDecay(0.050)"
+    },
+    {
+      "config_id": "fast_decay",
+      "description": "Faster baseline decay rate",
+      "total_time": 61.94575595855713,
+      "best_score": 1.1409,
+      "best_model": "Baseline-ExpDecay(0.050)"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "metadata": {
+    "filename": "fig05_prediction_distribution.json",
+    "description": "Prediction distribution analysis",
+    "generated_at": "2025-11-29T07:40:41.014162",
+    "figure_file": "figures/fig05_prediction_distribution.png"
+  },
+  "data": {
+    "summary": {
+      "visualization": "Log-transformed volume distribution"
+    },
+    "scenario_1_distribution": {
+      "mean_log": 11.771549314058664,
+      "std_log": 2.919595862860869,
+      "median_log": 11.931615642390739,
+      "mean_original": 129513.65426391119,
+      "median_original": 151995.93610035372
+    },
+    "scenario_2_distribution": {}
+  }
+}

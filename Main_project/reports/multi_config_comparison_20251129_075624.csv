@@ -1,0 +1,7 @@
+config_id,description,total_time,best_score,best_model
+default,Default parameters,68.07484412193298,1.1409,Baseline-ExpDecay(0.050)
+low_lr,Low learning rate with more trees,74.88025045394897,1.1409,Baseline-ExpDecay(0.050)
+high_complexity,More complex trees,68.99732828140259,0.444,XGBoost-Unified
+regularized,Strong regularization to prevent overfitting,53.288779735565186,1.1409,Baseline-ExpDecay(0.050)
+slow_decay,Slower baseline decay rate,61.98864698410034,1.1409,Baseline-ExpDecay(0.050)
+fast_decay,Faster baseline decay rate,61.94575595855713,1.1409,Baseline-ExpDecay(0.050)

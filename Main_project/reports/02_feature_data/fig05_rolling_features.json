@@ -1,0 +1,135 @@
+{
+  "metadata": {
+    "filename": "fig05_rolling_features.json",
+    "description": "Rolling features analysis",
+    "generated_at": "2025-11-29T07:43:08.356420",
+    "figure_file": "figures/fig05_rolling_features.png"
+  },
+  "data": {
+    "summary": {
+      "total_rolling_features": 12,
+      "rolling_feature_list": [
+        "volume_rolling_mean_3",
+        "volume_rolling_std_3",
+        "volume_rolling_min_3",
+        "volume_rolling_max_3",
+        "volume_rolling_mean_6",
+        "volume_rolling_std_6",
+        "volume_rolling_min_6",
+        "volume_rolling_max_6",
+        "volume_rolling_mean_12",
+        "volume_rolling_std_12",
+        "volume_rolling_min_12",
+        "volume_rolling_max_12"
+      ],
+      "window_sizes": [
+        3,
+        6,
+        12
+      ]
+    },
+    "rolling_statistics": [
+      {
+        "feature": "volume_rolling_mean_3",
+        "type": "mean",
+        "window": 3,
+        "mean": 1987468.2813208182,
+        "std": 12679230.26996255,
+        "correlation_with_volume": 0.9890581547441488
+      },
+      {
+        "feature": "volume_rolling_std_3",
+        "type": "std",
+        "window": 3,
+        "mean": 233655.10668533112,
+        "std": 2212473.0228338577,
+        "correlation_with_volume": 0.5656033817530831
+      },
+      {
+        "feature": "volume_rolling_min_3",
+        "type": "min",
+        "window": 3,
+        "mean": 1782505.4928172356,
+        "std": 11585509.164498636,
+        "correlation_with_volume": 0.9855285495303892
+      },
+      {
+        "feature": "volume_rolling_max_3",
+        "type": "max",
+        "window": 3,
+        "mean": 2221701.6772674057,
+        "std": 14082222.974573633,
+        "correlation_with_volume": 0.9770635487901141
+      },
+      {
+        "feature": "volume_rolling_mean_6",
+        "type": "mean",
+        "window": 6,
+        "mean": 2030827.2996136695,
+        "std": 12842861.937785417,
+        "correlation_with_volume": 0.9829809501009485
+      },
+      {
+        "feature": "volume_rolling_std_6",
+        "type": "std",
+        "window": 6,
+        "mean": 279883.75766198453,
+        "std": 2406982.415033601,
+        "correlation_with_volume": 0.5811560696171341
+      },
+      {
+        "feature": "volume_rolling_min_6",
+        "type": "min",
+        "window": 6,
+        "mean": 1710301.0770110625,
+        "std": 11162845.04049242,
+        "correlation_with_volume": 0.9797041183486388
+      },
+      {
+        "feature": "volume_rolling_max_6",
+        "type": "max",
+        "window": 6,
+        "mean": 2424983.9564322424,
+        "std": 15157525.78736492,
+        "correlation_with_volume": 0.9568646514287279
+      },
+      {
+        "feature": "volume_rolling_mean_12",
+        "type": "mean",
+        "window": 12,
+        "mean": 2112829.976074353,
+        "std": 13181729.478609238,
+        "correlation_with_volume": 0.9755282002402181
+      },
+      {
+        "feature": "volume_rolling_std_12",
+        "type": "std",
+        "window": 12,
+        "mean": 344623.2374418725,
+        "std": 2678260.6330631403,
+        "correlation_with_volume": 0.5832397169666242
+      },
+      {
+        "feature": "volume_rolling_min_12",
+        "type": "min",
+        "window": 12,
+        "mean": 1649662.135509443,
+        "std": 10837692.077330165,
+        "correlation_with_volume": 0.9753250948252825
+      },
+      {
+        "feature": "volume_rolling_max_12",
+        "type": "max",
+        "window": 12,
+        "mean": 2712127.060321149,
+        "std": 16493506.615673728,
+        "correlation_with_volume": 0.9289019343148606
+      }
+    ],
+    "interpretation": {
+      "rolling_mean": "Smoothed average volume over window",
+      "rolling_std": "Volatility measure over window",
+      "window_effect": "Larger windows capture longer-term trends"
+    }
+  }
+}

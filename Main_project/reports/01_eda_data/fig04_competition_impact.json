@@ -1,0 +1,304 @@
+{
+  "metadata": {
+    "filename": "fig04_competition_impact.json",
+    "description": "Impact of generic competition on brand volume erosion",
+    "generated_at": "2025-11-29T07:42:28.545682",
+    "figure_file": "fig04_competition_impact.png"
+  },
+  "data": {
+    "summary": {
+      "n_gxs_range": [
+        0,
+        43
+      ],
+      "mean_competitors_at_entry": 2.0423905489923557,
+      "mean_competitors_at_month23": 4.238359972202919
+    },
+    "interpretation": {
+      "n_gxs_meaning": "Number of generic competitors in the market",
+      "expected_pattern": "More competitors typically leads to lower normalized volume (more erosion)",
+      "trajectory_meaning": "Shows how competition builds up over time after generic entry"
+    },
+    "erosion_by_n_gxs": [
+      {
+        "n_gxs": 0.0,
+        "mean_vol_norm": 0.7848936996178021
+      },
+      {
+        "n_gxs": 1.0,
+        "mean_vol_norm": 0.6334514376899562
+      },
+      {
+        "n_gxs": 2.0,
+        "mean_vol_norm": 0.5771866192741022
+      },
+      {
+        "n_gxs": 3.0,
+        "mean_vol_norm": 0.5544701451605669
+      },
+      {
+        "n_gxs": 4.0,
+        "mean_vol_norm": 0.5189890687914198
+      },
+      {
+        "n_gxs": 5.0,
+        "mean_vol_norm": 0.4972217314478953
+      },
+      {
+        "n_gxs": 6.0,
+        "mean_vol_norm": 0.4358663522651861
+      },
+      {
+        "n_gxs": 7.0,
+        "mean_vol_norm": 0.48224308356907375
+      },
+      {
+        "n_gxs": 8.0,
+        "mean_vol_norm": 0.4808622549940548
+      },
+      {
+        "n_gxs": 9.0,
+        "mean_vol_norm": 0.49878199810831336
+      },
+      {
+        "n_gxs": 10.0,
+        "mean_vol_norm": 0.45335104949772775
+      },
+      {
+        "n_gxs": 11.0,
+        "mean_vol_norm": 0.44903062945969663
+      },
+      {
+        "n_gxs": 12.0,
+        "mean_vol_norm": 0.4423691306036602
+      },
+      {
+        "n_gxs": 13.0,
+        "mean_vol_norm": 0.47792227804632165
+      },
+      {
+        "n_gxs": 14.0,
+        "mean_vol_norm": 0.4831811124718059
+      },
+      {
+        "n_gxs": 15.0,
+        "mean_vol_norm": 0.5804035936498504
+      },
+      {
+        "n_gxs": 16.0,
+        "mean_vol_norm": 0.4443890618743015
+      },
+      {
+        "n_gxs": 17.0,
+        "mean_vol_norm": 0.5587770077438851
+      },
+      {
+        "n_gxs": 18.0,
+        "mean_vol_norm": 0.39662626109267674
+      },
+      {
+        "n_gxs": 19.0,
+        "mean_vol_norm": 0.4662584009051508
+      },
+      {
+        "n_gxs": 20.0,
+        "mean_vol_norm": 0.5311614478996433
+      },
+      {
+        "n_gxs": 21.0,
+        "mean_vol_norm": 0.43840667262770283
+      },
+      {
+        "n_gxs": 22.0,
+        "mean_vol_norm": 0.2760313206540801
+      },
+      {
+        "n_gxs": 23.0,
+        "mean_vol_norm": 0.5216815700078814
+      },
+      {
+        "n_gxs": 24.0,
+        "mean_vol_norm": 0.30152212389958966
+      },
+      {
+        "n_gxs": 25.0,
+        "mean_vol_norm": 0.7759271792455729
+      },
+      {
+        "n_gxs": 26.0,
+        "mean_vol_norm": 0.4358732993164331
+      },
+      {
+        "n_gxs": 27.0,
+        "mean_vol_norm": 0.448003547583631
+      },
+      {
+        "n_gxs": 28.0,
+        "mean_vol_norm": 0.5616976254105055
+      },
+      {
+        "n_gxs": 29.0,
+        "mean_vol_norm": 0.3079317769092279
+      },
+      {
+        "n_gxs": 31.0,
+        "mean_vol_norm": 0.6012022125828507
+      },
+      {
+        "n_gxs": 32.0,
+        "mean_vol_norm": 0.4002901087815598
+      },
+      {
+        "n_gxs": 38.0,
+        "mean_vol_norm": 0.5052756642810419
+      },
+      {
+        "n_gxs": 39.0,
+        "mean_vol_norm": 1.026639752533409
+      },
+      {
+        "n_gxs": 40.0,
+        "mean_vol_norm": 0.6640072454688959
+      },
+      {
+        "n_gxs": 41.0,
+        "mean_vol_norm": 0.7544769806220607
+      },
+      {
+        "n_gxs": 42.0,
+        "mean_vol_norm": 0.8009935748278112
+      },
+      {
+        "n_gxs": 43.0,
+        "mean_vol_norm": 0.3518884997541541
+      }
+    ],
+    "competition_trajectory": [
+      {
+        "months_postgx": 0,
+        "mean_n_gxs": 2.0423905489923557,
+        "std_n_gxs": 3.454493976629553
+      },
+      {
+        "months_postgx": 1,
+        "mean_n_gxs": 2.4794996525364836,
+        "std_n_gxs": 3.8364644965029444
+      },
+      {
+        "months_postgx": 2,
+        "mean_n_gxs": 2.7498262682418346,
+        "std_n_gxs": 4.032891322319571
+      },
+      {
+        "months_postgx": 3,
+        "mean_n_gxs": 3.024322446143155,
+        "std_n_gxs": 4.210404087854458
+      },
+      {
+        "months_postgx": 4,
+        "mean_n_gxs": 3.215427380125087,
+        "std_n_gxs": 4.307965381096934
+      },
+      {
+        "months_postgx": 5,
+        "mean_n_gxs": 3.3863794301598333,
+        "std_n_gxs": 4.387931755189414
+      },
+      {
+        "months_postgx": 6,
+        "mean_n_gxs": 3.5378735232800556,
+        "std_n_gxs": 4.474132567810239
+      },
+      {
+        "months_postgx": 7,
+        "mean_n_gxs": 3.681723419041001,
+        "std_n_gxs": 4.535306505024851
+      },
+      {
+        "months_postgx": 8,
+        "mean_n_gxs": 3.8033356497567756,
+        "std_n_gxs": 4.613379585757248
+      },
+      {
+        "months_postgx": 9,
+        "mean_n_gxs": 3.910354412786657,
+        "std_n_gxs": 4.662267957009243
+      },
+      {
+        "months_postgx": 10,
+        "mean_n_gxs": 4.0034746351633075,
+        "std_n_gxs": 4.703960884399867
+      },
+      {
+        "months_postgx": 11,
+        "mean_n_gxs": 4.1049339819318975,
+        "std_n_gxs": 4.720060094317612
+      },
+      {
+        "months_postgx": 12,
+        "mean_n_gxs": 4.235580264072272,
+        "std_n_gxs": 4.758649126524647
+      },
+      {
+        "months_postgx": 13,
+        "mean_n_gxs": 4.236275191104934,
+        "std_n_gxs": 4.758249291995273
+      },
+      {
+        "months_postgx": 14,
+        "mean_n_gxs": 4.236275191104934,
+        "std_n_gxs": 4.758249291995273
+      },
+      {
+        "months_postgx": 15,
+        "mean_n_gxs": 4.236275191104934,
+        "std_n_gxs": 4.758249291995273
+      },
+      {
+        "months_postgx": 16,
+        "mean_n_gxs": 4.236275191104934,
+        "std_n_gxs": 4.758249291995273
+      },
+      {
+        "months_postgx": 17,
+        "mean_n_gxs": 4.236970118137595,
+        "std_n_gxs": 4.757849322294101
+      },
+      {
+        "months_postgx": 18,
+        "mean_n_gxs": 4.236970118137595,
+        "std_n_gxs": 4.757849322294101
+      },
+      {
+        "months_postgx": 19,
+        "mean_n_gxs": 4.236970118137595,
+        "std_n_gxs": 4.757849322294101
+      },
+      {
+        "months_postgx": 20,
+        "mean_n_gxs": 4.236970118137595,
+        "std_n_gxs": 4.757849322294101
+      },
+      {
+        "months_postgx": 21,
+        "mean_n_gxs": 4.238359972202919,
+        "std_n_gxs": 4.758218315350083
+      },
+      {
+        "months_postgx": 22,
+        "mean_n_gxs": 4.238359972202919,
+        "std_n_gxs": 4.758218315350083
+      },
+      {
+        "months_postgx": 23,
+        "mean_n_gxs": 4.238359972202919,
+        "std_n_gxs": 4.758218315350083
+      }
+    ],
+    "correlation_analysis": {
+      "correlation_n_gxs_vs_vol_norm": 0.17719262729046983,
+      "vol_norm_at_0_competitors": 0.7848936996178021,
+      "vol_norm_at_max_competitors": 0.3518884997541541
+    }
+  }
+}

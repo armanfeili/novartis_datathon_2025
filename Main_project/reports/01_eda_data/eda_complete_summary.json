@@ -1,0 +1,78 @@
+{
+  "metadata": {
+    "filename": "eda_complete_summary.json",
+    "description": "Complete EDA summary with all key insights",
+    "generated_at": "2025-11-29T07:42:42.444160",
+    "figure_file": "eda_complete_summary.png"
+  },
+  "data": {
+    "dataset_overview": {
+      "shape": [
+        93744,
+        11
+      ],
+      "total_brands": 1953,
+      "countries": 54,
+      "months_range": [
+        -24,
+        23
+      ]
+    },
+    "bucket_distribution": {
+      "bucket_1_count": 130,
+      "bucket_1_pct": 6.7,
+      "bucket_2_count": 1823,
+      "bucket_2_pct": 93.3,
+      "imbalance_note": "Highly imbalanced - Bucket 2 dominates but Bucket 1 has 2x weight"
+    },
+    "key_insights": [
+      "Bucket 1 (high erosion) contains only ~6.7% of brands but has 2x weight in metric",
+      "Bucket 1 brands lose ~75%+ of volume within 24 months post generic entry",
+      "Bucket 2 brands retain more volume, stabilizing above 25% normalized volume",
+      "More generic competitors correlates with lower normalized volume",
+      "Competition builds up gradually over 24 months post generic entry",
+      "Erosion speed varies significantly between buckets"
+    ],
+    "modeling_recommendations": [
+      "Use stratified sampling to handle bucket imbalance",
+      "Consider separate models for each bucket",
+      "Focus optimization on Bucket 1 predictions (2x weight)",
+      "Include n_gxs as important feature for predictions",
+      "Model time dynamics (months_postgx) carefully"
+    ],
+    "files_generated": {
+      "json_data_files": [
+        "fig01_bucket_distribution.json",
+        "fig02_erosion_curves.json",
+        "fig03_sample_trajectories.json",
+        "fig04_competition_impact.json",
+        "fig05_therapeutic_areas.json",
+        "fig06_biological_vs_small.json",
+        "fig07_hospital_rate.json",
+        "fig08_erosion_speed.json",
+        "eda_complete_summary.json"
+      ],
+      "csv_data_files": [
+        "fig01_bucket_distribution.csv",
+        "fig02_erosion_curves.csv",
+        "fig03_sample_trajectories.csv",
+        "fig04_n_gxs_impact.csv",
+        "fig04_competition_trajectory.csv",
+        "fig05_therapeutic_areas.csv",
+        "fig06_biological_vs_small.csv",
+        "fig07_hospital_rate.csv",
+        "fig08_erosion_speed_full.csv"
+      ],
+      "figure_files": [
+        "bucket_distribution.png",
+        "erosion_curves_by_bucket.png",
+        "sample_brand_trajectories.png",
+        "n_gxs_impact.png",
+        "ther_area_erosion.png",
+        "biological_vs_small_molecule.png",
+        "hospital_rate_erosion.png",
+        "erosion_speed_analysis.png"
+      ]
+    }
+  }
+}

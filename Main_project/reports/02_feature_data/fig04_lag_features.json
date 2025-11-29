@@ -1,0 +1,61 @@
+{
+  "metadata": {
+    "filename": "fig04_lag_features.json",
+    "description": "Lag features analysis and correlations",
+    "generated_at": "2025-11-29T07:43:07.140618",
+    "figure_file": "figures/fig04_lag_features.png"
+  },
+  "data": {
+    "summary": {
+      "total_lag_features": 5,
+      "lag_feature_list": [
+        "volume_lag_1",
+        "volume_lag_3",
+        "volume_lag_6",
+        "volume_lag_12",
+        "pre_loe_growth_flag"
+      ]
+    },
+    "lag_correlations": [
+      {
+        "feature": "volume_lag_1",
+        "correlation": 0.952603394504955,
+        "n_samples": 93744,
+        "mean": 1932668.9439919335,
+        "std": 12583314.137097826
+      },
+      {
+        "feature": "volume_lag_3",
+        "correlation": 0.9058233909285167,
+        "n_samples": 93744,
+        "mean": 1884148.543606238,
+        "std": 12462850.132382218
+      },
+      {
+        "feature": "volume_lag_6",
+        "correlation": 0.8519627464747493,
+        "n_samples": 93744,
+        "mean": 1807451.2855309993,
+        "std": 12256836.459011778
+      },
+      {
+        "feature": "volume_lag_12",
+        "correlation": 0.7170453675900975,
+        "n_samples": 93744,
+        "mean": 1649709.0608109091,
+        "std": 11843229.512337882
+      },
+      {
+        "feature": "pre_loe_growth_flag",
+        "correlation": -0.013956425846087292,
+        "n_samples": 93744,
+        "mean": 0.5811571940604199,
+        "std": 0.49337217843823633
+      }
+    ],
+    "interpretation": {
+      "high_correlation_meaning": "Strong persistence in volume over time",
+      "lag_1_importance": "Most recent volume is usually most predictive"
+    }
+  }
+}

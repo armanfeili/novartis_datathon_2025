@@ -1,0 +1,200 @@
+{
+  "metadata": {
+    "filename": "fig03_feature_importance.json",
+    "description": "Feature importance from LightGBM models",
+    "generated_at": "2025-11-29T07:40:39.839418",
+    "figure_file": "figures/fig03_feature_importance.png"
+  },
+  "data": {
+    "summary": {
+      "model_type": "LightGBM",
+      "importance_metric": "Feature importance (gain/split)"
+    },
+    "scenario_1_importance": [
+      {
+        "feature": "competition_intensity",
+        "importance": 102.0
+      },
+      {
+        "feature": "pre_entry_slope",
+        "importance": 102.0
+      },
+      {
+        "feature": "volume_diff_3",
+        "importance": 110.0
+      },
+      {
+        "feature": "volume_rolling_min_6",
+        "importance": 114.0
+      },
+      {
+        "feature": "volume_diff_6",
+        "importance": 162.0
+      },
+      {
+        "feature": "pre_entry_growth_rate",
+        "importance": 162.0
+      },
+      {
+        "feature": "volume_lag_1",
+        "importance": 182.0
+      },
+      {
+        "feature": "volume_pct_change_3",
+        "importance": 200.0
+      },
+      {
+        "feature": "volume_pct_change_1",
+        "importance": 256.0
+      },
+      {
+        "feature": "volume_rolling_max_3",
+        "importance": 258.0
+      },
+      {
+        "feature": "volume_rolling_std_3",
+        "importance": 271.0
+      },
+      {
+        "feature": "volume_diff_1",
+        "importance": 318.0
+      },
+      {
+        "feature": "volume_rolling_min_3",
+        "importance": 464.0
+      },
+      {
+        "feature": "volume_rolling_mean_3",
+        "importance": 490.0
+      },
+      {
+        "feature": "erosion_rate_3m",
+        "importance": 644.0
+      }
+    ],
+    "scenario_2_importance": [
+      {
+        "feature": "competition_intensity",
+        "importance": 102.0
+      },
+      {
+        "feature": "pre_entry_slope",
+        "importance": 102.0
+      },
+      {
+        "feature": "volume_diff_3",
+        "importance": 110.0
+      },
+      {
+        "feature": "volume_rolling_min_6",
+        "importance": 114.0
+      },
+      {
+        "feature": "volume_diff_6",
+        "importance": 162.0
+      },
+      {
+        "feature": "pre_entry_growth_rate",
+        "importance": 162.0
+      },
+      {
+        "feature": "volume_lag_1",
+        "importance": 182.0
+      },
+      {
+        "feature": "volume_pct_change_3",
+        "importance": 200.0
+      },
+      {
+        "feature": "volume_pct_change_1",
+        "importance": 256.0
+      },
+      {
+        "feature": "volume_rolling_max_3",
+        "importance": 258.0
+      },
+      {
+        "feature": "volume_rolling_std_3",
+        "importance": 271.0
+      },
+      {
+        "feature": "volume_diff_1",
+        "importance": 318.0
+      },
+      {
+        "feature": "volume_rolling_min_3",
+        "importance": 464.0
+      },
+      {
+        "feature": "volume_rolling_mean_3",
+        "importance": 490.0
+      },
+      {
+        "feature": "erosion_rate_3m",
+        "importance": 644.0
+      }
+    ],
+    "unified_importance": [
+      {
+        "feature": "competition_intensity",
+        "importance": 102.0
+      },
+      {
+        "feature": "pre_entry_slope",
+        "importance": 102.0
+      },
+      {
+        "feature": "volume_diff_3",
+        "importance": 110.0
+      },
+      {
+        "feature": "volume_rolling_min_6",
+        "importance": 114.0
+      },
+      {
+        "feature": "volume_diff_6",
+        "importance": 162.0
+      },
+      {
+        "feature": "pre_entry_growth_rate",
+        "importance": 162.0
+      },
+      {
+        "feature": "volume_lag_1",
+        "importance": 182.0
+      },
+      {
+        "feature": "volume_pct_change_3",
+        "importance": 200.0
+      },
+      {
+        "feature": "volume_pct_change_1",
+        "importance": 256.0
+      },
+      {
+        "feature": "volume_rolling_max_3",
+        "importance": 258.0
+      },
+      {
+        "feature": "volume_rolling_std_3",
+        "importance": 271.0
+      },
+      {
+        "feature": "volume_diff_1",
+        "importance": 318.0
+      },
+      {
+        "feature": "volume_rolling_min_3",
+        "importance": 464.0
+      },
+      {
+        "feature": "volume_rolling_mean_3",
+        "importance": 490.0
+      },
+      {
+        "feature": "erosion_rate_3m",
+        "importance": 644.0
+      }
+    ]
+  }
+}

@@ -98,7 +98,7 @@ def train_scenario(
     # =========================================================================
     # 1. Baseline: No erosion
     # =========================================================================
-    if MODELS_ENABLED.get('baseline_no_erosion', True):
+    if MODELS_ENABLED.get('baseline_no_erosion', False):
         print("\n📊 Training: Baseline - No Erosion")
         pred = BaselineModels.naive_persistence(val_avg_j, months_to_predict)
         results = evaluate_model(val_actual, pred, aux_df, scenario)
@@ -108,7 +108,7 @@ def train_scenario(
     # =========================================================================
     # 2. Baseline: Exponential decay
     # =========================================================================
-    if MODELS_ENABLED.get('baseline_exp_decay', True):
+    if MODELS_ENABLED.get('baseline_exp_decay', False):
         print("\n📊 Training: Baseline - Exponential Decay")
         
         # Tune decay rate
@@ -138,7 +138,7 @@ def train_scenario(
     # 3. LightGBM
     # =========================================================================
     lgbm_model = None
-    if MODELS_ENABLED.get('lightgbm', True):
+    if MODELS_ENABLED.get('lightgbm', False):
         print("\n📊 Training: LightGBM")
         
         lgbm_model = GradientBoostingModel(model_type='lightgbm')
@@ -163,7 +163,7 @@ def train_scenario(
     # =========================================================================
     # 4. XGBoost
     # =========================================================================
-    if MODELS_ENABLED.get('xgboost', True):
+    if MODELS_ENABLED.get('xgboost', False):
         print("\n📊 Training: XGBoost")
         
         xgb_model = GradientBoostingModel(model_type='xgboost')
@@ -207,7 +207,7 @@ def train_scenario(
     months_val = val_pred_data_hybrid['months_postgx'].values
     
     # 5. Hybrid LightGBM
-    if MODELS_ENABLED.get('hybrid_lightgbm', True):
+    if MODELS_ENABLED.get('hybrid_lightgbm', False):
         print("\n📊 Training: Hybrid (Physics + LightGBM)")
         
         hybrid_model = HybridPhysicsMLModel(ml_model_type='lightgbm', decay_rate=best_rate)
@@ -231,7 +231,7 @@ def train_scenario(
         models_trained['hybrid_lightgbm'] = hybrid_model
     
     # 6. Hybrid XGBoost
-    if MODELS_ENABLED.get('hybrid_xgboost', True):
+    if MODELS_ENABLED.get('hybrid_xgboost', False):
         print("\n📊 Training: Hybrid (Physics + XGBoost)")
         
         hybrid_xgb = HybridPhysicsMLModel(ml_model_type='xgboost', decay_rate=best_rate)
@@ -256,7 +256,7 @@ def train_scenario(
     # =========================================================================
     # 7. ARHOW Model
     # =========================================================================
-    if MODELS_ENABLED.get('arihow', True):
+    if MODELS_ENABLED.get('arihow', False):
         print("\n📊 Training: ARHOW (SARIMAX + HW)")
         
         try:

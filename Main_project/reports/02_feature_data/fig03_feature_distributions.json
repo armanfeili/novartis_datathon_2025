@@ -1,0 +1,147 @@
+{
+  "metadata": {
+    "filename": "fig03_feature_distributions.json",
+    "description": "Distribution statistics for key features",
+    "generated_at": "2025-11-29T07:43:05.102166",
+    "figure_file": "figures/fig03_feature_distributions.png"
+  },
+  "data": {
+    "summary": {
+      "features_analyzed": [
+        "months_postgx",
+        "volume_lag_1",
+        "volume_rolling_mean_3",
+        "n_gxs",
+        "months_with_generics",
+        "avg_vol",
+        "volume_rolling_std_3",
+        "volume_lag_6",
+        "hospital_rate"
+      ],
+      "total_records": 93744
+    },
+    "feature_statistics": [
+      {
+        "feature": "months_postgx",
+        "count": 93744,
+        "mean": -0.5,
+        "std": 13.853472991659535,
+        "min": -24.0,
+        "q25": -12.25,
+        "median": -0.5,
+        "q75": 11.25,
+        "max": 23.0,
+        "skewness": 0.0,
+        "kurtosis": -1.2010421742875041
+      },
+      {
+        "feature": "volume_lag_1",
+        "count": 93744,
+        "mean": 1932668.9439919335,
+        "std": 12583314.137097826,
+        "min": 0.0,
+        "q25": 8859.531335009131,
+        "median": 86310.98972275066,
+        "q75": 641781.7611290971,
+        "max": 495040067.8949664,
+        "skewness": 20.247218280002254,
+        "kurtosis": 525.8752249828508
+      },
+      {
+        "feature": "volume_rolling_mean_3",
+        "count": 93744,
+        "mean": 1987468.2813208182,
+        "std": 12679230.26996255,
+        "min": 1.9945762058207988,
+        "q25": 10616.372005836363,
+        "median": 96781.06300930293,
+        "q75": 677942.457957179,
+        "max": 470175845.60704404,
+        "skewness": 19.81417931780702,
+        "kurtosis": 502.56273346562307
+      },
+      {
+        "feature": "n_gxs",
+        "count": 93744,
+        "mean": 1.3935505205666496,
+        "std": 3.334313825158877,
+        "min": 0.0,
+        "q25": 0.0,
+        "median": 0.0,
+        "q75": 1.0,
+        "max": 43.0,
+        "skewness": 4.36863332925307,
+        "kurtosis": 27.154584474818165
+      },
+      {
+        "feature": "months_with_generics",
+        "count": 93744,
+        "mean": 4.1135432667690734,
+        "std": 6.9221614040302235,
+        "min": 0.0,
+        "q25": 0.0,
+        "median": 0.0,
+        "q75": 7.0,
+        "max": 24.0,
+        "skewness": 1.500254192370164,
+        "kurtosis": 0.8603157254088241
+      },
+      {
+        "feature": "avg_vol",
+        "count": 93744,
+        "mean": 2439028.313687955,
+        "std": 13894207.101983301,
+        "min": 37.718361322971106,
+        "q25": 15487.060963347081,
+        "median": 131382.31969486535,
+        "q75": 840489.2129691961,
+        "max": 371038791.09370726,
+        "skewness": 17.59657272764804,
+        "kurtosis": 390.20296204520054
+      },
+      {
+        "feature": "volume_rolling_std_3",
+        "count": 93744,
+        "mean": 233655.10668533112,
+        "std": 2212473.0228338577,
+        "min": 0.0,
+        "q25": 897.2234368800101,
+        "median": 7168.168991503879,
+        "q75": 49673.12050321452,
+        "max": 196482343.34312028,
+        "skewness": 40.330685350309494,
+        "kurtosis": 2481.8008384175428
+      },
+      {
+        "feature": "volume_lag_6",
+        "count": 93744,
+        "mean": 1807451.2855309993,
+        "std": 12256836.459011778,
+        "min": 0.0,
+        "q25": 3183.096960650548,
+        "median": 56396.61201760951,
+        "q75": 531634.1232137757,
+        "max": 495040067.8949664,
+        "skewness": 21.019795881841915,
+        "kurtosis": 568.0058043333179
+      },
+      {
+        "feature": "hospital_rate",
+        "count": 93744,
+        "mean": 29.01265625249621,
+        "std": 39.24042332492858,
+        "min": 0.0,
+        "q25": 0.5351597163890176,
+        "median": 4.236430075430168,
+        "q75": 61.13569372801362,
+        "max": 100.0,
+        "skewness": 0.9939008688062461,
+        "kurtosis": -0.7878258305311228
+      }
+    ],
+    "interpretation": {
+      "skewness": "Positive = right-skewed, Negative = left-skewed",
+      "kurtosis": "High = heavy tails, Low = light tails"
+    }
+  }
+}

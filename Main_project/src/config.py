@@ -67,9 +67,9 @@ TEST_MODE_BRANDS = 50                 # Number of brands for testing
 # ⚠️ NOTE: Model must be trained first (via train_models.py)
 #    before generating its submission
 SUBMISSIONS_ENABLED = {
-    'baseline': True,              # Exponential decay (best) 🏆
-    'hybrid': True,                # Physics + LightGBM hybrid
-    'lightgbm': True,              # Pure LightGBM
+    'baseline': False,              # Exponential decay (best) 🏆
+    'hybrid': False,                # Physics + LightGBM hybrid
+    'lightgbm': False,              # Pure LightGBM
     'xgboost': True,               # Pure XGBoost
     'arihow': False,                # SARIMAX + Holt-Winters
 }
@@ -102,16 +102,16 @@ RUN_VALIDATION = True                # Validate submission files
 
 MODELS_ENABLED = {
     # Baseline models (fast, simple)
-    'baseline_no_erosion': True,      # Predicts avg_vol (no decline)
-    'baseline_exp_decay': True,       # Exponential decay
+    'baseline_no_erosion': False,      # Predicts avg_vol (no decline)
+    'baseline_exp_decay': False,       # Exponential decay
     
     # Gradient boosting models (ML-based)
-    'lightgbm': True,                 # LightGBM gradient boosting
+    'lightgbm': False,                 # LightGBM gradient boosting
     'xgboost': True,                  # XGBoost gradient boosting
     
     # Hybrid models (Physics + ML)
-    'hybrid_lightgbm': True,          # Decay baseline + LightGBM residual
-    'hybrid_xgboost': True,           # Decay baseline + XGBoost residual
+    'hybrid_lightgbm': False,          # Decay baseline + LightGBM residual
+    'hybrid_xgboost': False,           # Decay baseline + XGBoost residual
     
     # Time-series models
     'arihow': False,                   # SARIMAX + Holt-Winters ensemble
@@ -120,7 +120,8 @@ MODELS_ENABLED = {
 # Quick presets - uncomment one to use
 # MODELS_ENABLED = {'baseline_exp_decay': True}  #  baseline only
 # MODELS_ENABLED = {k: True for k in ['baseline_no_erosion', 'baseline_exp_decay', 'lightgbm']}  # Quick
-MODELS_ENABLED = {k: True for k in MODELS_ENABLED}  # All models (default)
+# MODELS_ENABLED = {k: True for k in MODELS_ENABLED}  # All models - OVERWRITES individual settings!
+# Use the individual settings above instead
 
 # =============================================================================
 # 2b. MULTI-CONFIG MODE (Grid Search over Hyperparameters)
@@ -136,7 +137,7 @@ MODELS_ENABLED = {k: True for k in MODELS_ENABLED}  # All models (default)
 # ⚠️ WARNING: Multi-config can be slow! Each config trains all enabled models.
 #    With 3 configs × 7 models = 21 training runs!
 
-MULTI_CONFIG_MODE = False           # Toggle: True = run all configs, False = single config
+MULTI_CONFIG_MODE = True           # Toggle: True = run all configs, False = single config
 
 # Define multiple configurations to try
 # Each config is a dict that overrides the default parameters

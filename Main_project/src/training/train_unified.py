@@ -326,7 +326,7 @@ def train_unified(test_mode: bool = False) -> Dict[str, Any]:
     # =========================================================================
     # 2. Baseline: Exponential Decay (evaluated on both S1 and S2)
     # =========================================================================
-    if MODELS_ENABLED.get('baseline_exp_decay', True):
+    if MODELS_ENABLED.get('baseline_exp_decay', False):
         print("\n📊 Evaluating: Baseline - Exponential Decay (Unified)")
         
         # Generate predictions for all months 0-23
@@ -359,7 +359,7 @@ def train_unified(test_mode: bool = False) -> Dict[str, Any]:
     # 3. LightGBM (Unified)
     # =========================================================================
     lgbm_model = None
-    if MODELS_ENABLED.get('lightgbm', True):
+    if MODELS_ENABLED.get('lightgbm', False):
         print("\n📊 Training: LightGBM (Unified)")
         
         lgbm_model = GradientBoostingModel(model_type='lightgbm')
@@ -423,7 +423,7 @@ def train_unified(test_mode: bool = False) -> Dict[str, Any]:
     # =========================================================================
     # 4. XGBoost (Unified)
     # =========================================================================
-    if MODELS_ENABLED.get('xgboost', True):
+    if MODELS_ENABLED.get('xgboost', False):
         print("\n📊 Training: XGBoost (Unified)")
         
         xgb_model = GradientBoostingModel(model_type='xgboost')
@@ -483,7 +483,7 @@ def train_unified(test_mode: bool = False) -> Dict[str, Any]:
     # =========================================================================
     # 5. Hybrid LightGBM (Unified)
     # =========================================================================
-    if MODELS_ENABLED.get('hybrid_lightgbm', True):
+    if MODELS_ENABLED.get('hybrid_lightgbm', False):
         print("\n📊 Training: Hybrid LightGBM (Unified)")
         
         # Prepare data for hybrid model
@@ -573,7 +573,7 @@ def train_unified(test_mode: bool = False) -> Dict[str, Any]:
     # =========================================================================
     # 5. Hybrid XGBoost Model (Unified)
     # =========================================================================
-    if MODELS_ENABLED.get('hybrid_xgboost', True):
+    if MODELS_ENABLED.get('hybrid_xgboost', False):
         print("\n📊 Training: Hybrid XGBoost (Unified)")
         
         # Prepare data for hybrid model

@@ -1,0 +1,139 @@
+{
+  "metadata": {
+    "filename": "fig01_feature_correlation.json",
+    "description": "Feature correlation matrix analysis",
+    "generated_at": "2025-11-29T07:43:01.506317",
+    "figure_file": "figures/fig01_feature_correlation.png"
+  },
+  "data": {
+    "summary": {
+      "total_features": 76,
+      "numeric_features": 76,
+      "features_in_heatmap": 15,
+      "feature_list": [
+        "months_postgx",
+        "n_gxs",
+        "hospital_rate",
+        "n_gxs_capped",
+        "n_gxs_log",
+        "n_gxs_squared",
+        "n_gxs_cummax",
+        "n_gxs_change",
+        "has_generics",
+        "high_competition",
+        "months_with_generics",
+        "competition_intensity",
+        "n_gxs_change_3m",
+        "months_postgx_squared",
+        "months_postgx_sqrt"
+      ]
+    },
+    "correlation_stats": {
+      "max_correlation": 1.0,
+      "min_correlation": -0.15223595187501857,
+      "mean_abs_correlation": 0.36973576934949226
+    },
+    "high_correlations": [
+      {
+        "feature_1": "months_postgx",
+        "feature_2": "months_postgx_sqrt",
+        "correlation": 0.9231070767860337
+      },
+      {
+        "feature_1": "n_gxs",
+        "feature_2": "n_gxs_capped",
+        "correlation": 0.9665780300971746
+      },
+      {
+        "feature_1": "n_gxs",
+        "feature_2": "n_gxs_log",
+        "correlation": 0.8627234856922348
+      },
+      {
+        "feature_1": "n_gxs",
+        "feature_2": "n_gxs_squared",
+        "correlation": 0.937562673619344
+      },
+      {
+        "feature_1": "n_gxs",
+        "feature_2": "n_gxs_cummax",
+        "correlation": 1.0
+      },
+      {
+        "feature_1": "n_gxs",
+        "feature_2": "high_competition",
+        "correlation": 0.808350362468946
+      },
+      {
+        "feature_1": "n_gxs_capped",
+        "feature_2": "n_gxs_log",
+        "correlation": 0.9225333110325444
+      },
+      {
+        "feature_1": "n_gxs_capped",
+        "feature_2": "n_gxs_squared",
+        "correlation": 0.9302068504057861
+      },
+      {
+        "feature_1": "n_gxs_capped",
+        "feature_2": "n_gxs_cummax",
+        "correlation": 0.9665780300971746
+      },
+      {
+        "feature_1": "n_gxs_capped",
+        "feature_2": "high_competition",
+        "correlation": 0.8606443551445516
+      },
+      {
+        "feature_1": "n_gxs_log",
+        "feature_2": "n_gxs_squared",
+        "correlation": 0.729152323103289
+      },
+      {
+        "feature_1": "n_gxs_log",
+        "feature_2": "n_gxs_cummax",
+        "correlation": 0.8627234856922348
+      },
+      {
+        "feature_1": "n_gxs_log",
+        "feature_2": "has_generics",
+        "correlation": 0.858625250872192
+      },
+      {
+        "feature_1": "n_gxs_log",
+        "feature_2": "high_competition",
+        "correlation": 0.7770260081039775
+      },
+      {
+        "feature_1": "n_gxs_log",
+        "feature_2": "months_with_generics",
+        "correlation": 0.743683321172438
+      },
+      {
+        "feature_1": "n_gxs_squared",
+        "feature_2": "n_gxs_cummax",
+        "correlation": 0.9375626736193442
+      },
+      {
+        "feature_1": "n_gxs_squared",
+        "feature_2": "high_competition",
+        "correlation": 0.7621870622655876
+      },
+      {
+        "feature_1": "n_gxs_cummax",
+        "feature_2": "high_competition",
+        "correlation": 0.808350362468946
+      },
+      {
+        "feature_1": "has_generics",
+        "feature_2": "months_with_generics",
+        "correlation": 0.8194700644682047
+      },
+      {
+        "feature_1": "months_with_generics",
+        "feature_2": "months_postgx_sqrt",
+        "correlation": 0.7527160519305558
+      }
+    ]
+  }
+}

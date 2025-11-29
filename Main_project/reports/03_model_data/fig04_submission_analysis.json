@@ -1,0 +1,49 @@
+{
+  "metadata": {
+    "filename": "fig04_submission_analysis.json",
+    "description": "Submission files analysis",
+    "generated_at": "2025-11-29T07:40:40.376960",
+    "figure_file": "figures/fig04_submission_analysis.png"
+  },
+  "data": {
+    "summary": {
+      "files_found": 1,
+      "timestamp_filter": "20251129_072545"
+    },
+    "scenario_1": {
+      "filename": "submission_baseline_20251129_072545.csv",
+      "total_rows": 7488,
+      "unique_brands": 340,
+      "volume_stats": {
+        "min": 51.508103480007854,
+        "max": 126466937.99228804,
+        "mean": 2518814.845863676,
+        "median": 151995.97214898685,
+        "std": 8942037.475560892
+      },
+      "months_range": [
+        0,
+        23
+      ]
+    },
+    "scenario_2": {},
+    "unified_submissions": [
+      {
+        "filename": "submission_baseline_20251129_072545.csv",
+        "total_rows": 7488,
+        "unique_brands": 340,
+        "volume_stats": {
+          "min": 51.508103480007854,
+          "max": 126466937.99228804,
+          "mean": 2518814.845863676,
+          "median": 151995.97214898685,
+          "std": 8942037.475560892
+        },
+        "months_range": [
+          0,
+          23
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "metadata": {
+    "filename": "fig08_erosion_speed.json",
+    "description": "Erosion speed metrics by bucket",
+    "generated_at": "2025-11-29T07:42:38.395591",
+    "figure_file": "fig08_erosion_speed.png"
+  },
+  "data": {
+    "summary": {
+      "total_brands_analyzed": 1953,
+      "bucket_1_brands": 130,
+      "bucket_2_brands": 1823
+    },
+    "metrics_explained": {
+      "time_to_50pct": "Months until normalized volume drops to 50% (0.5)",
+      "erosion_first_6m": "Average erosion rate in first 6 months (1 - mean_vol_norm)",
+      "final_equilibrium": "Mean normalized volume in months 18-23 (final stable level)"
+    },
+    "bucket_1_statistics": {
+      "time_to_50pct": {
+        "mean": 1.3692307692307693,
+        "median": 1.0,
+        "min": 0.0,
+        "max": 6.0
+      },
+      "erosion_first_6m": {
+        "mean": 0.6671628418082441,
+        "median": 0.683246248721672
+      },
+      "final_equilibrium": {
+        "mean": 0.07682840438128766,
+        "median": 0.06275927766432518
+      }
+    },
+    "bucket_2_statistics": {
+      "time_to_50pct": {
+        "mean": 7.915816326530612,
+        "median": 6.5,
+        "min": 0.0,
+        "max": 23.0
+      },
+      "erosion_first_6m": {
+        "mean": 0.2431847401503801,
+        "median": 0.21094047181821884
+      },
+      "final_equilibrium": {
+        "mean": 0.528839969758237,
+        "median": 0.538535576300078
+      }
+    },
+    "interpretation": {
+      "bucket_1_pattern": "Fast erosion: quick time to 50%, high early erosion, low final equilibrium",
+      "bucket_2_pattern": "Slower erosion: longer time to 50% (or never), lower early erosion, higher final equilibrium",
+      "key_difference": "Bucket 1 brands lose volume much faster and stabilize at lower levels"
+    }
+  }
+}

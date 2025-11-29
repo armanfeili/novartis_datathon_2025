@@ -1,0 +1,109 @@
+{
+  "metadata": {
+    "filename": "fig02_target_correlation.json",
+    "description": "Features correlated with target variable (volume)",
+    "generated_at": "2025-11-29T07:43:04.623682",
+    "figure_file": "figures/fig02_target_correlation.png"
+  },
+  "data": {
+    "summary": {
+      "total_features_analyzed": 76,
+      "strongest_positive": {
+        "feature": "volume_rolling_mean_3",
+        "correlation": 0.9890581547441488
+      },
+      "strongest_negative": {
+        "feature": "pre_entry_slope",
+        "correlation": -0.32390932510447557
+      }
+    },
+    "top_20_correlations": [
+      {
+        "feature": "volume_rolling_mean_3",
+        "correlation": 0.9890581547441488
+      },
+      {
+        "feature": "volume_rolling_min_3",
+        "correlation": 0.9855285495303892
+      },
+      {
+        "feature": "volume_rolling_mean_6",
+        "correlation": 0.9829809501009485
+      },
+      {
+        "feature": "volume_rolling_min_6",
+        "correlation": 0.9797041183486388
+      },
+      {
+        "feature": "volume_rolling_max_3",
+        "correlation": 0.9770635487901141
+      },
+      {
+        "feature": "volume_rolling_mean_12",
+        "correlation": 0.9755282002402181
+      },
+      {
+        "feature": "volume_rolling_min_12",
+        "correlation": 0.9753250948252825
+      },
+      {
+        "feature": "volume_rolling_max_6",
+        "correlation": 0.9568646514287279
+      },
+      {
+        "feature": "volume_lag_1",
+        "correlation": 0.952603394504952
+      },
+      {
+        "feature": "volume_rolling_max_12",
+        "correlation": 0.9289019343148606
+      },
+      {
+        "feature": "volume_lag_3",
+        "correlation": 0.9058233909285164
+      },
+      {
+        "feature": "pre_entry_last_volume",
+        "correlation": 0.8973318455296029
+      },
+      {
+        "feature": "pre_entry_min",
+        "correlation": 0.8933669495706149
+      },
+      {
+        "feature": "volume_lag_6",
+        "correlation": 0.8519627464747462
+      },
+      {
+        "feature": "pre_entry_max",
+        "correlation": 0.8311565661147832
+      },
+      {
+        "feature": "volume_lag_12",
+        "correlation": 0.7170453675900951
+      },
+      {
+        "feature": "pre_entry_volatility",
+        "correlation": 0.5914381886097698
+      },
+      {
+        "feature": "volume_rolling_std_12",
+        "correlation": 0.5832397169666242
+      },
+      {
+        "feature": "volume_rolling_std_6",
+        "correlation": 0.5811560696171341
+      },
+      {
+        "feature": "volume_rolling_std_3",
+        "correlation": 0.5656033817530831
+      }
+    ],
+    "interpretation": {
+      "positive_correlation": "Feature increases as volume increases",
+      "negative_correlation": "Feature increases as volume decreases",
+      "strong_threshold": 0.5,
+      "moderate_threshold": 0.3
+    }
+  }
+}
