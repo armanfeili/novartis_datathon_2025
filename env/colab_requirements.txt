@@ -1,13 +1,34 @@
-numpy
-pandas
-pyarrow
-scikit-learn
-matplotlib
-seaborn
-pyyaml
-tqdm
-lightgbm
-xgboost
-catboost
-joblib
-pytest
+# Novartis Datathon 2025 - Colab Requirements
+# These are lightweight requirements for Google Colab environment
+# Colab already has many packages pre-installed (numpy, pandas, torch, etc.)
+# Install with: pip install -q -r env/colab_requirements.txt
+
+# Data processing (usually pre-installed in Colab, but specify for consistency)
+numpy>=1.21.0
+pandas>=1.3.0
+pyarrow>=8.0.0
+
+# ML frameworks (usually pre-installed in Colab)
+scikit-learn>=1.0.0
+
+# Gradient boosting (may need to install specific versions)
+lightgbm>=3.3.0
+xgboost>=1.6.0
+catboost>=1.0.0
+
+# Configuration
+pyyaml>=6.0
+
+# Progress bars (usually pre-installed)
+tqdm>=4.62.0
+
+# Utilities
+joblib>=1.1.0
+psutil>=5.8.0
+
+# Optional: Experiment tracking (uncomment if needed)
+# wandb>=0.12.0
+# mlflow>=1.25.0
+
+# Optional: Hyperparameter optimization (uncomment if needed)
+# optuna>=3.0.0
