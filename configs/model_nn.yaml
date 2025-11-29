@@ -4,7 +4,13 @@
 # Experimental: PyTorch-based neural network for time series forecasting
 #
 # Usage:
-#   python -m src.train --scenario 1 --model nn --model-config configs/model_nn.yaml
+#   - Single run: Set sweep.enabled=false, use params directly
+#   - Named config: Set active_config_id to use a preset from sweep_configs
+#   - Sweep mode: Set sweep.enabled=true to iterate over all sweep_configs
+#   - GPU mode: Set device='cuda' (auto-configured in notebook)
+#
+# CLI Examples:
+#   python -m src.train --scenario 1 --model nn
 #   python -m src.train --scenario 1 --model nn --config-id large
 #   python -m src.train --scenario 1 --model nn --sweep
 # =============================================================================
@@ -18,11 +24,26 @@ model:
 # =============================================================================
 # ACTIVE CONFIGURATION ID
 # =============================================================================
+# Set this to use a specific named configuration from sweep_configs.
+# Set to null or "default" to use the base params below.
 active_config_id: null
+
+# =============================================================================
+# GPU CONFIGURATION
+# =============================================================================
+gpu:
+  enabled: false  # Set true for GPU training (auto-set by notebook)
+  device_id: 0
 
 # =============================================================================
 # SWEEP CONFIGURATION
 # =============================================================================
+# Selection criterion: official_metric (PE), NOT RMSE
+# K-fold CV: Use n_folds for robust hyperparameter selection
+#
+# Modes:
+#   - "configs": Iterate over sweep_configs list (explicit configs)
+#   - "grid": Expand sweep.grid into Cartesian product of all combinations
 sweep:
   enabled: false
   mode: "configs"

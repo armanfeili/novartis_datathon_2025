@@ -2037,6 +2037,9 @@ def _get_model(model_type: str, config: Optional[dict] = None):
     - 'weighted', 'weighted_averaging', 'weighted_ensemble': Weighted averaging ensemble
     - 'stacking', 'stacking_ensemble': Stacking ensemble
     - 'blending', 'blending_ensemble': Blending ensemble
+    - 'kg_gcn_lstm', 'gcn_lstm': Knowledge Graph GCN + LSTM model
+    - 'cnn_lstm': CNN-LSTM model (Li et al. 2024)
+    - 'lstm', 'lstm_only': Pure LSTM model (ablation)
     
     Args:
         model_type: Type of model to create
@@ -2150,12 +2153,28 @@ def _get_model(model_type: str, config: Optional[dict] = None):
             suppress_warnings=config.get('suppress_warnings', True)
         )
     
+    # KG-GCN-LSTM model (from KG-GCN-LSTM paper)
+    elif model_type_lower in ('kg_gcn_lstm', 'kggcnlstm', 'gcn_lstm'):
+        from .models.kg_gcn_lstm import KGGCNLSTMModel
+        return KGGCNLSTMModel(config)
+    
+    # CNN-LSTM model (from Li et al. 2024)
+    elif model_type_lower in ('cnn_lstm', 'cnnlstm'):
+        from .models.cnn_lstm import CNNLSTMModel
+        return CNNLSTMModel(config)
+    
+    # LSTM-only model (for ablation comparison)
+    elif model_type_lower in ('lstm', 'lstm_only'):
+        from .models.cnn_lstm import LSTMModel
+        return LSTMModel(config)
+    
     else:
         available = [
             'catboost', 'lightgbm', 'xgboost', 'linear', 'nn',
             'global_mean', 'flat', 'trend', 'historical_curve',
             'averaging', 'weighted', 'stacking', 'blending',
-            'hybrid', 'hybrid_lgbm', 'hybrid_xgb', 'arihow'
+            'hybrid', 'hybrid_lgbm', 'hybrid_xgb', 'arihow',
+            'kg_gcn_lstm', 'cnn_lstm', 'lstm'
         ]
         raise ValueError(f"Unknown model type: {model_type}. Available: {available}")
 

@@ -1,0 +1,233 @@
+# =============================================================================
+# LSTM Model Configuration - Novartis Datathon 2025
+# =============================================================================
+# Pure LSTM model for time series forecasting. For ablation comparison with
+# CNN-LSTM to measure the value added by CNN feature extraction.
+#
+# Usage:
+#   - Single run: Set sweep.enabled=false, use params directly
+#   - Named config: Set active_config_id to use a preset from sweep_configs
+#   - Sweep mode: Set sweep.enabled=true to iterate over all sweep_configs
+#   - GPU mode: Set device='cuda' (auto-configured in notebook)
+#
+# CLI Examples:
+#   python -m src.train --scenario 1 --model lstm
+#   python -m src.train --scenario 1 --model lstm --config-id bidirectional
+#   python -m src.train --scenario 1 --model lstm --sweep
+# =============================================================================
+
+model:
+  name: "lstm"
+  framework: "pytorch"
+  task: "regression"
+  priority: 5  # Lower priority - for ablation study
+
+# =============================================================================
+# ACTIVE CONFIGURATION ID
+# =============================================================================
+# Set this to use a specific named configuration from sweep_configs.
+# Set to null or "default" to use the base params below.
+active_config_id: null
+
+# =============================================================================
+# GPU CONFIGURATION
+# =============================================================================
+gpu:
+  enabled: false  # Set true for GPU training (auto-set by notebook)
+  device_id: 0
+
+# =============================================================================
+# SWEEP CONFIGURATION
+# =============================================================================
+# Selection criterion: official_metric (PE), NOT RMSE
+# K-fold CV: Use n_folds for robust hyperparameter selection
+#
+# Modes:
+#   - "configs": Iterate over sweep_configs list (explicit configs)
+#   - "grid": Expand sweep.grid into Cartesian product of all combinations
+sweep:
+  enabled: false
+  mode: "configs"  # "configs" or "grid"
+  selection_metric: "official_metric"  # PRIMARY: Use official PE metric
+  n_folds: 3  # K-fold CV for robustness
+  
+  # Grid mode: Expand all combinations of these values
+  grid:
+    lstm_hidden_dim: [64, 128, 256]
+    lstm_num_layers: [1, 2, 3]
+    learning_rate: [0.001, 0.0005, 0.0001]
+    dropout: [0.1, 0.2, 0.3]
+
+# =============================================================================
+# NAMED SWEEP CONFIGURATIONS (explicit config list)
+# =============================================================================
+# Each config has: id, description (optional), and param overrides.
+# Use with --config-id <id> or --sweep to iterate all.
+sweep_configs:
+  - id: "default"
+    description: "Default balanced configuration"
+    params:
+      lstm_hidden_dim: 128
+      lstm_num_layers: 3
+      lstm_dropout: 0.3
+      lstm_bidirectional: true
+      learning_rate: 0.0005
+
+  - id: "small"
+    description: "Smaller model for faster training"
+    params:
+      lstm_hidden_dim: 64
+      lstm_num_layers: 1
+      lstm_dropout: 0.1
+      lstm_bidirectional: false
+      learning_rate: 0.001
+
+  - id: "large"
+    description: "Larger model for complex patterns"
+    params:
+      lstm_hidden_dim: 256
+      lstm_num_layers: 4
+      lstm_dropout: 0.3
+      lstm_bidirectional: true
+      learning_rate: 0.0001
+
+  - id: "bidirectional"
+    description: "Bidirectional LSTM for better context"
+    params:
+      lstm_hidden_dim: 128
+      lstm_num_layers: 2
+      lstm_bidirectional: true
+      learning_rate: 0.0005
+
+  - id: "unidirectional"
+    description: "Unidirectional LSTM (simpler)"
+    params:
+      lstm_hidden_dim: 128
+      lstm_num_layers: 2
+      lstm_bidirectional: false
+      learning_rate: 0.001
+
+  - id: "attention"
+    description: "LSTM with temporal attention"
+    params:
+      lstm_hidden_dim: 128
+      lstm_num_layers: 2
+      attention_enabled: true
+      attention_dim: 64
+      learning_rate: 0.0005
+
+  - id: "s1_best"
+    description: "Best configuration for Scenario 1"
+    params:
+      lstm_hidden_dim: 128
+      lstm_num_layers: 3
+      lstm_bidirectional: true
+      learning_rate: 0.0005
+
+  - id: "s2_best"
+    description: "Best configuration for Scenario 2"
+    params:
+      lstm_hidden_dim: 128
+      lstm_num_layers: 2
+      lstm_bidirectional: true
+      learning_rate: 0.0005
+
+# =============================================================================
+# MODEL HYPERPARAMETERS (Base Configuration)
+# =============================================================================
+# These are the default parameters used when active_config_id is null.
+# Named configs in sweep_configs override specific values.
+params:
+  # LSTM configuration
+  lstm_hidden_dim: 128
+  lstm_num_layers: 3
+  lstm_dropout: 0.3
+  lstm_bidirectional: true
+  
+  # Attention configuration
+  attention_enabled: true
+  attention_dim: 64
+  
+  # Feature dimensions
+  input_dim: 32
+  static_dim: 8
+  
+  # Fully connected layers
+  fc_hidden_dims: [64]
+  
+  # Output configuration
+  forecast_horizon: 1
+  output_dim: 1
+  
+  # Sequence configuration
+  lookback_window: 12
+
+# =============================================================================
+# TRAINING SETTINGS
+# =============================================================================
+training:
+  learning_rate: 0.0005
+  weight_decay: 0.0001
+  batch_size: 64
+  max_epochs: 100
+  early_stopping_patience: 15
+  use_sample_weights: true
+  device: "auto"  # 'auto', 'cpu', or 'cuda'
+
+# =============================================================================
+# FEATURE CONFIGURATION
+# =============================================================================
+features:
+  time_varying:
+    - n_generics
+    - avg_generic_price
+    - min_generic_price
+    - generic_penetration
+    - months_since_loe
+    - market_hhi
+    - brand_price
+    - volume_lag_1
+    - volume_lag_3
+    - volume_lag_6
+    - volume_ma_3
+    - volume_ma_6
+    - volume_trend
+  
+  static:
+    - therapeutic_area_encoded
+    - route_encoded
+
+# =============================================================================
+# SCENARIO-SPECIFIC BEST PARAMS (for quick reference)
+# =============================================================================
+best_params:
+  scenario1:
+    lstm_hidden_dim: 128
+    lstm_num_layers: 3
+    lstm_bidirectional: true
+    learning_rate: 0.0005
+  scenario2:
+    lstm_hidden_dim: 128
+    lstm_num_layers: 2
+    lstm_bidirectional: true
+    learning_rate: 0.0005
+
+# =============================================================================
+# ENSEMBLE SETTINGS
+# =============================================================================
+ensemble:
+  include: false  # Only include if improves official_metric
+  initial_weight: 0.1
+  min_weight: 0.0
+  max_weight: 0.3
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+logging:
+  level: INFO
+
+# =============================================================================
+# REPRODUCIBILITY
+# =============================================================================
+seed: 42
