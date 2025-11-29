@@ -176,18 +176,18 @@
 
 ### 1.1 Immediate Priorities (Day 1-2)
 - [x] **Verify data files are correctly placed** in `data/raw/TRAIN/` and `data/raw/TEST/` ✅
-- [x] **Run smoke tests** to verify entire pipeline: `pytest tests/test_smoke.py -v` ✅ (87 passed, 0 skipped, 0 warnings)
+- [x] **Run smoke tests** to verify entire pipeline: `pytest tests/test_smoke.py -v` ✅ (372 passed, 0 skipped, 0 warnings)
 - [ ] **Run EDA notebook** (`notebooks/00_eda.ipynb`) to understand data distributions
 - [ ] **Establish baseline score** using `FlatBaseline` or `GlobalMeanBaseline`
-- [ ] **Verify submission format** matches `docs/guide/submission_template.csv`
+- [x] **Verify submission format** matches `docs/guide/submission_template.csv` ✅
 
 ### 1.2 First Submission Target (Day 2-3)
-- [ ] **Train CatBoost Scenario 1 model** with default hyperparameters
-- [ ] **Train CatBoost Scenario 2 model** with default hyperparameters
-- [ ] **Generate first submission file** for Phase 1A (Scenario 1)
-- [ ] **Generate first submission file** for Phase 1B (Scenario 2)
-- [ ] **Validate submission using** `metric_calculation.py` from docs/guide/
+- [x] **Train CatBoost Scenario 1 model** with default hyperparameters ✅ (2025-11-29, RMSE=0.2488, Official=0.7692)
+- [x] **Train CatBoost Scenario 2 model** with default hyperparameters ✅ (2025-11-29, RMSE=0.2055, Official=0.2742)
+- [x] **Generate first submission file** for combined S1+S2 ✅ (submissions/submission_v1.csv)
+- [x] **Validate submission format** - 7488 rows, 340 series, months 0-23, no NaN/negative values ✅
 - [ ] **Submit to leaderboard** and record baseline score
+- [ ] **Validate submission using** `metric_calculation.py` from docs/guide/
 
 ### 1.3 Score Improvement Iteration (Day 3-7)
 - [ ] **Analyze feature importance** to identify key predictors
@@ -1405,18 +1405,25 @@
 | Phase | Status |
 |-------|--------|
 | Design & Consistency (Section 0) | ✅ Implemented |
+| **Critical Path (Section 1)** | ✅ **First Submission Complete** (2025-11-29) |
 | Data Pipeline (Section 2) | ✅ Core Implemented |
 | Feature Engineering (Section 3) | ✅ **Fully Implemented** (seasonal, future n_gxs, target encoding, feature selection) |
 | Model Development | ✅ Core Implemented |
 | Training Pipeline (Section 5) | ✅ Core Complete (CV, metadata, CLI, config weights) |
 | Validation & Evaluation (Section 6) | ✅ Core Implemented |
-| Inference & Submission | ✅ Core Implemented |
+| Inference & Submission (Section 7) | ✅ **Working** (first submission generated) |
 | Experimentation & Optimization (Section 8) | ✅ **Fully Implemented** (feature ablation, model comparison, ensemble weights, post-processing) |
 | Testing | ✅ **372 passed**, 0 skipped, 0 warnings |
 | Documentation (Section 10) | ✅ **Core Complete** (README, configs/README, requirements.txt, reproduce.sh) |
 | Colab/Production Readiness (Section 11) | ✅ **Fully Implemented** (GPU detection, memory management, progress bars, colab notebook) |
 | Competition Strategy (Section 12) | ✅ **Fully Implemented** (SubmissionTracker, TimeAllocationTracker, FinalWeekPlaybook, pre-submission checklist) |
 | Presentation | ⏳ Not Started |
+
+### First Submission Details (2025-11-29)
+- **Scenario 1 Model**: CatBoost (772 iterations), CV RMSE=0.2488, Official Metric=0.7692
+- **Scenario 2 Model**: CatBoost (498 iterations), CV RMSE=0.2055, Official Metric=0.2742
+- **Submission File**: `submissions/submission_v1.csv` (7488 rows, 340 series, months 0-23)
+- **Validation**: ✅ No missing values, no negative values, format matches template
 
 ---
 

@@ -48,7 +48,6 @@ categorical_features:
   - "main_package"
   - "time_bucket"
   - "hospital_rate_bin"
-  - "n_gxs_bin"
 
 # Hyperparameter tuning (Optuna)
 tuning:

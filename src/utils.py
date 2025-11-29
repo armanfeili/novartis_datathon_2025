@@ -522,7 +522,11 @@ def setup_logging(
         "WARNING": logging.WARNING,
         "ERROR": logging.ERROR,
     }
-    log_level = level_map.get(level.upper(), logging.INFO)
+    # Handle both string and int level inputs
+    if isinstance(level, int):
+        log_level = level
+    else:
+        log_level = level_map.get(level.upper(), logging.INFO)
     
     # Create handlers
     handlers = [logging.StreamHandler()]
