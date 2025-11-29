@@ -1,0 +1,21 @@
+{
+  "official_metric": 0.7499,
+  "rmse_norm": 0.245909725636305,
+  "mae_norm": 0.1759389139369798,
+  "scenario": 1,
+  "model_type": "xgboost",
+  "train_time_seconds": 9.296686172485352,
+  "n_train_samples": 37488,
+  "n_val_samples": 9384,
+  "n_features": 86,
+  "run_id": "2025-11-29_06-12_xgboost_scenario1_lr0p03_max_depth6",
+  "sweep_params": {
+    "axes": {
+      "params.max_depth": 6,
+      "params.learning_rate": 0.03
+    },
+    "index": 2,
+    "total": 4,
+    "is_sweep": true
+  }
+}

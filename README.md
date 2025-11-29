@@ -1,8 +1,13 @@
 # Novartis Datathon 2025 – Generic Erosion Forecasting
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/armanfeili/novartis_datathon_2025/blob/Arman/notebooks/colab/main.ipynb)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-198%20passed-green.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-372%20passed-green.svg)](#testing)
+
+> **🚀 Quick Access:**
+> - **Google Colab (Recommended):** [Open in Colab](https://colab.research.google.com/github/armanfeili/novartis_datathon_2025/blob/Arman/notebooks/colab/main.ipynb)
+> - **Local Jupyter:** `jupyter notebook notebooks/colab/main.ipynb` → [http://localhost:8888](http://localhost:8888)
 
 Predict pharmaceutical brand volume erosion following Loss of Exclusivity (LOE) events when generic competitors enter the market.
 

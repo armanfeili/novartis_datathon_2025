@@ -70,6 +70,7 @@ from .evaluate import (
     make_metric_record, save_metric_records,
     METRIC_NAME_S1, METRIC_NAME_S2, METRIC_NAME_RMSE, METRIC_NAME_MAE
 )
+from .config_sweep import expand_sweep, get_sweep_axes, build_sweep_run_id
 
 logger = logging.getLogger(__name__)
 
@@ -2825,6 +2826,860 @@ def optimize_ensemble_weights_on_validation(
     return best_weights, best_metric
 
 
+def train_xgb_lgbm_ensemble(
+    scenario: int,
+    xgb_config_path: Optional[str] = None,
+    lgbm_config_path: Optional[str] = None,
+    run_config_path: str = 'configs/run_defaults.yaml',
+    data_config_path: str = 'configs/data.yaml',
+    features_config_path: str = 'configs/features.yaml',
+    ensemble_method: str = 'weighted',
+    optimize_weights: bool = True,
+    use_official_metric: bool = True,
+    run_name: Optional[str] = None,
+    use_cached_features: bool = True
+) -> Dict[str, Any]:
+    """
+    Train an XGBoost + LightGBM ensemble with optional weight optimization.
+    
+    This function trains both XGBoost and LightGBM models and combines them
+    into an ensemble. Weights can be:
+    1. Equal (simple averaging)
+    2. Optimized to minimize MSE on validation
+    3. Optimized to minimize official metric on validation (recommended)
+    
+    Args:
+        scenario: 1 or 2
+        xgb_config_path: Path to XGBoost config
+        lgbm_config_path: Path to LightGBM config
+        run_config_path: Path to run defaults config
+        data_config_path: Path to data config
+        features_config_path: Path to features config
+        ensemble_method: 'averaging' or 'weighted' (default: 'weighted')
+        optimize_weights: If True and method='weighted', optimize ensemble weights
+        use_official_metric: If True, optimize weights using official metric
+        run_name: Optional run name
+        use_cached_features: If True, use cached feature loading
+        
+    Returns:
+        Dictionary with:
+            - 'ensemble': Fitted ensemble model
+            - 'xgb_model': Fitted XGBoost model
+            - 'lgbm_model': Fitted LightGBM model
+            - 'weights': Final ensemble weights [xgb_weight, lgbm_weight]
+            - 'metrics': Dict with individual and ensemble metrics
+            - 'artifacts_dir': Path to saved artifacts
+    """
+    from .models.ensemble import AveragingEnsemble, WeightedAveragingEnsemble
+    
+    scenario = _normalize_scenario(scenario)
+    
+    # Load configs
+    run_config = load_config(run_config_path)
+    data_config = load_config(data_config_path)
+    features_config = load_config(features_config_path) if features_config_path else {}
+    xgb_config = load_config(xgb_config_path) if xgb_config_path else {}
+    lgbm_config = load_config(lgbm_config_path) if lgbm_config_path else {}
+    
+    # Setup
+    seed = run_config['reproducibility']['seed']
+    set_seed(seed)
+    
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    run_name = run_name or f"{timestamp}_xgb_lgbm_ensemble_scenario{scenario}"
+    
+    artifacts_dir = get_project_root() / run_config['paths']['artifacts_dir'] / run_name
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    
+    setup_logging(log_file=str(artifacts_dir / "ensemble.log"))
+    logger.info(f"Training XGB+LGBM ensemble: {run_name}")
+    
+    # Load data
+    logger.info("Loading features...")
+    if use_cached_features:
+        X_full, y_full, meta_full = get_features(
+            split='train',
+            scenario=scenario,
+            mode='train',
+            data_config=data_config,
+            features_config=features_config,
+            use_cache=True
+        )
+        full_df = pd.concat([X_full, meta_full], axis=1)
+        full_df['y_norm'] = y_full
+    else:
+        train_data = load_raw_data(data_config, split='train')
+        panel = prepare_base_panel(
+            train_data['volume'],
+            train_data['generics'],
+            train_data['medicine_info']
+        )
+        panel = handle_missing_values(panel)
+        panel = compute_pre_entry_stats(panel, is_train=True)
+        panel_features = make_features(panel, scenario=scenario, mode='train', config=features_config)
+        full_df = select_training_rows(panel_features, scenario=scenario)
+    
+    # Create train/val split
+    train_df, val_df = create_validation_split(
+        full_df,
+        val_fraction=run_config['validation']['val_fraction'],
+        stratify_by=run_config['validation']['stratify_by'],
+        random_state=seed
+    )
+    
+    X_train, y_train, meta_train = split_features_target_meta(train_df)
+    X_val, y_val, meta_val = split_features_target_meta(val_df)
+    
+    # Train XGBoost
+    logger.info("Training XGBoost model...")
+    xgb_model, xgb_metrics = train_scenario_model(
+        X_train, y_train, meta_train,
+        X_val, y_val, meta_val,
+        scenario=scenario,
+        model_type='xgboost',
+        model_config=xgb_config,
+        run_config=run_config
+    )
+    xgb_model.save(str(artifacts_dir / "xgb_model.bin"))
+    logger.info(f"XGBoost official_metric: {xgb_metrics.get('official_metric', np.nan):.4f}")
+    
+    # Train LightGBM
+    logger.info("Training LightGBM model...")
+    lgbm_model, lgbm_metrics = train_scenario_model(
+        X_train, y_train, meta_train,
+        X_val, y_val, meta_val,
+        scenario=scenario,
+        model_type='lightgbm',
+        model_config=lgbm_config,
+        run_config=run_config
+    )
+    lgbm_model.save(str(artifacts_dir / "lgbm_model.bin"))
+    logger.info(f"LightGBM official_metric: {lgbm_metrics.get('official_metric', np.nan):.4f}")
+    
+    # Create ensemble
+    models = [xgb_model, lgbm_model]
+    model_names = ['xgboost', 'lightgbm']
+    
+    if ensemble_method == 'weighted' and optimize_weights:
+        logger.info("Optimizing ensemble weights...")
+        
+        # Get validation predictions
+        xgb_preds = xgb_model.predict(X_val)
+        lgbm_preds = lgbm_model.predict(X_val)
+        preds_list = [xgb_preds, lgbm_preds]
+        
+        if use_official_metric:
+            # Optimize using official metric
+            weights, best_metric = optimize_ensemble_weights_on_validation(
+                models=[xgb_model, lgbm_model],
+                X_val=X_val,
+                y_val=y_val,
+                meta_val=meta_val,
+                scenario=scenario,
+                optimization_metric='official'
+            )
+            logger.info(f"Optimized weights (official metric): XGB={weights[0]:.3f}, LGBM={weights[1]:.3f}")
+        else:
+            # Optimize using MSE
+            from scipy.optimize import minimize
+            
+            def ensemble_mse(w):
+                w = w / w.sum()
+                pred = w[0] * xgb_preds + w[1] * lgbm_preds
+                return np.mean((pred - y_val.values) ** 2)
+            
+            result = minimize(
+                ensemble_mse,
+                [0.5, 0.5],
+                method='SLSQP',
+                bounds=[(0, 1), (0, 1)],
+                constraints={'type': 'eq', 'fun': lambda w: w.sum() - 1}
+            )
+            weights = result.x / result.x.sum()
+            logger.info(f"Optimized weights (MSE): XGB={weights[0]:.3f}, LGBM={weights[1]:.3f}")
+        
+        # Create weighted ensemble
+        ensemble = WeightedAveragingEnsemble({
+            'models': models,
+            'weights': list(weights),
+            'clip_predictions': True
+        })
+        ensemble.feature_names = list(X_train.columns)
+    else:
+        # Simple averaging
+        weights = np.array([0.5, 0.5])
+        ensemble = AveragingEnsemble({
+            'models': models,
+            'clip_predictions': True
+        })
+        ensemble.feature_names = list(X_train.columns)
+        logger.info("Using equal weights: XGB=0.5, LGBM=0.5")
+    
+    # Compute ensemble metrics on validation
+    logger.info("Computing ensemble validation metrics...")
+    ensemble_preds = ensemble.predict(X_val)
+    
+    # Denormalize for official metric
+    avg_vol_val = meta_val['avg_vol_12m'].values
+    ensemble_preds_volume = ensemble_preds * avg_vol_val
+    val_actual_volume = y_val.values * avg_vol_val
+    
+    # Build DataFrames for official metric
+    df_pred = meta_val[['country', 'brand_name', 'months_postgx']].copy()
+    df_pred['volume'] = ensemble_preds_volume
+    
+    df_actual = meta_val[['country', 'brand_name', 'months_postgx']].copy()
+    df_actual['volume'] = val_actual_volume
+    
+    val_with_bucket = meta_val[['country', 'brand_name', 'avg_vol_12m', 'bucket']].drop_duplicates()
+    val_with_bucket = val_with_bucket.rename(columns={'avg_vol_12m': 'avg_vol'})
+    
+    try:
+        if scenario == 1:
+            ensemble_official = compute_metric1(df_actual, df_pred, val_with_bucket)
+        else:
+            ensemble_official = compute_metric2(df_actual, df_pred, val_with_bucket)
+    except Exception as e:
+        logger.warning(f"Could not compute official metric for ensemble: {e}")
+        ensemble_official = np.nan
+    
+    ensemble_rmse = np.sqrt(np.mean((ensemble_preds - y_val.values) ** 2))
+    
+    ensemble_metrics = {
+        'official_metric': ensemble_official,
+        'rmse_norm': ensemble_rmse,
+        'weights': {'xgboost': weights[0], 'lightgbm': weights[1]}
+    }
+    
+    logger.info(f"Ensemble official_metric: {ensemble_official:.4f}")
+    logger.info(f"Ensemble RMSE: {ensemble_rmse:.4f}")
+    
+    # Compare models
+    logger.info("\n=== Model Comparison ===")
+    logger.info(f"XGBoost:   official_metric={xgb_metrics.get('official_metric', np.nan):.4f}")
+    logger.info(f"LightGBM:  official_metric={lgbm_metrics.get('official_metric', np.nan):.4f}")
+    logger.info(f"Ensemble:  official_metric={ensemble_official:.4f}")
+    
+    # Save ensemble
+    ensemble.save(str(artifacts_dir / "ensemble.bin"))
+    
+    # Save results
+    results = {
+        'scenario': scenario,
+        'ensemble_method': ensemble_method,
+        'weights': {'xgboost': float(weights[0]), 'lightgbm': float(weights[1])},
+        'xgb_metrics': xgb_metrics,
+        'lgbm_metrics': lgbm_metrics,
+        'ensemble_metrics': ensemble_metrics,
+        'artifacts_dir': str(artifacts_dir)
+    }
+    
+    with open(artifacts_dir / "ensemble_results.json", "w") as f:
+        json.dump(results, f, indent=2, default=str)
+    
+    return {
+        'ensemble': ensemble,
+        'xgb_model': xgb_model,
+        'lgbm_model': lgbm_model,
+        'weights': weights,
+        'metrics': {
+            'xgboost': xgb_metrics,
+            'lightgbm': lgbm_metrics,
+            'ensemble': ensemble_metrics
+        },
+        'artifacts_dir': str(artifacts_dir)
+    }
+
+
+# =============================================================================
+# SECTION: CONFIG SWEEP - Train Multiple Hyperparameter Configurations
+# =============================================================================
+
+def run_sweep_experiments(
+    scenario: int,
+    model_type: str = 'catboost',
+    model_config_path: Optional[str] = None,
+    run_config_path: str = 'configs/run_defaults.yaml',
+    data_config_path: str = 'configs/data.yaml',
+    features_config_path: str = 'configs/features.yaml',
+    base_run_name: Optional[str] = None,
+    use_cached_features: bool = True,
+    force_rebuild: bool = False,
+    collect_summary: bool = True
+) -> Dict[str, Any]:
+    """
+    Run a sweep of experiments based on config lists.
+    
+    When a model config contains list values for sweepable parameters
+    (e.g., depth: [4, 6, 8]), this function:
+    1. Expands all combinations via Cartesian product
+    2. Trains a model for each combination
+    3. Collects results and returns summary
+    
+    Args:
+        scenario: 1 or 2
+        model_type: Model type to train
+        model_config_path: Path to model config with potential list values
+        run_config_path: Path to run defaults config
+        data_config_path: Path to data config
+        features_config_path: Path to features config
+        base_run_name: Base name for runs (each run appends sweep params)
+        use_cached_features: If True, use cached feature loading
+        force_rebuild: If True, rebuild features even if cached
+        collect_summary: If True, aggregate all metrics into summary
+        
+    Returns:
+        Dictionary with:
+            - 'n_runs': Number of runs executed
+            - 'runs': List of (run_id, metrics) tuples
+            - 'best_run': Run ID with best official_metric
+            - 'best_metrics': Metrics dict for best run
+            - 'sweep_metadata': List of sweep parameter combos
+            - 'summary_df': DataFrame with all runs (if collect_summary=True)
+    """
+    scenario = _normalize_scenario(scenario)
+    
+    # Load configs
+    run_config = load_config(run_config_path)
+    data_config = load_config(data_config_path)
+    features_config = load_config(features_config_path) if features_config_path else {}
+    model_config = load_config(model_config_path) if model_config_path else {}
+    
+    # Check if sweep is enabled
+    sweep_config = model_config.get('sweep', {})
+    sweep_enabled = sweep_config.get('enabled', False)
+    
+    if not sweep_enabled:
+        # No sweep - run single experiment
+        logger.info("Sweep not enabled in config, running single experiment")
+        model, metrics = run_experiment(
+            scenario=scenario,
+            model_type=model_type,
+            model_config_path=model_config_path,
+            run_config_path=run_config_path,
+            data_config_path=data_config_path,
+            features_config_path=features_config_path,
+            run_name=base_run_name,
+            use_cached_features=use_cached_features,
+            force_rebuild=force_rebuild
+        )
+        return {
+            'n_runs': 1,
+            'runs': [(base_run_name, metrics)],
+            'best_run': base_run_name,
+            'best_metrics': metrics,
+            'sweep_metadata': [{}],
+            'summary_df': pd.DataFrame([metrics]) if collect_summary else None
+        }
+    
+    # Get sweep axes from config
+    sweep_axes = sweep_config.get('axes', [])
+    if not sweep_axes:
+        # Try to detect sweep axes from model type
+        sweep_axes = get_sweep_axes(model_config, model_type)
+    
+    # Expand sweep configurations
+    expanded_configs = expand_sweep(model_config, sweep_axes)
+    n_runs = len(expanded_configs)
+    
+    logger.info(f"Config sweep detected: {n_runs} runs across axes {sweep_axes}")
+    
+    if n_runs == 1:
+        # No actual sweep (no lists in sweepable params)
+        logger.info("No list values found in sweep axes, running single experiment")
+        model, metrics = run_experiment(
+            scenario=scenario,
+            model_type=model_type,
+            model_config_path=model_config_path,
+            run_config_path=run_config_path,
+            data_config_path=data_config_path,
+            features_config_path=features_config_path,
+            run_name=base_run_name,
+            use_cached_features=use_cached_features,
+            force_rebuild=force_rebuild
+        )
+        return {
+            'n_runs': 1,
+            'runs': [(base_run_name, metrics)],
+            'best_run': base_run_name,
+            'best_metrics': metrics,
+            'sweep_metadata': [{}],
+            'summary_df': pd.DataFrame([metrics]) if collect_summary else None
+        }
+    
+    # Setup
+    set_seed(run_config['reproducibility']['seed'])
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    base_run_name = base_run_name or f"{timestamp}_{model_type}_scenario{scenario}"
+    
+    # Pre-load data once for efficiency
+    logger.info("Pre-loading data for sweep...")
+    if use_cached_features:
+        X_full, y_full, meta_full = get_features(
+            split='train',
+            scenario=scenario,
+            mode='train',
+            data_config=data_config,
+            features_config=features_config,
+            use_cache=True,
+            force_rebuild=force_rebuild
+        )
+        train_rows = pd.concat([X_full, meta_full], axis=1)
+        train_rows['y_norm'] = y_full
+        panel = get_panel('train', data_config, use_cache=True, force_rebuild=force_rebuild)
+    else:
+        train_data = load_raw_data(data_config, split='train')
+        panel = prepare_base_panel(
+            train_data['volume'],
+            train_data['generics'],
+            train_data['medicine_info']
+        )
+        panel = handle_missing_values(panel)
+        panel = compute_pre_entry_stats(panel, is_train=True)
+        panel_features = make_features(panel, scenario=scenario, mode='train', config=features_config)
+        train_rows = select_training_rows(panel_features, scenario=scenario)
+    
+    # Create train/val split once
+    train_df, val_df = create_validation_split(
+        train_rows,
+        val_fraction=run_config['validation']['val_fraction'],
+        stratify_by=run_config['validation']['stratify_by'],
+        random_state=run_config['reproducibility']['seed']
+    )
+    
+    X_train, y_train, meta_train = split_features_target_meta(train_df)
+    X_val, y_val, meta_val = split_features_target_meta(val_df)
+    
+    # Run sweep
+    results = {
+        'n_runs': n_runs,
+        'runs': [],
+        'best_run': None,
+        'best_metrics': None,
+        'sweep_metadata': [],
+        'summary_df': None
+    }
+    
+    best_official = float('inf')
+    all_metrics = []
+    
+    for run_idx, resolved_config in enumerate(expanded_configs, 1):
+        sweep_meta = resolved_config.pop('_sweep_metadata', {})
+        results['sweep_metadata'].append(sweep_meta)
+        
+        # Generate unique run ID
+        run_id = build_sweep_run_id(base_run_name, sweep_meta)
+        
+        logger.info(f"\n{'='*60}")
+        logger.info(f"Sweep run {run_idx}/{n_runs}: {run_id}")
+        logger.info(f"Parameters: {sweep_meta.get('axes', {})}")
+        logger.info(f"{'='*60}")
+        
+        try:
+            # Setup artifacts directory for this run
+            artifacts_dir = get_project_root() / run_config['paths']['artifacts_dir'] / run_id
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Save this run's config
+            with open(artifacts_dir / "config_snapshot.yaml", "w") as f:
+                yaml.dump({
+                    'model_config': resolved_config,
+                    'scenario': scenario,
+                    'model_type': model_type,
+                    'sweep_metadata': sweep_meta
+                }, f)
+            
+            # Train model
+            model, metrics = train_scenario_model(
+                X_train, y_train, meta_train,
+                X_val, y_val, meta_val,
+                scenario=scenario,
+                model_type=model_type,
+                model_config=resolved_config,
+                run_config=run_config
+            )
+            
+            # Add sweep info to metrics
+            metrics['run_id'] = run_id
+            metrics['sweep_params'] = sweep_meta
+            
+            # Save model and metrics
+            model_path = artifacts_dir / f"model_{scenario}.bin"
+            model.save(str(model_path))
+            
+            with open(artifacts_dir / "metrics.json", "w") as f:
+                json.dump(metrics, f, indent=2, default=str)
+            
+            # Save feature importance
+            if hasattr(model, 'get_feature_importance'):
+                importance = model.get_feature_importance()
+                if len(importance) > 0:
+                    importance.to_csv(artifacts_dir / "feature_importance.csv", index=False)
+            
+            # Save metadata
+            metadata = {
+                'timestamp': datetime.now().isoformat(),
+                'git_commit': get_git_commit_hash(),
+                'scenario': scenario,
+                'model_type': model_type,
+                'sweep_metadata': sweep_meta,
+                'n_train_samples': len(X_train),
+                'n_val_samples': len(X_val),
+            }
+            with open(artifacts_dir / "metadata.json", "w") as f:
+                json.dump(metadata, f, indent=2, default=str)
+            
+            results['runs'].append((run_id, metrics))
+            all_metrics.append(metrics)
+            
+            # Track best
+            official = metrics.get('official_metric', float('inf'))
+            if official < best_official:
+                best_official = official
+                results['best_run'] = run_id
+                results['best_metrics'] = metrics
+            
+            logger.info(f"Run {run_idx} complete: official_metric={official:.4f}")
+            
+        except Exception as e:
+            logger.error(f"Run {run_idx} failed: {e}")
+            import traceback
+            traceback.print_exc()
+            results['runs'].append((run_id, {'error': str(e), 'run_id': run_id, 'sweep_params': sweep_meta}))
+            all_metrics.append({'error': str(e), 'run_id': run_id, 'official_metric': float('inf')})
+    
+    # Create summary DataFrame
+    if collect_summary and all_metrics:
+        # Flatten sweep_params into columns
+        summary_rows = []
+        for m in all_metrics:
+            row = {k: v for k, v in m.items() if k != 'sweep_params'}
+            if 'sweep_params' in m and isinstance(m['sweep_params'], dict):
+                for k, v in m['sweep_params'].items():
+                    # Convert dotted path to column name
+                    col_name = k.replace('.', '_')
+                    row[col_name] = v
+            summary_rows.append(row)
+        
+        results['summary_df'] = pd.DataFrame(summary_rows)
+        
+        # Sort by official metric
+        if 'official_metric' in results['summary_df'].columns:
+            results['summary_df'] = results['summary_df'].sort_values('official_metric')
+        
+        # Save summary
+        summary_dir = get_project_root() / run_config['paths']['artifacts_dir'] / f"{base_run_name}_sweep_summary"
+        summary_dir.mkdir(parents=True, exist_ok=True)
+        results['summary_df'].to_csv(summary_dir / "sweep_results.csv", index=False)
+        
+        # Save as markdown table too
+        with open(summary_dir / "sweep_results.md", "w") as f:
+            f.write(f"# Sweep Results: {base_run_name}\n\n")
+            f.write(f"- **Scenario**: {scenario}\n")
+            f.write(f"- **Model**: {model_type}\n")
+            f.write(f"- **Total Runs**: {n_runs}\n")
+            f.write(f"- **Sweep Axes**: {sweep_axes}\n\n")
+            f.write("## Results (sorted by official_metric)\n\n")
+            f.write(results['summary_df'].to_markdown(index=False))
+            f.write(f"\n\n## Best Run\n\n")
+            f.write(f"- **Run ID**: {results['best_run']}\n")
+            if results['best_metrics']:
+                f.write(f"- **Official Metric**: {results['best_metrics'].get('official_metric', 'N/A'):.4f}\n")
+                f.write(f"- **RMSE**: {results['best_metrics'].get('rmse_norm', 'N/A'):.4f}\n")
+        
+        logger.info(f"Sweep summary saved to {summary_dir}")
+    
+    logger.info(f"\n{'='*60}")
+    logger.info(f"SWEEP COMPLETE: {n_runs} runs")
+    logger.info(f"Best run: {results['best_run']}")
+    if results['best_metrics']:
+        logger.info(f"Best official_metric: {results['best_metrics'].get('official_metric', 'N/A'):.4f}")
+    logger.info(f"{'='*60}")
+    
+    return results
+
+
+# =============================================================================
+# SECTION: CONFIG SWEEP WITH K-FOLD CV
+# =============================================================================
+
+def run_sweep_with_cv(
+    scenario: int,
+    model_type: str = 'xgboost',
+    model_config_path: Optional[str] = None,
+    run_config_path: str = 'configs/run_defaults.yaml',
+    data_config_path: str = 'configs/data.yaml',
+    features_config_path: str = 'configs/features.yaml',
+    base_run_name: Optional[str] = None,
+    n_folds: int = 3,
+    use_cached_features: bool = True,
+    force_rebuild: bool = False
+) -> Dict[str, Any]:
+    """
+    Run a sweep of experiments with K-fold CV for robust hyperparameter selection.
+    
+    For each hyperparameter configuration in the sweep:
+    1. Train on K-1 folds, validate on 1 fold
+    2. Compute official_metric for each fold
+    3. Average official_metric across folds (with std for confidence)
+    4. Select best config based on mean official_metric
+    
+    This provides more robust hyperparameter selection than a single hold-out split.
+    
+    Args:
+        scenario: 1 or 2
+        model_type: Model type to train (xgboost, lightgbm, catboost)
+        model_config_path: Path to model config with potential list values
+        run_config_path: Path to run defaults config
+        data_config_path: Path to data config
+        features_config_path: Path to features config
+        base_run_name: Base name for runs
+        n_folds: Number of CV folds (default 3 for speed/robustness tradeoff)
+        use_cached_features: If True, use cached feature loading
+        force_rebuild: If True, rebuild features even if cached
+        
+    Returns:
+        Dictionary with:
+            - 'n_configs': Number of configurations evaluated
+            - 'n_folds': Number of CV folds
+            - 'results': List of per-config results with fold details
+            - 'best_config': Best hyperparameter configuration
+            - 'best_mean_metric': Mean official_metric for best config
+            - 'best_std_metric': Std of official_metric for best config
+            - 'summary_df': DataFrame with all results
+    """
+    from .validation import get_fold_series, aggregate_cv_scores
+    
+    scenario = _normalize_scenario(scenario)
+    
+    # Load configs
+    run_config = load_config(run_config_path)
+    data_config = load_config(data_config_path)
+    features_config = load_config(features_config_path) if features_config_path else {}
+    model_config = load_config(model_config_path) if model_config_path else {}
+    
+    # Setup
+    seed = run_config['reproducibility']['seed']
+    set_seed(seed)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    base_run_name = base_run_name or f"{timestamp}_{model_type}_scenario{scenario}_cv{n_folds}"
+    
+    # Check if sweep is enabled
+    sweep_config = model_config.get('sweep', {})
+    sweep_enabled = sweep_config.get('enabled', False)
+    
+    if not sweep_enabled:
+        logger.warning("Sweep not enabled in config. Set sweep.enabled: true")
+        return {'error': 'Sweep not enabled in config'}
+    
+    # Expand sweep configurations
+    sweep_axes = sweep_config.get('axes', [])
+    expanded_configs = expand_sweep(model_config, sweep_axes)
+    n_configs = len(expanded_configs)
+    
+    logger.info(f"CV Sweep: {n_configs} configs x {n_folds} folds = {n_configs * n_folds} total runs")
+    logger.info(f"Sweep axes: {sweep_axes}")
+    
+    # Load data once
+    logger.info("Loading data for CV sweep...")
+    if use_cached_features:
+        X_full, y_full, meta_full = get_features(
+            split='train',
+            scenario=scenario,
+            mode='train',
+            data_config=data_config,
+            features_config=features_config,
+            use_cache=True,
+            force_rebuild=force_rebuild
+        )
+        full_df = pd.concat([X_full, meta_full], axis=1)
+        full_df['y_norm'] = y_full
+        panel = get_panel('train', data_config, use_cache=True, force_rebuild=force_rebuild)
+    else:
+        train_data = load_raw_data(data_config, split='train')
+        panel = prepare_base_panel(
+            train_data['volume'],
+            train_data['generics'],
+            train_data['medicine_info']
+        )
+        panel = handle_missing_values(panel)
+        panel = compute_pre_entry_stats(panel, is_train=True)
+        panel_features = make_features(panel, scenario=scenario, mode='train', config=features_config)
+        full_df = select_training_rows(panel_features, scenario=scenario)
+    
+    # Generate K-fold splits (series-level stratified)
+    logger.info(f"Creating {n_folds} stratified folds at series level...")
+    folds = get_fold_series(
+        full_df,
+        n_folds=n_folds,
+        stratify_by='bucket',
+        random_state=seed
+    )
+    
+    # Log fold sizes
+    for fold_idx, (train_fold, val_fold) in enumerate(folds):
+        n_train_series = train_fold[['country', 'brand_name']].drop_duplicates().shape[0]
+        n_val_series = val_fold[['country', 'brand_name']].drop_duplicates().shape[0]
+        logger.info(f"  Fold {fold_idx+1}: {n_train_series} train series, {n_val_series} val series")
+    
+    # Setup artifacts directory
+    artifacts_base = get_project_root() / run_config['paths']['artifacts_dir'] / f"{base_run_name}_sweep_cv"
+    artifacts_base.mkdir(parents=True, exist_ok=True)
+    
+    # Run sweep with CV
+    all_results = []
+    best_mean_metric = float('inf')
+    best_config = None
+    best_config_idx = -1
+    
+    for config_idx, resolved_config in enumerate(expanded_configs, 1):
+        sweep_meta = resolved_config.pop('_sweep_metadata', {})
+        axes = sweep_meta.get('axes', {})
+        config_suffix = "_".join(f"{k.split('.')[-1]}{v}" for k, v in sorted(axes.items()))
+        
+        logger.info(f"\n{'='*60}")
+        logger.info(f"Config {config_idx}/{n_configs}: {axes}")
+        logger.info(f"{'='*60}")
+        
+        # Train and evaluate on each fold
+        fold_metrics = []
+        
+        for fold_idx, (train_fold, val_fold) in enumerate(folds):
+            logger.info(f"  Fold {fold_idx+1}/{n_folds}...")
+            
+            try:
+                # Split features/target/meta
+                X_train, y_train, meta_train = split_features_target_meta(train_fold)
+                X_val, y_val, meta_val = split_features_target_meta(val_fold)
+                
+                # Train model
+                model, metrics = train_scenario_model(
+                    X_train, y_train, meta_train,
+                    X_val, y_val, meta_val,
+                    scenario=scenario,
+                    model_type=model_type,
+                    model_config=resolved_config,
+                    run_config=run_config
+                )
+                
+                fold_metrics.append({
+                    'fold': fold_idx,
+                    'official_metric': metrics.get('official_metric', np.nan),
+                    'rmse_norm': metrics.get('rmse_norm', np.nan),
+                    'mae_norm': metrics.get('mae_norm', np.nan)
+                })
+                
+                logger.info(f"    Fold {fold_idx+1} official_metric: {metrics.get('official_metric', np.nan):.4f}")
+                
+            except Exception as e:
+                logger.error(f"  Fold {fold_idx+1} failed: {e}")
+                fold_metrics.append({
+                    'fold': fold_idx,
+                    'official_metric': np.nan,
+                    'rmse_norm': np.nan,
+                    'mae_norm': np.nan,
+                    'error': str(e)
+                })
+        
+        # Aggregate fold metrics
+        agg = aggregate_cv_scores(fold_metrics, ['official_metric', 'rmse_norm', 'mae_norm'])
+        
+        mean_metric = agg.get('official_metric', {}).get('mean', np.nan)
+        std_metric = agg.get('official_metric', {}).get('std', np.nan)
+        
+        config_result = {
+            'config_idx': config_idx,
+            'config_suffix': config_suffix,
+            'sweep_params': axes,
+            'n_folds': n_folds,
+            'fold_metrics': fold_metrics,
+            'mean_official_metric': mean_metric,
+            'std_official_metric': std_metric,
+            'ci_lower': agg.get('official_metric', {}).get('ci_lower', np.nan),
+            'ci_upper': agg.get('official_metric', {}).get('ci_upper', np.nan),
+            'mean_rmse': agg.get('rmse_norm', {}).get('mean', np.nan),
+            'mean_mae': agg.get('mae_norm', {}).get('mean', np.nan)
+        }
+        all_results.append(config_result)
+        
+        logger.info(f"  Mean official_metric: {mean_metric:.4f} ± {std_metric:.4f}")
+        
+        # Track best
+        if not np.isnan(mean_metric) and mean_metric < best_mean_metric:
+            best_mean_metric = mean_metric
+            best_config = axes
+            best_config_idx = config_idx
+    
+    # Create summary DataFrame
+    summary_rows = []
+    for r in all_results:
+        row = {
+            'config_idx': r['config_idx'],
+            'mean_official_metric': r['mean_official_metric'],
+            'std_official_metric': r['std_official_metric'],
+            'ci_lower': r['ci_lower'],
+            'ci_upper': r['ci_upper'],
+            'mean_rmse': r['mean_rmse'],
+            'mean_mae': r['mean_mae']
+        }
+        # Add sweep params as columns
+        for k, v in r['sweep_params'].items():
+            col_name = k.replace('params.', '')
+            row[col_name] = v
+        summary_rows.append(row)
+    
+    summary_df = pd.DataFrame(summary_rows)
+    summary_df = summary_df.sort_values('mean_official_metric')
+    
+    # Save results
+    summary_df.to_csv(artifacts_base / "cv_sweep_results.csv", index=False)
+    
+    with open(artifacts_base / "cv_sweep_full.json", "w") as f:
+        json.dump({
+            'scenario': scenario,
+            'model_type': model_type,
+            'n_configs': n_configs,
+            'n_folds': n_folds,
+            'sweep_axes': sweep_axes,
+            'best_config': best_config,
+            'best_mean_metric': best_mean_metric,
+            'results': all_results
+        }, f, indent=2, default=str)
+    
+    # Save markdown report
+    with open(artifacts_base / "cv_sweep_report.md", "w") as f:
+        f.write(f"# CV Sweep Results: {base_run_name}\n\n")
+        f.write(f"- **Scenario**: {scenario}\n")
+        f.write(f"- **Model**: {model_type}\n")
+        f.write(f"- **Configurations**: {n_configs}\n")
+        f.write(f"- **CV Folds**: {n_folds}\n")
+        f.write(f"- **Sweep Axes**: {sweep_axes}\n\n")
+        f.write("## Results (sorted by mean official_metric)\n\n")
+        f.write(summary_df.to_markdown(index=False))
+        f.write(f"\n\n## Best Configuration\n\n")
+        f.write(f"- **Config**: {best_config}\n")
+        f.write(f"- **Mean Official Metric**: {best_mean_metric:.4f}\n")
+        f.write(f"- **Std Official Metric**: {all_results[best_config_idx-1]['std_official_metric']:.4f}\n")
+    
+    logger.info(f"\n{'='*60}")
+    logger.info(f"CV SWEEP COMPLETE")
+    logger.info(f"Best config: {best_config}")
+    logger.info(f"Best mean official_metric: {best_mean_metric:.4f}")
+    logger.info(f"Results saved to: {artifacts_base}")
+    logger.info(f"{'='*60}")
+    
+    return {
+        'n_configs': n_configs,
+        'n_folds': n_folds,
+        'results': all_results,
+        'best_config': best_config,
+        'best_mean_metric': best_mean_metric,
+        'best_std_metric': all_results[best_config_idx-1]['std_official_metric'] if best_config_idx > 0 else np.nan,
+        'summary_df': summary_df,
+        'artifacts_dir': str(artifacts_base)
+    }
+
+
 def main():
     """CLI entry point for training models.
     
@@ -2837,6 +3692,10 @@ def main():
         
         # Run hyperparameter optimization
         python -m src.train --scenario 1 --model catboost --hpo --hpo-trials 50
+        
+        # Run config sweep (train all combinations of list values)
+        python -m src.train --scenario 1 --model catboost --sweep \\
+            --model-config configs/model_cat.yaml
         
         # Train both scenarios with full pipeline
         python -m src.train --full-pipeline --model catboost
@@ -2854,6 +3713,7 @@ Examples:
   python -m src.train --scenario 1 --model catboost
   python -m src.train --scenario 1 --model catboost --cv --n-folds 5
   python -m src.train --scenario 1 --model catboost --hpo --hpo-trials 50
+  python -m src.train --scenario 1 --model catboost --sweep --model-config configs/model_cat.yaml
   python -m src.train --full-pipeline --model catboost --parallel
   python -m src.train --scenario 2 --model lightgbm --model-config configs/model_lgbm.yaml
         """
@@ -2900,6 +3760,16 @@ Examples:
                         help="Number of HPO trials (default: 100)")
     parser.add_argument('--hpo-timeout', type=int, default=3600,
                         help="HPO timeout in seconds (default: 3600)")
+    
+    # Config sweep options
+    parser.add_argument('--sweep', action='store_true',
+                        help="Run config sweep: train all combinations of list values in config. "
+                             "Set sweep.enabled: true in model config and define sweep.axes.")
+    parser.add_argument('--sweep-cv', action='store_true',
+                        help="Run config sweep with K-fold CV for robust hyperparameter selection. "
+                             "Uses --n-folds for number of CV folds (default 3).")
+    parser.add_argument('--ensemble', action='store_true',
+                        help="Train XGBoost + LightGBM ensemble with optimized weights.")
     
     # Full pipeline options (Section 5.7)
     parser.add_argument('--full-pipeline', action='store_true',
@@ -3022,6 +3892,63 @@ Examples:
         
         logger.info(f"HPO complete. Best params: {hpo_results['best_params']}")
         logger.info(f"Best metric: {hpo_results['best_value']:.4f}")
+        return
+    
+    # Handle sweep mode
+    if args.sweep:
+        results = run_sweep_experiments(
+            scenario=args.scenario,
+            model_type=args.model,
+            model_config_path=args.model_config,
+            run_config_path=args.run_config,
+            data_config_path=args.data_config,
+            features_config_path=args.features_config,
+            base_run_name=args.run_name,
+            use_cached_features=not args.no_cache,
+            force_rebuild=args.force_rebuild,
+            collect_summary=True
+        )
+        logger.info(f"Sweep complete. {results['n_runs']} runs executed.")
+        logger.info(f"Best run: {results['best_run']}")
+        if results['best_metrics']:
+            logger.info(f"Best official_metric: {results['best_metrics'].get('official_metric', 'N/A'):.4f}")
+        return
+    
+    # Handle sweep with CV mode
+    if args.sweep_cv:
+        results = run_sweep_with_cv(
+            scenario=args.scenario,
+            model_type=args.model,
+            model_config_path=args.model_config,
+            run_config_path=args.run_config,
+            data_config_path=args.data_config,
+            features_config_path=args.features_config,
+            base_run_name=args.run_name,
+            n_folds=args.n_folds,
+            use_cached_features=not args.no_cache,
+            force_rebuild=args.force_rebuild
+        )
+        logger.info(f"CV Sweep complete. {results['n_configs']} configs evaluated over {results['n_folds']} folds.")
+        logger.info(f"Best config: {results['best_config']}")
+        logger.info(f"Best mean official_metric: {results['best_mean_metric']:.4f} ± {results['best_std_metric']:.4f}")
+        return
+    
+    # Handle ensemble mode
+    if args.ensemble:
+        results = train_xgb_lgbm_ensemble(
+            scenario=args.scenario,
+            xgb_config_path='configs/model_xgb.yaml',
+            lgbm_config_path='configs/model_lgbm.yaml',
+            run_config_path=args.run_config,
+            data_config_path=args.data_config,
+            features_config_path=args.features_config,
+            ensemble_method='weighted',
+            optimize_weights=True,
+            use_official_metric=True,
+            run_name=args.run_name,
+            use_cached_features=not args.no_cache
+        )
+        logger.info(f"Ensemble complete. Metrics: {results['metrics']['ensemble']}")
         return
     
     if args.cv:

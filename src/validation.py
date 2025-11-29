@@ -59,7 +59,7 @@ def create_validation_split(
         # Check for series with multiple values for stratification columns (shouldn't happen)
         for col in stratify_cols:
             if col in series_info.columns:
-                counts = series_info.groupby(series_keys)[col].nunique()
+                counts = series_info.groupby(series_keys, observed=False)[col].nunique()
                 if (counts > 1).any():
                     logger.warning(f"Some series have multiple {col} values!")
         

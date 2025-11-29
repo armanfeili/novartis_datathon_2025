@@ -1,0 +1,5 @@
+official_metric,rmse_norm,mae_norm,scenario,model_type,train_time_seconds,n_train_samples,n_val_samples,n_features,run_id,axes,index,total,is_sweep
+0.2659,0.20650385661456397,0.1276893891587175,2,xgboost,2.8449740409851074,28116,7038,101,2025-11-29_06-13_xgboost_scenario2_lr0p05_max_depth4,"{'params.max_depth': 4, 'params.learning_rate': 0.05}",1,4,True
+0.2716,0.20704201964060562,0.12756588322367232,2,xgboost,4.927642107009888,28116,7038,101,2025-11-29_06-13_xgboost_scenario2_lr0p03_max_depth4,"{'params.max_depth': 4, 'params.learning_rate': 0.03}",0,4,True
+0.2914,0.20981241673167947,0.1289301829798314,2,xgboost,6.492584943771362,28116,7038,101,2025-11-29_06-13_xgboost_scenario2_lr0p03_max_depth6,"{'params.max_depth': 6, 'params.learning_rate': 0.03}",2,4,True
+0.2993,0.2099550033970584,0.12934960624215647,2,xgboost,4.99857497215271,28116,7038,101,2025-11-29_06-13_xgboost_scenario2_lr0p05_max_depth6,"{'params.max_depth': 6, 'params.learning_rate': 0.05}",3,4,True

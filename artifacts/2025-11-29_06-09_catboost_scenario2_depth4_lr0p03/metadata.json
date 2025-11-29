@@ -1,0 +1,17 @@
+{
+  "timestamp": "2025-11-29T06:09:41.690362",
+  "git_commit": "8a6521d0",
+  "scenario": 2,
+  "model_type": "catboost",
+  "sweep_metadata": {
+    "axes": {
+      "params.depth": 4,
+      "params.learning_rate": 0.03
+    },
+    "index": 1,
+    "total": 6,
+    "is_sweep": true
+  },
+  "n_train_samples": 28116,
+  "n_val_samples": 7038
+}

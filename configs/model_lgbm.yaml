@@ -1,60 +1,139 @@
-# LightGBM model configuration for Novartis Datathon 2025
+# =============================================================================
+# LightGBM Model Configuration - Novartis Datathon 2025
+# =============================================================================
+# SECONDARY MODEL - Fast training, good for ensemble with XGBoost
+#
+# Best configurations from sweeps:
+#   Scenario 1: num_leaves=63, learning_rate=0.05 → close to XGBoost
+#   Scenario 2: num_leaves=31, learning_rate=0.05 → close to XGBoost
+#
+# Usage:
+#   - Single run: Set sweep.enabled=false, use scalar params
+#   - Sweep mode: Set sweep.enabled=true, use list params for sweep axes
+#   - GPU mode:   Set gpu.enabled=true (auto-configured in notebook)
+# =============================================================================
 
 model:
   name: "lightgbm"
-  task: "regression"  # regression, binary, multiclass
+  task: "regression"
+  priority: 2  # Secondary model - for ensemble with XGBoost
 
-# LightGBM hyperparameters
+# =============================================================================
+# GPU CONFIGURATION
+# =============================================================================
+gpu:
+  enabled: false  # Set true for GPU training (auto-set by notebook)
+  platform_id: 0
+  device_id: 0
+
+# =============================================================================
+# SWEEP CONFIGURATION
+# =============================================================================
+# Selection criterion: official_metric (PE), NOT RMSE
+# K-fold CV: Use n_folds for robust hyperparameter selection
+sweep:
+  enabled: false
+  selection_metric: "official_metric"  # PRIMARY: Use official PE metric
+  n_folds: 3                           # K-fold CV for robustness
+  # Sweep axes with values (from sweep_presets.full)
+  axes:
+    num_leaves: [31, 63, 127]
+    learning_rate: [0.02, 0.03, 0.05]
+    min_data_in_leaf: [20, 40, 80]
+
+# =============================================================================
+# MODEL HYPERPARAMETERS
+# =============================================================================
 params:
-  # Core parameters
-  boosting_type: "gbdt"       # gbdt, dart, goss
-  objective: "regression"     # regression, binary, multiclass
-  metric: "rmse"              # rmse, mae, binary_logloss, multi_logloss
+  # Core
+  boosting_type: "gbdt"
+  objective: "regression"
+  metric: "rmse"  # Early stopping metric (fast/stable)
   
-  # Tree parameters
-  num_leaves: 31
-  max_depth: -1               # -1 means no limit
+  # Tree structure - SWEEPABLE
+  # Recommended sweep: [31, 63, 127]
+  num_leaves: 63
+  max_depth: -1  # -1 = no limit
+  
+  # Min samples - SWEEPABLE
+  # Recommended sweep: [20, 40, 80]
   min_data_in_leaf: 20
-  min_sum_hessian_in_leaf: 1e-3
+  min_sum_hessian_in_leaf: 0.001
   
-  # Learning parameters
+  # Learning - SWEEPABLE
+  # Recommended sweep: [0.02, 0.03, 0.05]
   learning_rate: 0.05
-  n_estimators: 1000
+  n_estimators: 3000  # High value, rely on early stopping
   
   # Regularization
   lambda_l1: 0.0
   lambda_l2: 0.0
+  
+  # Subsampling
   feature_fraction: 0.8
   bagging_fraction: 0.8
   bagging_freq: 5
   
-  # Categorical handling
+  # Categorical
   cat_smooth: 10
   
   # Early stopping
   early_stopping_rounds: 50
   
-  # Other
+  # System
   verbose: -1
   n_jobs: -1
   seed: 42
+  
+  # GPU settings (applied when gpu.enabled=true)
+  # device: "gpu"  # Set programmatically
 
-# Training settings
+# =============================================================================
+# TRAINING SETTINGS
+# =============================================================================
 training:
   use_early_stopping: true
-  eval_metric: "rmse"
+  eval_metric: "rmse"       # Early stopping on RMSE (fast)
   verbose_eval: 100
+  use_sample_weights: true  # Align with official metric
 
-# Hyperparameter tuning (Optuna)
-tuning:
-  enabled: false
-  n_trials: 100
-  timeout: 3600  # seconds
-  search_space:
-    num_leaves: [15, 255]
-    max_depth: [3, 12]
-    learning_rate: [0.01, 0.3]
-    feature_fraction: [0.5, 1.0]
-    bagging_fraction: [0.5, 1.0]
-    lambda_l1: [0.0, 10.0]
-    lambda_l2: [0.0, 10.0]
+# =============================================================================
+# SCENARIO-SPECIFIC BEST PARAMS (for quick reference)
+# =============================================================================
+best_params:
+  scenario1:
+    num_leaves: 63
+    learning_rate: 0.05
+    min_data_in_leaf: 20
+  scenario2:
+    num_leaves: 31
+    learning_rate: 0.05
+    min_data_in_leaf: 20
+
+# =============================================================================
+# SWEEP PRESETS
+# =============================================================================
+sweep_presets:
+  # Fast sweep: 9 combinations (3 x 3)
+  fast:
+    num_leaves: [31, 63, 127]
+    learning_rate: [0.02, 0.03, 0.05]
+  
+  # Full sweep: 27 combinations (3 x 3 x 3)
+  full:
+    num_leaves: [31, 63, 127]
+    learning_rate: [0.02, 0.03, 0.05]
+    min_data_in_leaf: [20, 40, 80]
+  
+  # Focused sweep: 9 combinations around best
+  focused:
+    num_leaves: [47, 63, 95]
+    learning_rate: [0.03, 0.05, 0.07]
+
+# =============================================================================
+# ENSEMBLE SETTINGS
+# =============================================================================
+ensemble:
+  include: true           # Include in XGB+LGBM ensemble
+  weight_optimization: true
+  default_weight: 0.5     # Starting weight for ensemble

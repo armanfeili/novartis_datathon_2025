@@ -1,0 +1,346 @@
+{
+  "scenario": 1,
+  "model_type": "xgboost",
+  "n_configs": 9,
+  "n_folds": 3,
+  "sweep_axes": [
+    "params.max_depth",
+    "params.learning_rate"
+  ],
+  "best_config": {
+    "params.max_depth": 5,
+    "params.learning_rate": 0.03
+  },
+  "best_mean_metric": 0.741,
+  "results": [
+    {
+      "config_idx": 1,
+      "config_suffix": "learning_rate0.02_max_depth4",
+      "sweep_params": {
+        "params.max_depth": 4,
+        "params.learning_rate": 0.02
+      },
+      "n_folds": 3,
+      "fold_metrics": [
+        {
+          "fold": 0,
+          "official_metric": 0.7414,
+          "rmse_norm": 0.23324959058185177,
+          "mae_norm": 0.177839691235985
+        },
+        {
+          "fold": 1,
+          "official_metric": 0.8196,
+          "rmse_norm": 0.23692468206188358,
+          "mae_norm": 0.18472476908538535
+        },
+        {
+          "fold": 2,
+          "official_metric": 0.8033,
+          "rmse_norm": 0.25226583000498376,
+          "mae_norm": 0.18548017941782868
+        }
+      ],
+      "mean_official_metric": 0.7881,
+      "std_official_metric": 0.04125639344392579,
+      "ci_lower": 0.6856134371964049,
+      "ci_upper": 0.8905865628035952,
+      "mean_rmse": 0.24081336754957303,
+      "mean_mae": 0.182681546579733
+    },
+    {
+      "config_idx": 2,
+      "config_suffix": "learning_rate0.03_max_depth4",
+      "sweep_params": {
+        "params.max_depth": 4,
+        "params.learning_rate": 0.03
+      },
+      "n_folds": 3,
+      "fold_metrics": [
+        {
+          "fold": 0,
+          "official_metric": 0.7406,
+          "rmse_norm": 0.23357982751266512,
+          "mae_norm": 0.17794194230865207
+        },
+        {
+          "fold": 1,
+          "official_metric": 0.8302,
+          "rmse_norm": 0.2367261226487912,
+          "mae_norm": 0.18424806220110482
+        },
+        {
+          "fold": 2,
+          "official_metric": 0.7986,
+          "rmse_norm": 0.2522134870700788,
+          "mae_norm": 0.1847583485879114
+        }
+      ],
+      "mean_official_metric": 0.7898000000000001,
+      "std_official_metric": 0.04544359140737009,
+      "ci_lower": 0.6769118608289777,
+      "ci_upper": 0.9026881391710224,
+      "mean_rmse": 0.2408398124105117,
+      "mean_mae": 0.18231611769922276
+    },
+    {
+      "config_idx": 3,
+      "config_suffix": "learning_rate0.05_max_depth4",
+      "sweep_params": {
+        "params.max_depth": 4,
+        "params.learning_rate": 0.05
+      },
+      "n_folds": 3,
+      "fold_metrics": [
+        {
+          "fold": 0,
+          "official_metric": 0.7283,
+          "rmse_norm": 0.2330431347204288,
+          "mae_norm": 0.17798727125449232
+        },
+        {
+          "fold": 1,
+          "official_metric": 0.8323,
+          "rmse_norm": 0.23632589476911128,
+          "mae_norm": 0.18268474991053402
+        },
+        {
+          "fold": 2,
+          "official_metric": 0.7944,
+          "rmse_norm": 0.2522896770493427,
+          "mae_norm": 0.18382802688999497
+        }
+      ],
+      "mean_official_metric": 0.785,
+      "std_official_metric": 0.052633354443736576,
+      "ci_lower": 0.6542514993320124,
+      "ci_upper": 0.9157485006679876,
+      "mean_rmse": 0.24055290217962758,
+      "mean_mae": 0.18150001601834043
+    },
+    {
+      "config_idx": 4,
+      "config_suffix": "learning_rate0.02_max_depth5",
+      "sweep_params": {
+        "params.max_depth": 5,
+        "params.learning_rate": 0.02
+      },
+      "n_folds": 3,
+      "fold_metrics": [
+        {
+          "fold": 0,
+          "official_metric": 0.7366,
+          "rmse_norm": 0.23193723262115468,
+          "mae_norm": 0.17575652300167496
+        },
+        {
+          "fold": 1,
+          "official_metric": 0.821,
+          "rmse_norm": 0.23575707325995043,
+          "mae_norm": 0.18303144831500995
+        },
+        {
+          "fold": 2,
+          "official_metric": 0.8003,
+          "rmse_norm": 0.25193500417767317,
+          "mae_norm": 0.18471224680171908
+        }
+      ],
+      "mean_official_metric": 0.7859666666666666,
+      "std_official_metric": 0.04398776345000198,
+      "ci_lower": 0.676695004626318,
+      "ci_upper": 0.8952383287070151,
+      "mean_rmse": 0.23987643668625944,
+      "mean_mae": 0.18116673937280134
+    },
+    {
+      "config_idx": 5,
+      "config_suffix": "learning_rate0.03_max_depth5",
+      "sweep_params": {
+        "params.max_depth": 5,
+        "params.learning_rate": 0.03
+      },
+      "n_folds": 3,
+      "fold_metrics": [
+        {
+          "fold": 0,
+          "official_metric": 0.741,
+          "rmse_norm": 0.23314063253123005,
+          "mae_norm": 0.17659059108125622
+        },
+        {
+          "fold": 1,
+          "official_metric": NaN,
+          "rmse_norm": NaN,
+          "mae_norm": NaN,
+          "error": "[Errno 32] Broken pipe"
+        },
+        {
+          "fold": 2,
+          "official_metric": NaN,
+          "rmse_norm": NaN,
+          "mae_norm": NaN,
+          "error": "[Errno 32] Broken pipe"
+        }
+      ],
+      "mean_official_metric": 0.741,
+      "std_official_metric": 0.0,
+      "ci_lower": 0.741,
+      "ci_upper": 0.741,
+      "mean_rmse": 0.23314063253123005,
+      "mean_mae": 0.17659059108125622
+    },
+    {
+      "config_idx": 6,
+      "config_suffix": "learning_rate0.05_max_depth5",
+      "sweep_params": {
+        "params.max_depth": 5,
+        "params.learning_rate": 0.05
+      },
+      "n_folds": 3,
+      "fold_metrics": [
+        {
+          "fold": 0,
+          "official_metric": NaN,
+          "rmse_norm": NaN,
+          "mae_norm": NaN,
+          "error": "[Errno 32] Broken pipe"
+        },
+        {
+          "fold": 1,
+          "official_metric": NaN,
+          "rmse_norm": NaN,
+          "mae_norm": NaN,
+          "error": "[Errno 32] Broken pipe"
+        },
+        {
+          "fold": 2,
+          "official_metric": NaN,
+          "rmse_norm": NaN,
+          "mae_norm": NaN,
+          "error": "[Errno 32] Broken pipe"
+        }
+      ],
+      "mean_official_metric": NaN,
+      "std_official_metric": NaN,
+      "ci_lower": NaN,
+      "ci_upper": NaN,
+      "mean_rmse": NaN,
+      "mean_mae": NaN
+    },
+    {
+      "config_idx": 7,
+      "config_suffix": "learning_rate0.02_max_depth6",
+      "sweep_params": {
+        "params.max_depth": 6,
+        "params.learning_rate": 0.02
+      },
+      "n_folds": 3,
+      "fold_metrics": [
+        {
+          "fold": 0,
+          "official_metric": NaN,
+          "rmse_norm": NaN,
+          "mae_norm": NaN,
+          "error": "[Errno 32] Broken pipe"
+        },
+        {
+          "fold": 1,
+          "official_metric": NaN,
+          "rmse_norm": NaN,
+          "mae_norm": NaN,
+          "error": "[Errno 32] Broken pipe"
+        },
+        {
+          "fold": 2,
+          "official_metric": NaN,
+          "rmse_norm": NaN,
+          "mae_norm": NaN,
+          "error": "[Errno 32] Broken pipe"
+        }
+      ],
+      "mean_official_metric": NaN,
+      "std_official_metric": NaN,
+      "ci_lower": NaN,
+      "ci_upper": NaN,
+      "mean_rmse": NaN,
+      "mean_mae": NaN
+    },
+    {
+      "config_idx": 8,
+      "config_suffix": "learning_rate0.03_max_depth6",
+      "sweep_params": {
+        "params.max_depth": 6,
+        "params.learning_rate": 0.03
+      },
+      "n_folds": 3,
+      "fold_metrics": [
+        {
+          "fold": 0,
+          "official_metric": NaN,
+          "rmse_norm": NaN,
+          "mae_norm": NaN,
+          "error": "[Errno 32] Broken pipe"
+        },
+        {
+          "fold": 1,
+          "official_metric": NaN,
+          "rmse_norm": NaN,
+          "mae_norm": NaN,
+          "error": "[Errno 32] Broken pipe"
+        },
+        {
+          "fold": 2,
+          "official_metric": NaN,
+          "rmse_norm": NaN,
+          "mae_norm": NaN,
+          "error": "[Errno 32] Broken pipe"
+        }
+      ],
+      "mean_official_metric": NaN,
+      "std_official_metric": NaN,
+      "ci_lower": NaN,
+      "ci_upper": NaN,
+      "mean_rmse": NaN,
+      "mean_mae": NaN
+    },
+    {
+      "config_idx": 9,
+      "config_suffix": "learning_rate0.05_max_depth6",
+      "sweep_params": {
+        "params.max_depth": 6,
+        "params.learning_rate": 0.05
+      },
+      "n_folds": 3,
+      "fold_metrics": [
+        {
+          "fold": 0,
+          "official_metric": NaN,
+          "rmse_norm": NaN,
+          "mae_norm": NaN,
+          "error": "[Errno 32] Broken pipe"
+        },
+        {
+          "fold": 1,
+          "official_metric": NaN,
+          "rmse_norm": NaN,
+          "mae_norm": NaN,
+          "error": "[Errno 32] Broken pipe"
+        },
+        {
+          "fold": 2,
+          "official_metric": NaN,
+          "rmse_norm": NaN,
+          "mae_norm": NaN,
+          "error": "[Errno 32] Broken pipe"
+        }
+      ],
+      "mean_official_metric": NaN,
+      "std_official_metric": NaN,
+      "ci_lower": NaN,
+      "ci_upper": NaN,
+      "mean_rmse": NaN,
+      "mean_mae": NaN
+    }
+  ]
+}
