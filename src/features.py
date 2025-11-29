@@ -1929,3 +1929,390 @@ def remove_redundant_features(
     
     logger.info(f"Final feature set: {len(X_filtered.columns)} features")
     return X_filtered, removed_features
+
+
+# =============================================================================
+# SECTION 8.1: FEATURE EXPERIMENTS - Frequency Encoding & Feature Scaling
+# =============================================================================
+
+def add_frequency_encoding_features(
+    df: pd.DataFrame,
+    categorical_cols: Optional[List[str]] = None,
+    normalize: bool = True
+) -> pd.DataFrame:
+    """
+    Add frequency encoding for categorical columns.
+    
+    Frequency encoding replaces categories with their frequency of occurrence.
+    This is useful for high-cardinality categorical features.
+    
+    Args:
+        df: DataFrame with categorical columns
+        categorical_cols: List of columns to encode. If None, auto-detects.
+        normalize: If True, normalize frequencies to [0, 1]
+        
+    Returns:
+        DataFrame with frequency encoded columns added
+    """
+    result = df.copy()
+    
+    if categorical_cols is None:
+        # Auto-detect categorical columns
+        categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+        # Exclude ID columns
+        categorical_cols = [c for c in categorical_cols if c not in ['country', 'brand_name']]
+    
+    for col in categorical_cols:
+        if col not in df.columns:
+            continue
+        
+        # Compute frequency
+        freq = df[col].value_counts(normalize=normalize)
+        result[f'{col}_freq'] = df[col].map(freq).fillna(0.0)
+        
+        logger.debug(f"Added frequency encoding for {col}")
+    
+    logger.info(f"Added frequency encoding for {len(categorical_cols)} categorical columns")
+    return result
+
+
+class FeatureScaler:
+    """
+    Feature scaler for preprocessing before model training.
+    
+    Supports:
+    - StandardScaler: Zero mean, unit variance
+    - MinMaxScaler: Scale to [0, 1]
+    - RobustScaler: Scale using median and IQR (robust to outliers)
+    - None: No scaling (for tree-based models)
+    
+    Note: Tree-based models (CatBoost, LightGBM, XGBoost) typically don't
+    need feature scaling, but linear models and neural networks do.
+    
+    Example usage:
+        scaler = FeatureScaler(method='standard')
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
+    """
+    
+    def __init__(self, method: str = 'standard', exclude_cols: Optional[List[str]] = None):
+        """
+        Initialize feature scaler.
+        
+        Args:
+            method: 'standard', 'minmax', 'robust', or 'none'
+            exclude_cols: Columns to exclude from scaling (e.g., categorical)
+        """
+        self.method = method.lower()
+        self.exclude_cols = exclude_cols or []
+        self.scaler = None
+        self.numeric_cols: List[str] = []
+        self.fitted = False
+        
+        if self.method not in ['standard', 'minmax', 'robust', 'none']:
+            raise ValueError(f"Unknown scaling method: {method}")
+        
+        if self.method == 'standard':
+            from sklearn.preprocessing import StandardScaler
+            self.scaler = StandardScaler()
+        elif self.method == 'minmax':
+            from sklearn.preprocessing import MinMaxScaler
+            self.scaler = MinMaxScaler()
+        elif self.method == 'robust':
+            from sklearn.preprocessing import RobustScaler
+            self.scaler = RobustScaler()
+    
+    def fit(self, X: pd.DataFrame) -> 'FeatureScaler':
+        """Fit the scaler on training data."""
+        if self.method == 'none':
+            self.fitted = True
+            return self
+        
+        # Identify numeric columns to scale
+        self.numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+        self.numeric_cols = [c for c in self.numeric_cols if c not in self.exclude_cols]
+        
+        if len(self.numeric_cols) > 0:
+            self.scaler.fit(X[self.numeric_cols])
+        
+        self.fitted = True
+        logger.info(f"FeatureScaler fitted: {len(self.numeric_cols)} numeric columns")
+        return self
+    
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Transform features using fitted scaler."""
+        if not self.fitted:
+            raise ValueError("Scaler not fitted. Call fit() first.")
+        
+        if self.method == 'none':
+            return X.copy()
+        
+        result = X.copy()
+        
+        if len(self.numeric_cols) > 0:
+            # Only transform columns that exist in X
+            cols_to_transform = [c for c in self.numeric_cols if c in X.columns]
+            if len(cols_to_transform) > 0:
+                result[cols_to_transform] = self.scaler.transform(X[cols_to_transform])
+        
+        return result
+    
+    def fit_transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Fit and transform in one step."""
+        self.fit(X)
+        return self.transform(X)
+    
+    def inverse_transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Inverse transform scaled features back to original scale."""
+        if self.method == 'none':
+            return X.copy()
+        
+        result = X.copy()
+        
+        if len(self.numeric_cols) > 0:
+            cols_to_transform = [c for c in self.numeric_cols if c in X.columns]
+            if len(cols_to_transform) > 0:
+                result[cols_to_transform] = self.scaler.inverse_transform(X[cols_to_transform])
+        
+        return result
+
+
+def run_feature_ablation(
+    X: pd.DataFrame,
+    y: pd.Series,
+    meta_df: pd.DataFrame,
+    scenario: int,
+    model_class: type,
+    model_config: dict,
+    feature_groups: Optional[Dict[str, List[str]]] = None,
+    val_fraction: float = 0.2,
+    random_state: int = 42
+) -> Dict[str, Dict[str, float]]:
+    """
+    Run feature ablation study to measure importance of each feature group.
+    
+    Tests each feature group by:
+    1. Training with all features (baseline)
+    2. Training without each group (drop-one)
+    3. Training with only each group (add-one)
+    
+    Args:
+        X: Feature DataFrame
+        y: Target Series
+        meta_df: Metadata DataFrame
+        scenario: 1 or 2
+        model_class: Model class to use
+        model_config: Model configuration
+        feature_groups: Dict mapping group name to list of feature columns.
+                       If None, uses default grouping.
+        val_fraction: Validation split fraction
+        random_state: Random seed
+        
+    Returns:
+        Dictionary with ablation results:
+        {
+            'baseline': {'rmse': float, 'mae': float},
+            'drop_group_name': {'rmse': float, 'mae': float, 'impact': float},
+            'add_group_name': {'rmse': float, 'mae': float},
+            ...
+        }
+    """
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import mean_squared_error, mean_absolute_error
+    
+    results = {}
+    
+    # Default feature groups if not provided
+    if feature_groups is None:
+        feature_groups = _get_default_feature_groups(X.columns.tolist())
+    
+    # Split data
+    X_train, X_val, y_train, y_val = train_test_split(
+        X, y, test_size=val_fraction, random_state=random_state
+    )
+    
+    # Baseline: all features
+    logger.info("Ablation: Training baseline model with all features...")
+    model_baseline = model_class(model_config)
+    model_baseline.fit(X_train, y_train, X_val, y_val)
+    baseline_preds = model_baseline.predict(X_val)
+    
+    baseline_rmse = np.sqrt(mean_squared_error(y_val, baseline_preds))
+    baseline_mae = mean_absolute_error(y_val, baseline_preds)
+    
+    results['baseline'] = {
+        'rmse': baseline_rmse,
+        'mae': baseline_mae,
+        'n_features': len(X.columns)
+    }
+    logger.info(f"Baseline RMSE: {baseline_rmse:.4f}, MAE: {baseline_mae:.4f}")
+    
+    # Drop-one ablation
+    for group_name, group_cols in feature_groups.items():
+        cols_to_drop = [c for c in group_cols if c in X.columns]
+        if len(cols_to_drop) == 0:
+            continue
+        
+        remaining_cols = [c for c in X.columns if c not in cols_to_drop]
+        if len(remaining_cols) == 0:
+            continue
+        
+        logger.info(f"Ablation: Dropping {group_name} ({len(cols_to_drop)} features)...")
+        
+        X_train_drop = X_train[remaining_cols]
+        X_val_drop = X_val[remaining_cols]
+        
+        model_drop = model_class(model_config)
+        model_drop.fit(X_train_drop, y_train, X_val_drop, y_val)
+        drop_preds = model_drop.predict(X_val_drop)
+        
+        drop_rmse = np.sqrt(mean_squared_error(y_val, drop_preds))
+        drop_mae = mean_absolute_error(y_val, drop_preds)
+        
+        # Positive impact means this group helps (RMSE increases when dropped)
+        impact = drop_rmse - baseline_rmse
+        
+        results[f'drop_{group_name}'] = {
+            'rmse': drop_rmse,
+            'mae': drop_mae,
+            'impact': impact,
+            'n_features_dropped': len(cols_to_drop)
+        }
+        logger.info(f"  Without {group_name}: RMSE={drop_rmse:.4f} (impact: {impact:+.4f})")
+    
+    # Add-one ablation (only each group)
+    for group_name, group_cols in feature_groups.items():
+        cols_to_use = [c for c in group_cols if c in X.columns]
+        if len(cols_to_use) == 0:
+            continue
+        
+        logger.info(f"Ablation: Only {group_name} ({len(cols_to_use)} features)...")
+        
+        X_train_add = X_train[cols_to_use]
+        X_val_add = X_val[cols_to_use]
+        
+        model_add = model_class(model_config)
+        model_add.fit(X_train_add, y_train, X_val_add, y_val)
+        add_preds = model_add.predict(X_val_add)
+        
+        add_rmse = np.sqrt(mean_squared_error(y_val, add_preds))
+        add_mae = mean_absolute_error(y_val, add_preds)
+        
+        results[f'add_{group_name}'] = {
+            'rmse': add_rmse,
+            'mae': add_mae,
+            'n_features': len(cols_to_use)
+        }
+        logger.info(f"  Only {group_name}: RMSE={add_rmse:.4f}")
+    
+    logger.info("Feature ablation study complete")
+    return results
+
+
+def _get_default_feature_groups(feature_cols: List[str]) -> Dict[str, List[str]]:
+    """Get default feature group definitions based on column names."""
+    groups = {
+        'pre_entry': [],
+        'time': [],
+        'generics': [],
+        'drug': [],
+        'early_erosion': [],
+        'interactions': [],
+        'target_encoding': [],
+        'frequency_encoding': [],
+        'other': []
+    }
+    
+    for col in feature_cols:
+        col_lower = col.lower()
+        
+        if any(x in col_lower for x in ['pre_entry', 'avg_vol_12m', 'avg_vol_6m', 'avg_vol_3m', 
+                                         'volatility', 'log_avg_vol', 'seasonal']):
+            groups['pre_entry'].append(col)
+        elif any(x in col_lower for x in ['months_postgx', 'time_bucket', 'is_early', 'is_mid', 
+                                           'is_late', 'time_decay', 'quarter', 'month_sin', 
+                                           'month_cos', 'sqrt_months']):
+            groups['time'].append(col)
+        elif any(x in col_lower for x in ['n_gxs', 'generic', 'gxs_', 'has_generic', 
+                                           'multiple_generic', 'many_generic']):
+            groups['generics'].append(col)
+        elif any(x in col_lower for x in ['ther_area', 'main_package', 'hospital', 'biological', 
+                                           'small_molecule', 'injection', 'oral', 'encoded']):
+            groups['drug'].append(col)
+        elif any(x in col_lower for x in ['erosion_0', 'avg_vol_0_', 'trend_0_5', 'drop_month', 
+                                           'recovery', 'competition_response']):
+            groups['early_erosion'].append(col)
+        elif '_x_' in col_lower:
+            groups['interactions'].append(col)
+        elif '_prior' in col_lower or '_mean_enc' in col_lower:
+            groups['target_encoding'].append(col)
+        elif '_freq' in col_lower:
+            groups['frequency_encoding'].append(col)
+        else:
+            groups['other'].append(col)
+    
+    # Remove empty groups
+    return {k: v for k, v in groups.items() if len(v) > 0}
+
+
+def compare_feature_engineering_approaches(
+    panel_df: pd.DataFrame,
+    scenario: int,
+    approaches: Dict[str, Dict],
+    model_class: type,
+    model_config: dict,
+    val_fraction: float = 0.2,
+    random_state: int = 42
+) -> pd.DataFrame:
+    """
+    Compare different feature engineering approaches on the same data.
+    
+    Args:
+        panel_df: Panel DataFrame
+        scenario: 1 or 2
+        approaches: Dict mapping approach name to feature config
+        model_class: Model class to use
+        model_config: Model configuration
+        val_fraction: Validation split fraction
+        random_state: Random seed
+        
+    Returns:
+        DataFrame with comparison results
+    """
+    from sklearn.metrics import mean_squared_error, mean_absolute_error
+    
+    results = []
+    
+    for approach_name, feature_config in approaches.items():
+        logger.info(f"Testing approach: {approach_name}")
+        
+        # Build features with this approach
+        feature_df = make_features(panel_df.copy(), scenario=scenario, mode='train', config=feature_config)
+        train_rows = select_training_rows(feature_df, scenario=scenario)
+        
+        X, y, meta = split_features_target_meta(train_rows)
+        
+        # Split
+        from sklearn.model_selection import train_test_split
+        X_train, X_val, y_train, y_val = train_test_split(
+            X, y, test_size=val_fraction, random_state=random_state
+        )
+        
+        # Train and evaluate
+        model = model_class(model_config)
+        model.fit(X_train, y_train, X_val, y_val)
+        preds = model.predict(X_val)
+        
+        rmse = np.sqrt(mean_squared_error(y_val, preds))
+        mae = mean_absolute_error(y_val, preds)
+        
+        results.append({
+            'approach': approach_name,
+            'n_features': len(X.columns),
+            'rmse': rmse,
+            'mae': mae
+        })
+        
+        logger.info(f"  {approach_name}: RMSE={rmse:.4f}, MAE={mae:.4f}, features={len(X.columns)}")
+    
+    return pd.DataFrame(results).sort_values('rmse')

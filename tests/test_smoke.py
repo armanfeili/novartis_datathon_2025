@@ -6766,6 +6766,1022 @@ class TestSection11ColabNotebook:
             "Should import from src package"
 
 
+# =============================================================================
+# SECTION 8 TESTS: EXPERIMENTATION & OPTIMIZATION
+# =============================================================================
+
+
+class TestSection8FeatureExperiments:
+    """Tests for Section 8.1 - Feature Experiments."""
+    
+    def test_frequency_encoding_function_exists(self):
+        """Test that add_frequency_encoding_features function exists."""
+        from src.features import add_frequency_encoding_features
+        assert callable(add_frequency_encoding_features)
+    
+    def test_frequency_encoding_basic(self):
+        """Test basic frequency encoding functionality."""
+        from src.features import add_frequency_encoding_features
+        
+        df = pd.DataFrame({
+            'category': ['A', 'A', 'A', 'B', 'B', 'C'],
+            'value': [1, 2, 3, 4, 5, 6]
+        })
+        
+        result = add_frequency_encoding_features(df, categorical_cols=['category'], normalize=True)
+        
+        assert 'category_freq' in result.columns
+        # A appears 3 times, B appears 2 times, C appears 1 time
+        assert result.loc[0, 'category_freq'] == 3 / 6  # 0.5
+        assert result.loc[3, 'category_freq'] == 2 / 6  # ~0.333
+        assert result.loc[5, 'category_freq'] == 1 / 6  # ~0.167
+    
+    def test_frequency_encoding_no_normalize(self):
+        """Test frequency encoding without normalization."""
+        from src.features import add_frequency_encoding_features
+        
+        df = pd.DataFrame({
+            'category': ['A', 'A', 'B', 'C', 'C', 'C'],
+            'value': [1, 2, 3, 4, 5, 6]
+        })
+        
+        result = add_frequency_encoding_features(df, categorical_cols=['category'], normalize=False)
+        
+        assert 'category_freq' in result.columns
+        assert result.loc[0, 'category_freq'] == 2  # A appears 2 times
+        assert result.loc[2, 'category_freq'] == 1  # B appears 1 time
+        assert result.loc[3, 'category_freq'] == 3  # C appears 3 times
+    
+    def test_frequency_encoding_auto_detect(self):
+        """Test frequency encoding auto-detects categorical columns."""
+        from src.features import add_frequency_encoding_features
+        
+        df = pd.DataFrame({
+            'country': ['US', 'US', 'DE'],  # Excluded (ID column)
+            'brand_name': ['A', 'A', 'B'],  # Excluded (ID column)
+            'ther_area': ['Cardio', 'Oncol', 'Cardio'],  # Should be encoded
+            'value': [1, 2, 3]
+        })
+        
+        result = add_frequency_encoding_features(df)
+        
+        # Should encode ther_area but not ID columns
+        assert 'ther_area_freq' in result.columns
+        assert 'country_freq' not in result.columns
+        assert 'brand_name_freq' not in result.columns
+    
+    def test_feature_scaler_class_exists(self):
+        """Test that FeatureScaler class exists."""
+        from src.features import FeatureScaler
+        assert FeatureScaler is not None
+    
+    def test_feature_scaler_standard(self):
+        """Test StandardScaler functionality."""
+        from src.features import FeatureScaler
+        
+        df = pd.DataFrame({
+            'feature1': [0, 10, 20, 30, 40],
+            'feature2': [0, 100, 200, 300, 400]
+        })
+        
+        scaler = FeatureScaler(method='standard')
+        scaled = scaler.fit_transform(df)
+        
+        # Standard scaling should give mean ~ 0, std ~ 1
+        assert abs(scaled['feature1'].mean()) < 1e-10
+        assert abs(scaled['feature2'].mean()) < 1e-10
+        assert abs(scaled['feature1'].std(ddof=0) - 1.0) < 1e-10
+    
+    def test_feature_scaler_minmax(self):
+        """Test MinMaxScaler functionality."""
+        from src.features import FeatureScaler
+        
+        df = pd.DataFrame({
+            'feature1': [0, 25, 50, 75, 100],
+            'feature2': [-10, 0, 10, 20, 30]
+        })
+        
+        scaler = FeatureScaler(method='minmax')
+        scaled = scaler.fit_transform(df)
+        
+        # MinMax scaling should give values in [0, 1]
+        assert scaled['feature1'].min() == 0.0
+        assert scaled['feature1'].max() == 1.0
+        assert scaled['feature2'].min() == 0.0
+        assert scaled['feature2'].max() == 1.0
+    
+    def test_feature_scaler_robust(self):
+        """Test RobustScaler functionality."""
+        from src.features import FeatureScaler
+        
+        df = pd.DataFrame({
+            'feature1': [1, 2, 3, 4, 5, 100]  # 100 is outlier
+        })
+        
+        scaler = FeatureScaler(method='robust')
+        scaled = scaler.fit_transform(df)
+        
+        # RobustScaler uses median and IQR, so outliers should not affect much
+        assert 'feature1' in scaled.columns
+        assert len(scaled) == len(df)
+    
+    def test_feature_scaler_none(self):
+        """Test no-op scaling."""
+        from src.features import FeatureScaler
+        
+        df = pd.DataFrame({
+            'feature1': [1, 2, 3, 4, 5]
+        })
+        
+        scaler = FeatureScaler(method='none')
+        scaled = scaler.fit_transform(df)
+        
+        # Should be unchanged
+        assert list(scaled['feature1']) == [1, 2, 3, 4, 5]
+    
+    def test_feature_scaler_transform_new_data(self):
+        """Test scaler can transform new data after fitting."""
+        from src.features import FeatureScaler
+        
+        train_df = pd.DataFrame({
+            'feature1': [0, 10, 20, 30, 40]
+        })
+        
+        test_df = pd.DataFrame({
+            'feature1': [5, 15, 25]
+        })
+        
+        scaler = FeatureScaler(method='standard')
+        scaler.fit(train_df)
+        
+        test_scaled = scaler.transform(test_df)
+        
+        # Should transform without error
+        assert len(test_scaled) == len(test_df)
+    
+    def test_feature_scaler_inverse_transform(self):
+        """Test inverse transform recovers original data."""
+        from src.features import FeatureScaler
+        
+        df = pd.DataFrame({
+            'feature1': [10.0, 20.0, 30.0, 40.0, 50.0]
+        })
+        
+        scaler = FeatureScaler(method='standard')
+        scaled = scaler.fit_transform(df)
+        recovered = scaler.inverse_transform(scaled)
+        
+        # Should recover original values
+        np.testing.assert_array_almost_equal(
+            df['feature1'].values, 
+            recovered['feature1'].values, 
+            decimal=10
+        )
+    
+    def test_feature_scaler_exclude_cols(self):
+        """Test excluding columns from scaling."""
+        from src.features import FeatureScaler
+        
+        df = pd.DataFrame({
+            'feature1': [0, 10, 20],
+            'months_postgx': [0, 6, 12]  # Exclude this
+        })
+        
+        scaler = FeatureScaler(method='standard', exclude_cols=['months_postgx'])
+        scaled = scaler.fit_transform(df)
+        
+        # months_postgx should be unchanged
+        assert list(scaled['months_postgx']) == [0, 6, 12]
+        # feature1 should be scaled
+        assert abs(scaled['feature1'].mean()) < 1e-10
+    
+    def test_run_feature_ablation_function_exists(self):
+        """Test that run_feature_ablation function exists."""
+        from src.features import run_feature_ablation
+        assert callable(run_feature_ablation)
+    
+    def test_run_feature_ablation_basic(self):
+        """Test basic feature ablation functionality."""
+        from src.features import run_feature_ablation
+        from src.models.linear import LinearModel
+        
+        # Create test data
+        np.random.seed(42)
+        X = pd.DataFrame({
+            'pre_entry_trend': np.random.randn(100),
+            'avg_vol_6m': np.random.rand(100) * 1000,
+            'months_postgx': np.random.randint(0, 24, 100),
+            'n_gxs': np.random.randint(0, 5, 100)
+        })
+        y = pd.Series(np.random.rand(100))
+        meta_df = pd.DataFrame({
+            'country': ['US'] * 100,
+            'brand_name': ['A'] * 100,
+            'bucket': [1] * 50 + [2] * 50
+        })
+        
+        # Define feature groups
+        feature_groups = {
+            'pre_entry': ['pre_entry_trend', 'avg_vol_6m'],
+            'time': ['months_postgx'],
+            'generics': ['n_gxs']
+        }
+        
+        results = run_feature_ablation(
+            X, y, meta_df,
+            scenario=1,
+            model_class=LinearModel,
+            model_config={'model': {'type': 'ridge'}},
+            feature_groups=feature_groups,
+            val_fraction=0.2,
+            random_state=42
+        )
+        
+        # Check results structure
+        assert 'baseline' in results
+        assert 'rmse' in results['baseline']
+        assert 'mae' in results['baseline']
+        assert 'n_features' in results['baseline']
+        
+        # Should have drop results
+        assert any('drop_' in k for k in results.keys())
+        
+        # Should have add results
+        assert any('add_' in k for k in results.keys())
+
+
+class TestSection8ModelExperiments:
+    """Tests for Section 8.2 - Model Experiments."""
+    
+    def test_compare_models_function_exists(self):
+        """Test that compare_models function exists."""
+        from src.train import compare_models
+        assert callable(compare_models)
+    
+    def test_compare_models_basic(self):
+        """Test basic model comparison functionality."""
+        from src.train import compare_models
+        from src.evaluate import create_aux_file
+        
+        # Create test data
+        np.random.seed(42)
+        X_train = pd.DataFrame({
+            'feature1': np.random.randn(100),
+            'feature2': np.random.randn(100),
+            'months_postgx': np.random.randint(0, 24, 100)
+        })
+        y_train = pd.Series(np.random.rand(100))
+        meta_train = pd.DataFrame({
+            'country': ['US'] * 100,
+            'brand_name': ['A'] * 100,
+            'months_postgx': np.random.randint(0, 24, 100),
+            'bucket': [1] * 50 + [2] * 50,
+            'avg_vol_12m': [1000.0] * 100
+        })
+        
+        X_val = pd.DataFrame({
+            'feature1': np.random.randn(20),
+            'feature2': np.random.randn(20),
+            'months_postgx': np.random.randint(0, 24, 20)
+        })
+        y_val = pd.Series(np.random.rand(20))
+        meta_val = pd.DataFrame({
+            'country': ['DE'] * 20,
+            'brand_name': ['B'] * 20,
+            'months_postgx': np.random.randint(0, 24, 20),
+            'bucket': [1] * 10 + [2] * 10,
+            'avg_vol_12m': [1000.0] * 20
+        })
+        
+        # Simple model configs
+        model_configs = {
+            'global_mean': {'model_type': 'global_mean', 'params': {}},
+            'flat': {'model_type': 'flat', 'params': {}}
+        }
+        
+        results = compare_models(
+            X_train, y_train, X_val, y_val,
+            meta_train, meta_val,
+            scenario=1,
+            model_configs=model_configs
+        )
+        
+        # Check results structure
+        assert isinstance(results, pd.DataFrame)
+        assert 'model_name' in results.columns
+        assert 'rmse' in results.columns
+        assert 'mae' in results.columns
+        assert 'train_time_s' in results.columns
+        
+        # Should have entries for both models
+        assert len(results) == 2
+    
+    def test_test_loss_functions_exists(self):
+        """Test that test_loss_functions function exists."""
+        from src.train import test_loss_functions
+        assert callable(test_loss_functions)
+    
+    def test_run_model_experiments_exists(self):
+        """Test that run_model_experiments function exists."""
+        from src.train import run_model_experiments
+        assert callable(run_model_experiments)
+
+
+class TestSection8PostProcessing:
+    """Tests for Section 8.4 - Post-Processing."""
+    
+    def test_optimize_ensemble_weights_function_exists(self):
+        """Test that optimize_ensemble_weights_on_validation function exists."""
+        from src.train import optimize_ensemble_weights_on_validation
+        assert callable(optimize_ensemble_weights_on_validation)
+    
+    def test_optimize_ensemble_weights_basic(self):
+        """Test basic ensemble weight optimization."""
+        from src.train import optimize_ensemble_weights_on_validation
+        from src.models.linear import GlobalMeanBaseline, FlatBaseline
+        
+        # Create test data
+        np.random.seed(42)
+        X_val = pd.DataFrame({
+            'feature1': np.random.randn(50),
+            'months_postgx': np.random.randint(0, 24, 50)
+        })
+        y_val = pd.Series(np.random.rand(50) * 0.8 + 0.1)  # Between 0.1 and 0.9
+        meta_val = pd.DataFrame({
+            'country': ['US'] * 50,
+            'brand_name': ['A'] * 50,
+            'months_postgx': np.random.randint(0, 24, 50),
+            'bucket': [1] * 25 + [2] * 25,
+            'avg_vol_12m': [1000.0] * 50
+        })
+        
+        # Create two simple trained models
+        model1 = GlobalMeanBaseline({})
+        model2 = FlatBaseline({})
+        
+        # Fit models (they need X_train for fitting)
+        X_train = X_val.copy()
+        y_train = y_val.copy()
+        model1.fit(X_train, y_train, X_val, y_val)
+        model2.fit(X_train, y_train, X_val, y_val)
+        
+        weights, best_metric = optimize_ensemble_weights_on_validation(
+            models=[model1, model2],
+            X_val=X_val,
+            y_val=y_val,
+            meta_val=meta_val,
+            scenario=1,
+            optimization_metric='rmse',
+            n_restarts=2
+        )
+        
+        # Check weights are valid
+        assert len(weights) == 2
+        assert abs(weights.sum() - 1.0) < 1e-6  # Should sum to 1
+        assert all(weights >= 0)  # Non-negative
+        
+        # Check best_metric is reasonable
+        assert isinstance(best_metric, float)
+        assert best_metric >= 0
+
+
+class TestSection8ErosionCurveShaping:
+    """Tests for Section 8.5 - Domain-Consistent Erosion Curve Shaping."""
+    
+    def test_get_default_feature_groups(self):
+        """Test feature group detection."""
+        from src.features import _get_default_feature_groups
+        
+        feature_cols = [
+            'pre_entry_trend', 'avg_vol_12m', 'avg_vol_6m',  # pre_entry
+            'months_postgx', 'time_bucket', 'time_decay',  # time
+            'n_gxs', 'has_generic', 'multiple_generics',  # generics
+            'hospital_rate_norm',  # drug (without ther_area to avoid overlap)
+            'erosion_0_5', 'trend_0_5',  # early_erosion
+            'feature_a_x_feature_b',  # interactions (no overlap with other patterns)
+            'category_freq',  # frequency_encoding (generic name to avoid overlap)
+            'other_feature'  # other
+        ]
+        
+        groups = _get_default_feature_groups(feature_cols)
+        
+        # Check groups are assigned correctly
+        assert 'pre_entry' in groups
+        assert 'time' in groups
+        assert 'generics' in groups
+        assert 'drug' in groups
+        assert 'early_erosion' in groups
+        assert 'interactions' in groups
+        assert 'frequency_encoding' in groups
+        
+        # Check specific features are in correct groups
+        assert 'pre_entry_trend' in groups['pre_entry']
+        assert 'months_postgx' in groups['time']
+        assert 'n_gxs' in groups['generics']
+        assert 'hospital_rate_norm' in groups['drug']
+        assert 'erosion_0_5' in groups['early_erosion']
+        assert 'feature_a_x_feature_b' in groups['interactions']
+        assert 'category_freq' in groups['frequency_encoding']
+    
+    def test_compare_feature_engineering_approaches_exists(self):
+        """Test that compare_feature_engineering_approaches function exists."""
+        from src.features import compare_feature_engineering_approaches
+        assert callable(compare_feature_engineering_approaches)
+
+
+class TestSection8Integration:
+    """Integration tests for Section 8 functionality."""
+    
+    def test_scaler_in_training_pipeline(self):
+        """Test that FeatureScaler integrates with training pipeline."""
+        from src.features import FeatureScaler
+        from src.models.linear import LinearModel
+        
+        # Create test data
+        np.random.seed(42)
+        X_train = pd.DataFrame({
+            'feature1': np.random.randn(100) * 100,
+            'feature2': np.random.randn(100) * 10,
+            'months_postgx': np.random.randint(0, 24, 100)
+        })
+        y_train = pd.Series(np.random.rand(100))
+        X_val = X_train.iloc[:20].copy()
+        y_val = y_train.iloc[:20].copy()
+        
+        # Scale features
+        scaler = FeatureScaler(method='standard')
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_val_scaled = scaler.transform(X_val)
+        
+        # Train model on scaled features
+        model = LinearModel({'model': {'type': 'ridge'}})
+        model.fit(X_train_scaled, y_train, X_val_scaled, y_val)
+        
+        # Predict
+        preds = model.predict(X_val_scaled)
+        
+        assert len(preds) == len(X_val)
+        assert not np.any(np.isnan(preds))
+    
+    def test_ablation_results_consistency(self):
+        """Test that ablation results are consistent."""
+        from src.features import run_feature_ablation
+        from src.models.linear import LinearModel
+        
+        np.random.seed(42)
+        X = pd.DataFrame({
+            'important_feature': np.linspace(0, 1, 100),
+            'noise_feature': np.random.randn(100)
+        })
+        # Target correlates with important_feature
+        y = pd.Series(X['important_feature'].values + np.random.randn(100) * 0.1)
+        meta_df = pd.DataFrame({
+            'country': ['US'] * 100,
+            'brand_name': ['A'] * 100,
+            'bucket': [1] * 50 + [2] * 50
+        })
+        
+        feature_groups = {
+            'important': ['important_feature'],
+            'noise': ['noise_feature']
+        }
+        
+        results = run_feature_ablation(
+            X, y, meta_df,
+            scenario=1,
+            model_class=LinearModel,
+            model_config={'model': {'type': 'ridge'}},
+            feature_groups=feature_groups,
+            val_fraction=0.2,
+            random_state=42
+        )
+        
+        # Dropping important feature should hurt more than dropping noise
+        if 'drop_important' in results and 'drop_noise' in results:
+            # Impact > 0 means dropping hurts performance (RMSE increases)
+            assert results['drop_important']['impact'] > results['drop_noise']['impact']
+
+
+# =============================================================================
+# SECTION 12: COMPETITION STRATEGY TESTS
+# =============================================================================
+
+class TestSection12SubmissionTracker:
+    """Tests for SubmissionTracker class."""
+    
+    def test_submission_tracker_initialization(self, tmp_path):
+        """Test SubmissionTracker initializes correctly."""
+        from src.utils import SubmissionTracker
+        
+        log_path = tmp_path / 'tracker.json'
+        tracker = SubmissionTracker(log_path=str(log_path))
+        
+        assert tracker.log_path == log_path
+        assert tracker.submissions == []
+    
+    def test_submission_tracker_log_submission(self, tmp_path):
+        """Test logging a submission."""
+        from src.utils import SubmissionTracker
+        
+        log_path = tmp_path / 'tracker.json'
+        tracker = SubmissionTracker(log_path=str(log_path))
+        
+        record = tracker.log_submission(
+            submission_path='submissions/v1.csv',
+            cv_score=0.15,
+            lb_score=0.18,
+            scenario=1,
+            model_info={'type': 'catboost'},
+            notes='Test submission'
+        )
+        
+        assert record['id'] == 1
+        assert record['cv_score'] == 0.15
+        assert record['lb_score'] == 0.18
+        assert record['cv_lb_gap'] == 0.03
+        assert len(tracker.submissions) == 1
+    
+    def test_submission_tracker_update_lb_score(self, tmp_path):
+        """Test updating LB score for a submission."""
+        from src.utils import SubmissionTracker
+        
+        log_path = tmp_path / 'tracker.json'
+        tracker = SubmissionTracker(log_path=str(log_path))
+        
+        tracker.log_submission(
+            submission_path='submissions/v1.csv',
+            cv_score=0.15,
+            lb_score=None,
+            scenario=1
+        )
+        
+        tracker.update_lb_score(1, 0.18)
+        
+        assert tracker.submissions[0]['lb_score'] == 0.18
+        assert tracker.submissions[0]['cv_lb_gap'] == 0.03
+    
+    def test_submission_tracker_analyze_cv_lb_variance(self, tmp_path):
+        """Test CV-LB variance analysis."""
+        from src.utils import SubmissionTracker
+        
+        log_path = tmp_path / 'tracker.json'
+        tracker = SubmissionTracker(log_path=str(log_path))
+        
+        # Log multiple submissions
+        tracker.log_submission('v1.csv', cv_score=0.15, lb_score=0.17)
+        tracker.log_submission('v2.csv', cv_score=0.14, lb_score=0.16)
+        tracker.log_submission('v3.csv', cv_score=0.13, lb_score=0.15)
+        
+        analysis = tracker.analyze_cv_lb_variance()
+        
+        assert analysis['n_submissions'] == 3
+        assert analysis['mean_gap'] == 0.02
+        assert 'correlation' in analysis
+        assert 'overfitting_warning' in analysis
+    
+    def test_submission_tracker_get_best_submission(self, tmp_path):
+        """Test getting best submission."""
+        from src.utils import SubmissionTracker
+        
+        log_path = tmp_path / 'tracker.json'
+        tracker = SubmissionTracker(log_path=str(log_path))
+        
+        tracker.log_submission('v1.csv', cv_score=0.15, lb_score=0.18)
+        tracker.log_submission('v2.csv', cv_score=0.12, lb_score=0.14)
+        tracker.log_submission('v3.csv', cv_score=0.17, lb_score=0.13)
+        
+        best_cv = tracker.get_best_submission(by='cv_score')
+        best_lb = tracker.get_best_submission(by='lb_score')
+        
+        assert best_cv['cv_score'] == 0.12
+        assert best_lb['lb_score'] == 0.13
+    
+    def test_submission_tracker_identify_overfitting(self, tmp_path):
+        """Test identification of overfitting submissions."""
+        from src.utils import SubmissionTracker
+        
+        log_path = tmp_path / 'tracker.json'
+        tracker = SubmissionTracker(log_path=str(log_path))
+        
+        tracker.log_submission('good.csv', cv_score=0.15, lb_score=0.16)  # gap = 0.01
+        tracker.log_submission('bad.csv', cv_score=0.10, lb_score=0.25)   # gap = 0.15
+        
+        overfitting = tracker.identify_overfitting_submissions(gap_threshold=0.1)
+        
+        assert len(overfitting) == 1
+        assert overfitting[0]['submission_path'] == 'bad.csv'
+    
+    def test_submission_tracker_persistence(self, tmp_path):
+        """Test that submissions persist across instances."""
+        from src.utils import SubmissionTracker
+        
+        log_path = tmp_path / 'tracker.json'
+        
+        # Create first tracker and log submission
+        tracker1 = SubmissionTracker(log_path=str(log_path))
+        tracker1.log_submission('v1.csv', cv_score=0.15, lb_score=0.18)
+        
+        # Create second tracker and verify data is loaded
+        tracker2 = SubmissionTracker(log_path=str(log_path))
+        assert len(tracker2.submissions) == 1
+        assert tracker2.submissions[0]['cv_score'] == 0.15
+
+
+class TestSection12TimeAllocationTracker:
+    """Tests for TimeAllocationTracker class."""
+    
+    def test_time_allocation_tracker_init(self):
+        """Test TimeAllocationTracker initialization."""
+        from src.utils import TimeAllocationTracker
+        
+        tracker = TimeAllocationTracker()
+        
+        assert tracker.current_phase is None
+        assert tracker.time_logs == []
+    
+    def test_time_allocation_start_end_phase(self):
+        """Test starting and ending a phase."""
+        from src.utils import TimeAllocationTracker
+        import time
+        
+        tracker = TimeAllocationTracker()
+        
+        tracker.start_phase('eda')
+        assert tracker.current_phase == 'eda'
+        
+        time.sleep(0.1)  # Small delay
+        duration = tracker.end_phase()
+        
+        assert tracker.current_phase is None
+        assert duration > 0
+        assert len(tracker.time_logs) == 1
+        assert tracker.time_logs[0]['phase'] == 'eda'
+    
+    def test_time_allocation_get_summary(self):
+        """Test getting time allocation summary."""
+        from src.utils import TimeAllocationTracker
+        
+        tracker = TimeAllocationTracker()
+        
+        # Manually add time logs for testing
+        tracker.time_logs = [
+            {'phase': 'eda', 'duration_hours': 2.0},
+            {'phase': 'modeling', 'duration_hours': 3.0},
+            {'phase': 'tuning', 'duration_hours': 1.0}
+        ]
+        
+        summary = tracker.get_summary()
+        
+        assert summary['total_hours'] == 6.0
+        assert summary['phase_hours']['eda'] == 2.0
+        assert summary['phase_hours']['modeling'] == 3.0
+        assert 'deviations' in summary
+
+
+class TestSection12BackupAndValidation:
+    """Tests for backup and validation functions."""
+    
+    def test_create_backup_submission(self, tmp_path):
+        """Test creating backup of submission."""
+        from src.utils import create_backup_submission
+        
+        # Create test submission
+        submission_path = tmp_path / 'submission.csv'
+        df = pd.DataFrame({'country': ['US'], 'volume': [100]})
+        df.to_csv(submission_path, index=False)
+        
+        backup_dir = tmp_path / 'backups'
+        
+        result = create_backup_submission(
+            submission_path=str(submission_path),
+            backup_dir=str(backup_dir)
+        )
+        
+        assert 'submission' in result
+        assert Path(result['submission']).exists()
+    
+    def test_validate_submission_completeness(self, tmp_path):
+        """Test submission completeness validation."""
+        from src.utils import validate_submission_completeness
+        
+        template_df = pd.DataFrame({
+            'country': ['US', 'US', 'UK', 'UK'],
+            'brand_name': ['A', 'A', 'B', 'B'],
+            'months_postgx': [0, 1, 0, 1]
+        })
+        
+        # Complete submission
+        submission_df = template_df.copy()
+        result = validate_submission_completeness(submission_df, template_df)
+        assert result['is_complete']
+        assert result['missing_rows'] == 0
+        
+        # Incomplete submission
+        incomplete_df = template_df.iloc[:2].copy()
+        result = validate_submission_completeness(incomplete_df, template_df)
+        assert not result['is_complete']
+        assert result['missing_rows'] == 2
+    
+    def test_check_prediction_sanity(self):
+        """Test prediction sanity checks."""
+        from src.utils import check_prediction_sanity
+        
+        # Good predictions
+        good_df = pd.DataFrame({
+            'volume': [100, 90, 80, 70, 60, 50],
+            'months_postgx': [0, 4, 8, 12, 16, 20]
+        })
+        result = check_prediction_sanity(good_df)
+        assert result['is_sane']
+        assert len(result['issues']) == 0
+        
+        # Bad predictions with negative values
+        bad_df = pd.DataFrame({
+            'volume': [100, -10, 80, 70]
+        })
+        result = check_prediction_sanity(bad_df)
+        assert not result['is_sane']
+        assert any('negative' in issue for issue in result['issues'])
+    
+    def test_check_prediction_sanity_with_nan(self):
+        """Test prediction sanity with NaN values."""
+        from src.utils import check_prediction_sanity
+        
+        df = pd.DataFrame({
+            'volume': [100, np.nan, 80, 70]
+        })
+        result = check_prediction_sanity(df)
+        assert not result['is_sane']
+        assert any('NaN' in issue for issue in result['issues'])
+
+
+class TestSection12FinalWeekPlaybook:
+    """Tests for FinalWeekPlaybook class."""
+    
+    def test_final_week_playbook_init(self, tmp_path):
+        """Test FinalWeekPlaybook initialization."""
+        from src.utils import FinalWeekPlaybook
+        
+        playbook_path = tmp_path / 'playbook.json'
+        playbook = FinalWeekPlaybook(playbook_path=str(playbook_path))
+        
+        assert not playbook.is_config_frozen()
+        assert playbook.frozen_config is None
+    
+    def test_final_week_playbook_freeze_config(self, tmp_path):
+        """Test freezing configuration."""
+        from src.utils import FinalWeekPlaybook
+        
+        playbook_path = tmp_path / 'playbook.json'
+        playbook = FinalWeekPlaybook(playbook_path=str(playbook_path))
+        
+        playbook.freeze_config(
+            model_type='catboost',
+            model_config={'iterations': 1000, 'depth': 6},
+            feature_config={'use_lag': True},
+            cv_scheme='time_series'
+        )
+        
+        assert playbook.is_config_frozen()
+        assert playbook.frozen_config['model_type'] == 'catboost'
+        assert playbook.freeze_timestamp is not None
+    
+    def test_final_week_playbook_suggest_variants(self, tmp_path):
+        """Test suggesting submission variants."""
+        from src.utils import FinalWeekPlaybook
+        
+        playbook = FinalWeekPlaybook(playbook_path=str(tmp_path / 'playbook.json'))
+        
+        variants = playbook.suggest_submission_variants()
+        
+        assert len(variants) > 0
+        variant_names = [v['name'] for v in variants]
+        assert 'best_cv' in variant_names
+        assert 'multi_seed' in variant_names
+    
+    def test_final_week_playbook_log_submission(self, tmp_path):
+        """Test logging submission generation."""
+        from src.utils import FinalWeekPlaybook
+        
+        playbook = FinalWeekPlaybook(playbook_path=str(tmp_path / 'playbook.json'))
+        
+        playbook.log_submission_generated(
+            variant_name='best_cv',
+            submission_path='submissions/best_cv.csv',
+            cv_score=0.14,
+            notes='Best CV model'
+        )
+        
+        assert len(playbook.submissions_generated) == 1
+        assert playbook.submissions_generated[0]['variant'] == 'best_cv'
+    
+    def test_final_week_playbook_log_verification(self, tmp_path):
+        """Test logging verification."""
+        from src.utils import FinalWeekPlaybook
+        
+        playbook = FinalWeekPlaybook(playbook_path=str(tmp_path / 'playbook.json'))
+        
+        playbook.log_verification(
+            submission_path='submissions/v1.csv',
+            format_ok=True,
+            metric_score=0.15,
+            issues=[]
+        )
+        
+        assert len(playbook.verifications) == 1
+        assert playbook.verifications[0]['format_ok']
+    
+    def test_final_week_playbook_get_summary(self, tmp_path):
+        """Test getting playbook summary."""
+        from src.utils import FinalWeekPlaybook
+        
+        playbook = FinalWeekPlaybook(playbook_path=str(tmp_path / 'playbook.json'))
+        
+        playbook.freeze_config(
+            model_type='catboost',
+            model_config={},
+            feature_config={},
+            cv_scheme='kfold'
+        )
+        playbook.log_submission_generated('v1', 'path1.csv', 0.15)
+        playbook.log_verification('path1.csv', True)
+        
+        summary = playbook.get_summary()
+        
+        assert summary['is_frozen']
+        assert summary['n_submissions_generated'] == 1
+        assert summary['n_verified'] == 1
+    
+    def test_final_week_playbook_persistence(self, tmp_path):
+        """Test that playbook persists across instances."""
+        from src.utils import FinalWeekPlaybook
+        
+        playbook_path = tmp_path / 'playbook.json'
+        
+        # Create and configure first playbook
+        playbook1 = FinalWeekPlaybook(playbook_path=str(playbook_path))
+        playbook1.freeze_config(
+            model_type='catboost',
+            model_config={'iterations': 1000},
+            feature_config={},
+            cv_scheme='kfold'
+        )
+        
+        # Create second playbook and verify config is loaded
+        playbook2 = FinalWeekPlaybook(playbook_path=str(playbook_path))
+        assert playbook2.is_config_frozen()
+        assert playbook2.frozen_config['model_type'] == 'catboost'
+
+
+class TestSection12ExternalDataCompliance:
+    """Tests for external data compliance checking."""
+    
+    def test_verify_external_data_compliance(self, tmp_path):
+        """Test external data compliance verification."""
+        from src.utils import verify_external_data_compliance
+        
+        # Create minimal project structure
+        (tmp_path / 'data' / 'raw').mkdir(parents=True)
+        (tmp_path / 'data' / 'raw' / 'TRAIN').mkdir()
+        (tmp_path / 'data' / 'raw' / 'TRAIN' / 'df_volume_train.csv').write_text('a,b\n1,2')
+        
+        (tmp_path / 'src').mkdir()
+        (tmp_path / 'src' / 'clean_code.py').write_text('# Clean code\nimport pandas as pd')
+        
+        result = verify_external_data_compliance(str(tmp_path))
+        
+        assert result['is_compliant']
+        assert len(result['data_sources']) > 0
+
+
+class TestSection12PreSubmissionChecklist:
+    """Tests for pre-submission checklist."""
+    
+    def test_run_pre_submission_checklist_all_pass(self, tmp_path):
+        """Test pre-submission checklist when all checks pass."""
+        from src.utils import run_pre_submission_checklist
+        
+        # Create template
+        template_df = pd.DataFrame({
+            'country': ['US', 'US', 'UK', 'UK'],
+            'brand_name': ['A', 'A', 'B', 'B'],
+            'months_postgx': [0, 1, 0, 1],
+            'volume': [0, 0, 0, 0]
+        })
+        template_path = tmp_path / 'template.csv'
+        template_df.to_csv(template_path, index=False)
+        
+        # Create matching submission
+        submission_df = template_df.copy()
+        submission_df['volume'] = [100, 95, 80, 75]
+        submission_path = tmp_path / 'submission.csv'
+        submission_df.to_csv(submission_path, index=False)
+        
+        result = run_pre_submission_checklist(
+            submission_path=str(submission_path),
+            template_path=str(template_path)
+        )
+        
+        assert result['all_passed']
+        assert result['checks']['file_exists']['passed']
+        assert result['checks']['completeness']['passed']
+    
+    def test_run_pre_submission_checklist_missing_file(self, tmp_path):
+        """Test pre-submission checklist when file is missing."""
+        from src.utils import run_pre_submission_checklist
+        
+        template_path = tmp_path / 'template.csv'
+        pd.DataFrame({'a': [1]}).to_csv(template_path, index=False)
+        
+        result = run_pre_submission_checklist(
+            submission_path=str(tmp_path / 'nonexistent.csv'),
+            template_path=str(template_path)
+        )
+        
+        assert not result['all_passed']
+        assert not result['checks']['file_exists']['passed']
+    
+    def test_run_pre_submission_checklist_incomplete(self, tmp_path):
+        """Test pre-submission checklist with incomplete submission."""
+        from src.utils import run_pre_submission_checklist
+        
+        # Create template
+        template_df = pd.DataFrame({
+            'country': ['US', 'US', 'UK', 'UK'],
+            'brand_name': ['A', 'A', 'B', 'B'],
+            'months_postgx': [0, 1, 0, 1],
+            'volume': [0, 0, 0, 0]
+        })
+        template_path = tmp_path / 'template.csv'
+        template_df.to_csv(template_path, index=False)
+        
+        # Create incomplete submission (missing rows)
+        submission_df = template_df.iloc[:2].copy()
+        submission_df['volume'] = [100, 95]
+        submission_path = tmp_path / 'submission.csv'
+        submission_df.to_csv(submission_path, index=False)
+        
+        result = run_pre_submission_checklist(
+            submission_path=str(submission_path),
+            template_path=str(template_path)
+        )
+        
+        assert not result['all_passed']
+        assert not result['checks']['completeness']['passed']
+
+
+class TestSection12GenerateFinalReport:
+    """Tests for final submission report generation."""
+    
+    def test_generate_final_submission_report(self, tmp_path):
+        """Test generating final submission report."""
+        from src.utils import generate_final_submission_report
+        
+        # Create submission file
+        submission_df = pd.DataFrame({
+            'country': ['US', 'UK'],
+            'brand_name': ['A', 'B'],
+            'months_postgx': [0, 0],
+            'volume': [100, 80]
+        })
+        submission_path = tmp_path / 'submission.csv'
+        submission_df.to_csv(submission_path, index=False)
+        
+        # Create model file
+        model_path = tmp_path / 'model_s1.pkl'
+        model_path.write_text('dummy model')
+        
+        report = generate_final_submission_report(
+            submission_path=str(submission_path),
+            model_paths={'S1': str(model_path)},
+            cv_scores={'S1': 0.145}
+        )
+        
+        assert 'FINAL SUBMISSION REPORT' in report
+        assert 'Volume range' in report
+        assert 'CV SCORES' in report
+    
+    def test_generate_final_report_save_to_file(self, tmp_path):
+        """Test saving final report to file."""
+        from src.utils import generate_final_submission_report
+        
+        submission_df = pd.DataFrame({'volume': [100, 80]})
+        submission_path = tmp_path / 'submission.csv'
+        submission_df.to_csv(submission_path, index=False)
+        
+        output_path = tmp_path / 'report.txt'
+        
+        report = generate_final_submission_report(
+            submission_path=str(submission_path),
+            model_paths={},
+            cv_scores={},
+            output_path=str(output_path)
+        )
+        
+        assert output_path.exists()
+        assert output_path.read_text() == report
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
 
