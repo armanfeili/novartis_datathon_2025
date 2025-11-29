@@ -597,13 +597,30 @@ class _BaseTemporalModel(BaseModel):
         self,
         df: pd.DataFrame,
         is_train: bool = True,
+        fit_scaler: bool = False,
     ) -> SequenceDataset:
-        """Prepare data for training/inference."""
+        """Prepare data for training/inference.
+        
+        Args:
+            df: DataFrame with features and optionally target column
+            is_train: If True, expects target column to exist and build sequences with labels
+            fit_scaler: If True, fit new scaler on this data. If False, use existing scaler.
+        """
         # Build sequences
         seq_data = build_sequences(df, self.seq_config, is_train=is_train)
         
+        # Handle empty sequences gracefully
+        if seq_data["X_seq"].size == 0:
+            # Return empty dataset
+            return SequenceDataset(
+                X_seq=np.zeros((0, self.config.lookback_window, self.config.input_dim), dtype=np.float32),
+                X_static=np.zeros((0, 1), dtype=np.float32),
+                y=np.zeros((0,), dtype=np.float32) if is_train else None,
+                masks=np.zeros((0, self.config.lookback_window), dtype=np.float32),
+            )
+        
         # Apply scaling
-        if is_train:
+        if fit_scaler:
             self.scaler = SequenceScaler(method="standard")
             self.scaler.fit(seq_data["X_seq"], seq_data["X_static"], seq_data["y"])
         
@@ -706,6 +723,11 @@ class _BaseTemporalModel(BaseModel):
         pred_df["y_norm"] = 0  # Placeholder
         
         dataset = self._prepare_data(pred_df, is_train=False)
+        
+        # Handle empty dataset
+        if len(dataset) == 0:
+            return np.array([])
+        
         loader = create_dataloader(dataset, batch_size=64, shuffle=False)
         
         predictions = []
@@ -721,6 +743,9 @@ class _BaseTemporalModel(BaseModel):
                 
                 output = self.model(X_seq, X_static, mask)
                 predictions.append(output.cpu().numpy())
+        
+        if not predictions:
+            return np.array([])
         
         predictions = np.concatenate(predictions, axis=0)
         
@@ -760,31 +785,55 @@ class CNNLSTMModel(_BaseTemporalModel):
         train_df = X.copy()
         train_df["y_norm"] = y.values
         
+        # Detect available grouping columns
+        available_group_cols = []
+        for col in ["ndc", "brand_drug_id", "country", "brand_name"]:
+            if col in X.columns:
+                available_group_cols.append(col)
+        if not available_group_cols:
+            available_group_cols = [X.columns[0]]  # Fallback to first column
+        
+        # Detect time column
+        time_col = "month_id"
+        for col in ["month_id", "months_postgx", "time", "date"]:
+            if col in X.columns:
+                time_col = col
+                break
+        
         # Setup sequence config
         self.seq_config = SequenceConfig(
             lookback_window=self.config.lookback_window,
             forecast_horizon=self.config.forecast_horizon,
             target_col="y_norm",
+            group_cols=tuple(available_group_cols),
+            time_col=time_col,
         )
         
-        # Identify feature columns
-        exclude_cols = ["ndc", "brand_drug_id", "month_id", "y_norm"]
-        self.feature_columns = [c for c in X.columns if c not in exclude_cols]
-        self.seq_config.time_varying_features = self.feature_columns[:self.config.input_dim]
+        # Identify feature columns (numeric only)
+        exclude_cols = set(["ndc", "brand_drug_id", "month_id", "y_norm"] + list(available_group_cols) + [time_col])
+        numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+        self.feature_columns = [c for c in numeric_cols if c not in exclude_cols]
+        self.seq_config.time_varying_features = self.feature_columns[:self.config.input_dim] if self.feature_columns else None
         
         # Update config with actual dimensions
         actual_input_dim = len(self.seq_config.time_varying_features) if self.seq_config.time_varying_features else 1
         self.config.input_dim = max(actual_input_dim, 1)
         
         # Prepare training data
-        train_dataset = self._prepare_data(train_df, is_train=True)
+        train_dataset = self._prepare_data(train_df, is_train=True, fit_scaler=True)
         
-        # Prepare validation data
+        # Update static_dim based on actual data
+        self.config.static_dim = train_dataset.X_static.shape[1] if train_dataset.X_static is not None else 1
+        
+        # Prepare validation data (use is_train=True since we have labels, but don't refit scaler)
         val_dataset = None
         if X_val is not None and y_val is not None:
             val_df = X_val.copy()
             val_df["y_norm"] = y_val.values
-            val_dataset = self._prepare_data(val_df, is_train=False)
+            val_dataset = self._prepare_data(val_df, is_train=True, fit_scaler=False)
+            # Skip validation if no valid sequences were built
+            if len(val_dataset) == 0:
+                val_dataset = None
         
         # Initialize model
         self.model = CNNLSTMNetwork(self.config).to(self.device)
@@ -926,30 +975,55 @@ class LSTMModel(_BaseTemporalModel):
         train_df = X.copy()
         train_df["y_norm"] = y.values
         
+        # Detect available grouping columns
+        available_group_cols = []
+        for col in ["ndc", "brand_drug_id", "country", "brand_name"]:
+            if col in X.columns:
+                available_group_cols.append(col)
+        if not available_group_cols:
+            available_group_cols = [X.columns[0]]  # Fallback to first column
+        
+        # Detect time column
+        time_col = "month_id"
+        for col in ["month_id", "months_postgx", "time", "date"]:
+            if col in X.columns:
+                time_col = col
+                break
+        
         # Setup sequence config
         self.seq_config = SequenceConfig(
             lookback_window=self.config.lookback_window,
             forecast_horizon=self.config.forecast_horizon,
             target_col="y_norm",
+            group_cols=tuple(available_group_cols),
+            time_col=time_col,
         )
         
-        # Identify feature columns
-        exclude_cols = ["ndc", "brand_drug_id", "month_id", "y_norm"]
-        self.feature_columns = [c for c in X.columns if c not in exclude_cols]
-        self.seq_config.time_varying_features = self.feature_columns[:self.config.input_dim]
+        # Identify feature columns (numeric only)
+        exclude_cols = set(["ndc", "brand_drug_id", "month_id", "y_norm"] + list(available_group_cols) + [time_col])
+        numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+        self.feature_columns = [c for c in numeric_cols if c not in exclude_cols]
+        self.seq_config.time_varying_features = self.feature_columns[:self.config.input_dim] if self.feature_columns else None
         
         # Update config
         actual_input_dim = len(self.seq_config.time_varying_features) if self.seq_config.time_varying_features else 1
         self.config.input_dim = max(actual_input_dim, 1)
         
         # Prepare data
-        train_dataset = self._prepare_data(train_df, is_train=True)
+        train_dataset = self._prepare_data(train_df, is_train=True, fit_scaler=True)
         
+        # Update static_dim based on actual data
+        self.config.static_dim = train_dataset.X_static.shape[1] if train_dataset.X_static is not None else 1
+        
+        # Prepare validation data (use is_train=True since we have labels, but don't refit scaler)
         val_dataset = None
         if X_val is not None and y_val is not None:
             val_df = X_val.copy()
             val_df["y_norm"] = y_val.values
-            val_dataset = self._prepare_data(val_df, is_train=False)
+            val_dataset = self._prepare_data(val_df, is_train=True, fit_scaler=False)
+            # Skip validation if no valid sequences were built
+            if len(val_dataset) == 0:
+                val_dataset = None
         
         # Initialize model
         self.model = LSTMOnlyNetwork(self.config).to(self.device)
