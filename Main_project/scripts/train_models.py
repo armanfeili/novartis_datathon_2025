@@ -1,6 +1,11 @@
 # =============================================================================
 # File: scripts/train_models.py
-# Description: Train and compare all models for a given scenario
+# Description: Train and compare all models - supports separate and unified modes
+#
+# TRAIN_MODE (from config.py):
+#   "separate" - Train S1 and S2 pipelines separately (default)
+#   "unified"  - Train a single global model for both scenarios
+#
 # =============================================================================
 
 import warnings
@@ -12,7 +17,6 @@ warnings.filterwarnings('ignore', message='.*No frequency information.*')
 
 import sys
 from pathlib import Path
-import argparse
 import pandas as pd
 import json
 from datetime import datetime
@@ -20,6 +24,7 @@ from datetime import datetime
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+import config  # Import module for live access (multi-config)
 from config import *
 from data_loader import load_all_data, merge_datasets, split_train_validation
 from bucket_calculator import compute_avg_j, create_auxiliary_file
@@ -123,20 +128,23 @@ def save_run_summary(comparison_df: pd.DataFrame,
             "timestamp": timestamp,
             "scenario": scenario,
             "date": datetime.now().strftime("%Y-%m-%d"),
-            "time": datetime.now().strftime("%H:%M:%S")
+            "time": datetime.now().strftime("%H:%M:%S"),
+            "saved_at": datetime.now().isoformat(),
+            "config_id": config.ACTIVE_CONFIG_ID,
         },
         "best_model": {
             "name": best_model,
             "final_score": float(best_score)
         },
         "all_results": comparison_df.to_dict(orient='records'),
-        "config": get_full_config(),
+        "config_snapshot": config.get_current_config_snapshot(),  # Full config for reproducibility
         "data_info": data_info or {},
         "feature_importance": feature_importance.to_dict(orient='records') if feature_importance is not None else []
     }
     
-    # Save JSON
-    json_path = REPORTS_DIR / f"run_summary_scenario{scenario}_{run_id}.json"
+    # Save JSON with config prefix in multi-config mode
+    config_prefix = f"{config.ACTIVE_CONFIG_ID}_" if config.MULTI_CONFIG_MODE and config.ACTIVE_CONFIG_ID != 'default' else ""
+    json_path = REPORTS_DIR / f"{config_prefix}run_summary_scenario{scenario}_{run_id}.json"
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
     
@@ -152,9 +160,20 @@ def train_all_models(scenario: int = 1, test_mode: bool = False):
         scenario: 1 or 2
         test_mode: If True, use subset of data
     """
+    # Show which models are enabled
+    enabled_models = [k for k, v in MODELS_ENABLED.items() if v]
+    disabled_models = [k for k, v in MODELS_ENABLED.items() if not v]
+    
     print("=" * 70)
-    print(f"🎯 TRAINING ALL MODELS - SCENARIO {scenario}")
+    print(f"🎯 TRAINING MODELS - SCENARIO {scenario}")
     print("=" * 70)
+    print(f"\n🤖 Models to train ({len(enabled_models)}):")
+    for m in enabled_models:
+        print(f"   ✅ {m}")
+    if disabled_models:
+        print(f"\n⏭️ Skipped models ({len(disabled_models)}):")
+        for m in disabled_models:
+            print(f"   ❌ {m}")
     
     # =========================================================================
     # Load and prepare data
@@ -270,8 +289,8 @@ def train_all_models(scenario: int = 1, test_mode: bool = False):
         all_results.append(results_lgbm)
         model_names.append("LightGBM")
         
-        # Save model
-        lgbm_model.save(f"scenario{scenario}_lightgbm")
+        # Save model (with config prefix in multi-config mode)
+        lgbm_model.save(config.get_model_filename(f"scenario{scenario}_lightgbm"))
     else:
         print("\n⏭️ Skipping LightGBM (disabled in config)")
     
@@ -295,8 +314,8 @@ def train_all_models(scenario: int = 1, test_mode: bool = False):
         all_results.append(results_xgb)
         model_names.append("XGBoost")
         
-        # Save model
-        xgb_model.save(f"scenario{scenario}_xgboost")
+        # Save model (with config prefix in multi-config mode)
+        xgb_model.save(config.get_model_filename(f"scenario{scenario}_xgboost"))
     else:
         print("\n⏭️ Skipping XGBoost (disabled in config)")
     
@@ -348,8 +367,8 @@ def train_all_models(scenario: int = 1, test_mode: bool = False):
         all_results.append(results_hybrid)
         model_names.append(f"Hybrid-Physics+LightGBM")
         
-        # Save hybrid model
-        hybrid_model.save(f"scenario{scenario}_hybrid")
+        # Save hybrid model (with config prefix in multi-config mode)
+        hybrid_model.save(config.get_model_filename(f"scenario{scenario}_hybrid"))
     else:
         print("\n⏭️ Skipping Hybrid-LightGBM (disabled in config)")
     
@@ -431,8 +450,8 @@ def train_all_models(scenario: int = 1, test_mode: bool = False):
             all_results.append(results_arihow)
             model_names.append("ARHOW-SARIMAX+HW")
             
-            # Save model
-            arihow_model.save(f"scenario{scenario}_arihow")
+            # Save model (with config prefix in multi-config mode)
+            arihow_model.save(config.get_model_filename(f"scenario{scenario}_arihow"))
             
         except ImportError as e:
             print(f"   ⚠️ ARHOW skipped: statsmodels not installed ({e})")
@@ -455,17 +474,24 @@ def train_all_models(scenario: int = 1, test_mode: bool = False):
     
     comparison_df = compare_models(all_results, model_names)
     
-    # Generate timestamp and run ID
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Generate date and timestamp
+    date_str = datetime.now().strftime("%Y%m%d")
+    time_str = datetime.now().strftime("%H%M%S")
+    timestamp = f"{date_str}_{time_str}"
     run_id = timestamp
     
-    # Save comparison CSV with timestamp
-    csv_filename = f"model_comparison_scenario{scenario}_{run_id}.csv"
+    # Config prefix for multi-config mode
+    config_prefix = f"{config.ACTIVE_CONFIG_ID}_" if config.MULTI_CONFIG_MODE and config.ACTIVE_CONFIG_ID != 'default' else ""
+    
+    # Save comparison CSV with timestamp (no overwrites)
+    csv_filename = f"{config_prefix}model_comparison_scenario{scenario}_{run_id}.csv"
     comparison_df.to_csv(REPORTS_DIR / csv_filename, index=False)
     print(f"\n✅ Comparison saved to: {REPORTS_DIR / csv_filename}")
     
-    # Also save a "latest" version without timestamp for easy access
-    comparison_df.to_csv(REPORTS_DIR / f"model_comparison_scenario{scenario}.csv", index=False)
+    # Also save a "latest" version for easy access
+    latest_filename = f"{config_prefix}model_comparison_scenario{scenario}_latest.csv"
+    comparison_df.to_csv(REPORTS_DIR / latest_filename, index=False)
+    print(f"   Latest: {latest_filename}")
     
     # Best model
     best_idx = comparison_df['final_score'].idxmin()
@@ -508,38 +534,44 @@ def train_all_models(scenario: int = 1, test_mode: bool = False):
 
 def main():
     """
-    Main entry point. Uses config.py settings by default.
-    CLI arguments can override config settings if provided.
+    Main entry point. All settings come from config.py.
+    
+    Supports two training modes (controlled by TRAIN_MODE in config.py):
+    - "separate": Train S1 and S2 pipelines separately (default)
+    - "unified":  Train a single global model for both scenarios
+    
+    Key config settings:
+    - TRAIN_MODE: "separate" or "unified"
+    - TEST_MODE: True for quick testing with 50 brands
+    - RUN_SCENARIO: 1, 2, or [1, 2] for both
     """
-    parser = argparse.ArgumentParser(description='Train all models')
-    parser.add_argument('--scenario', type=int, choices=[1, 2],
-                        help=f'Scenario to run (default from config: {RUN_SCENARIO})')
-    parser.add_argument('--test', action='store_true', 
-                        help=f'Test mode with {TEST_MODE_BRANDS} brands (default from config: {TEST_MODE})')
-    parser.add_argument('--full', action='store_true',
-                        help='Full mode (override TEST_MODE to False)')
+    # All settings from config.py - no CLI overrides
+    train_mode = TRAIN_MODE
+    test_mode = TEST_MODE
+    scenario = RUN_SCENARIO
     
-    args = parser.parse_args()
+    print("\n" + "=" * 70)
+    print(f"🚀 TRAINING PIPELINE")
+    print(f"   Mode: {train_mode.upper()}")
+    print(f"   Test mode: {test_mode} ({TEST_MODE_BRANDS} brands)" if test_mode else f"   Test mode: {test_mode} (full)")
+    print(f"   Scenario(s): {scenario}")
+    print("=" * 70)
     
-    # Use config values as defaults, CLI overrides if provided
-    scenario = args.scenario if args.scenario is not None else RUN_SCENARIO
-    
-    # Test mode: CLI --test sets True, --full sets False, otherwise use config
-    if args.full:
-        test_mode = False
-    elif args.test:
-        test_mode = True
+    # Dispatch based on training mode
+    if train_mode == "unified":
+        # Unified training: single model for both scenarios
+        from training.train_unified import train_unified
+        results = train_unified(test_mode=test_mode)
     else:
-        test_mode = TEST_MODE
-    
-    # Handle multiple scenarios from config
-    scenarios = [scenario] if isinstance(scenario, int) else scenario
-    
-    for sc in scenarios:
-        print(f"\n{'='*70}")
-        print(f"🚀 Running Scenario {sc} (test_mode={test_mode})")
-        print(f"{'='*70}")
-        train_all_models(scenario=sc, test_mode=test_mode)
+        # Separate training: S1 and S2 trained independently (default/legacy)
+        # Handle multiple scenarios from config
+        scenarios = [scenario] if isinstance(scenario, int) else scenario
+        
+        for sc in scenarios:
+            print(f"\n{'='*70}")
+            print(f"🚀 Running Scenario {sc} (test_mode={test_mode})")
+            print(f"{'='*70}")
+            train_all_models(scenario=sc, test_mode=test_mode)
 
 
 if __name__ == "__main__":

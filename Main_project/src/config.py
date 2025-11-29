@@ -34,7 +34,7 @@ import os
 # 🎮 WORKFLOW TOGGLES:
 #    RUN_SCENARIO: Which scenario to run (1 or 2, or [1,2] for both)
 #    TEST_MODE: If True, use only 50 brands for fast testing
-#    SUBMISSION_MODEL: Which model to use for final submissions
+#    TRAIN_MODE: "separate" = S1 & S2 trained separately, "unified" = single model
 #
 # 🔄 PIPELINE STEPS:
 #    RUN_EDA: Run EDA visualization and export data
@@ -44,11 +44,18 @@ import os
 
 # Which scenario(s) to run
 # Options: 1, 2, or [1, 2] for both
-RUN_SCENARIO = 1                          # Set to 1, 2, or [1, 2]
+RUN_SCENARIO = [1, 2]                          # Set to 1, 2, or [1, 2]
+
+# Training mode - controls how models are trained
+# Options:
+#   "separate" - Train S1 and S2 pipelines separately (current behavior)
+#   "unified"  - Train a single global model that handles both scenarios
+#                Uses scenario_flag feature and months_postgx to differentiate
+TRAIN_MODE = "unified"                 # "separate" or "unified"
 
 # Test mode - use only 50 brands for quick testing
 # Set to False for full training before final submission
-TEST_MODE = True                       # True = fast (50 brands), False = full
+TEST_MODE = False                       # True = fast (50 brands), False = full
 
 # Number of brands to use in test mode
 TEST_MODE_BRANDS = 50                 # Number of brands for testing
@@ -64,7 +71,7 @@ SUBMISSIONS_ENABLED = {
     'hybrid': True,                # Physics + LightGBM hybrid
     'lightgbm': True,              # Pure LightGBM
     'xgboost': True,               # Pure XGBoost
-    'arihow': True,                # SARIMAX + Holt-Winters
+    'arihow': False,                # SARIMAX + Holt-Winters
 }
 
 # Quick preset: Generate only best model submission
@@ -107,13 +114,263 @@ MODELS_ENABLED = {
     'hybrid_xgboost': True,           # Decay baseline + XGBoost residual
     
     # Time-series models
-    'arihow': True,                   # SARIMAX + Holt-Winters ensemble
+    'arihow': False,                   # SARIMAX + Holt-Winters ensemble
 }
 
 # Quick presets - uncomment one to use
 # MODELS_ENABLED = {'baseline_exp_decay': True}  #  baseline only
 # MODELS_ENABLED = {k: True for k in ['baseline_no_erosion', 'baseline_exp_decay', 'lightgbm']}  # Quick
 MODELS_ENABLED = {k: True for k in MODELS_ENABLED}  # All models (default)
+
+# =============================================================================
+# 2b. MULTI-CONFIG MODE (Grid Search over Hyperparameters)
+# =============================================================================
+# Enable this to run multiple configurations and compare results.
+# When enabled, the pipeline will iterate over all config combinations.
+#
+# 💡 USE CASES:
+#    - Hyperparameter tuning (try different learning rates, depths)
+#    - Compare model variants (different decay rates)
+#    - Find optimal settings before final submission
+#
+# ⚠️ WARNING: Multi-config can be slow! Each config trains all enabled models.
+#    With 3 configs × 7 models = 21 training runs!
+
+MULTI_CONFIG_MODE = False           # Toggle: True = run all configs, False = single config
+
+# Define multiple configurations to try
+# Each config is a dict that overrides the default parameters
+# The pipeline will run each config and save results with config ID
+
+MULTI_CONFIGS = [
+    # Config 0: Default (baseline)
+    {
+        'id': 'default',
+        'description': 'Default parameters',
+        # No overrides - uses defaults
+    },
+    
+    # Config 1: Lower learning rate, more trees
+    {
+        'id': 'low_lr',
+        'description': 'Low learning rate with more trees',
+        'LGBM_PARAMS': {
+            'learning_rate': 0.01,
+            'n_estimators': 1000,
+            'num_leaves': 31,
+        },
+        'XGB_PARAMS': {
+            'learning_rate': 0.01,
+            'n_estimators': 1000,
+            'max_depth': 6,
+        },
+    },
+    
+    # Config 2: Higher complexity
+    {
+        'id': 'high_complexity',
+        'description': 'More complex trees',
+        'LGBM_PARAMS': {
+            'learning_rate': 0.03,
+            'n_estimators': 500,
+            'num_leaves': 63,          # More leaves = more complex
+        },
+        'XGB_PARAMS': {
+            'learning_rate': 0.03,
+            'n_estimators': 500,
+            'max_depth': 8,            # Deeper trees
+        },
+    },
+    
+    # Config 3: More regularization
+    {
+        'id': 'regularized',
+        'description': 'Strong regularization to prevent overfitting',
+        'LGBM_PARAMS': {
+            'learning_rate': 0.05,
+            'n_estimators': 300,
+            'num_leaves': 15,
+            'feature_fraction': 0.6,
+            'bagging_fraction': 0.6,
+        },
+        'XGB_PARAMS': {
+            'learning_rate': 0.05,
+            'n_estimators': 300,
+            'max_depth': 4,
+            'subsample': 0.6,
+            'colsample_bytree': 0.6,
+        },
+    },
+    
+    # Config 4: Different decay rates
+    {
+        'id': 'slow_decay',
+        'description': 'Slower baseline decay rate',
+        'DEFAULT_DECAY_RATE': 0.01,
+    },
+    
+    # Config 5: Fast decay
+    {
+        'id': 'fast_decay',
+        'description': 'Faster baseline decay rate',
+        'DEFAULT_DECAY_RATE': 0.05,
+    },
+]
+
+# Currently active config (set by pipeline when running multi-config)
+ACTIVE_CONFIG_ID = 'default'
+
+
+def get_config_by_id(config_id: str) -> dict:
+    """Get a specific config by ID."""
+    for cfg in MULTI_CONFIGS:
+        if cfg['id'] == config_id:
+            return cfg
+    return {}
+
+
+def apply_config(config: dict) -> None:
+    """
+    Apply a config's overrides to global settings.
+    Call this at the start of training to switch configs.
+    
+    Usage:
+        from config import apply_config, MULTI_CONFIGS
+        apply_config(MULTI_CONFIGS[1])  # Apply config 1
+    """
+    global LGBM_PARAMS, XGB_PARAMS, HYBRID_PARAMS, ARIHOW_PARAMS
+    global DEFAULT_DECAY_RATE, ACTIVE_CONFIG_ID
+    
+    if 'id' in config:
+        ACTIVE_CONFIG_ID = config['id']
+    
+    if 'LGBM_PARAMS' in config:
+        LGBM_PARAMS.update(config['LGBM_PARAMS'])
+    
+    if 'XGB_PARAMS' in config:
+        XGB_PARAMS.update(config['XGB_PARAMS'])
+    
+    if 'HYBRID_PARAMS' in config:
+        HYBRID_PARAMS.update(config['HYBRID_PARAMS'])
+    
+    if 'ARIHOW_PARAMS' in config:
+        ARIHOW_PARAMS.update(config['ARIHOW_PARAMS'])
+    
+    if 'DEFAULT_DECAY_RATE' in config:
+        DEFAULT_DECAY_RATE = config['DEFAULT_DECAY_RATE']
+
+
+def get_all_config_ids() -> list:
+    """Get list of all config IDs."""
+    return [cfg['id'] for cfg in MULTI_CONFIGS]
+
+
+def get_model_filename(base_name: str) -> str:
+    """
+    Get model filename with config prefix when in multi-config mode.
+    
+    Args:
+        base_name: Base model name, e.g., "scenario1_lightgbm"
+        
+    Returns:
+        If MULTI_CONFIG_MODE and ACTIVE_CONFIG_ID != 'default':
+            "{config_id}_{base_name}" e.g., "low_lr_scenario1_lightgbm"
+        Otherwise:
+            "{base_name}" e.g., "scenario1_lightgbm"
+    """
+    if MULTI_CONFIG_MODE and ACTIVE_CONFIG_ID != 'default':
+        return f"{ACTIVE_CONFIG_ID}_{base_name}"
+    return base_name
+
+
+def get_submission_filename(model_type: str, suffix: str = "final") -> str:
+    """
+    Get submission filename with config prefix when in multi-config mode.
+    
+    Args:
+        model_type: Model type, e.g., "baseline", "lightgbm"
+        suffix: Filename suffix, e.g., "final" or timestamp
+        
+    Returns:
+        If MULTI_CONFIG_MODE and ACTIVE_CONFIG_ID != 'default':
+            "submission_{config_id}_{model_type}_{suffix}.csv"
+        Otherwise:
+            "submission_{model_type}_{suffix}.csv"
+    """
+    if MULTI_CONFIG_MODE and ACTIVE_CONFIG_ID != 'default':
+        return f"submission_{ACTIVE_CONFIG_ID}_{model_type}_{suffix}.csv"
+    return f"submission_{model_type}_{suffix}.csv"
+
+
+def get_current_config_snapshot() -> dict:
+    """
+    Get a snapshot of ALL current config settings for saving with models/submissions.
+    This ensures full reproducibility - you can see exactly what config was used.
+    
+    Returns:
+        Dictionary with all relevant config values at time of call
+    """
+    return {
+        "config_id": ACTIVE_CONFIG_ID,
+        "multi_config_mode": MULTI_CONFIG_MODE,
+        "train_mode": TRAIN_MODE,
+        "test_mode": TEST_MODE,
+        "test_mode_brands": TEST_MODE_BRANDS,
+        "run_scenario": RUN_SCENARIO,
+        "models_enabled": MODELS_ENABLED.copy(),
+        "submissions_enabled": SUBMISSIONS_ENABLED.copy(),
+        "competition_constants": {
+            "pre_entry_months": PRE_ENTRY_MONTHS,
+            "post_entry_months": POST_ENTRY_MONTHS,
+            "bucket_1_threshold": BUCKET_1_THRESHOLD,
+            "bucket_1_weight": BUCKET_1_WEIGHT,
+            "bucket_2_weight": BUCKET_2_WEIGHT,
+        },
+        "baseline_params": {
+            "default_decay_rate": DEFAULT_DECAY_RATE,
+            "decay_rate_range": DECAY_RATE_RANGE,
+            "decay_rate_steps": DECAY_RATE_STEPS,
+        },
+        "lgbm_params": LGBM_PARAMS.copy(),
+        "xgb_params": XGB_PARAMS.copy(),
+        "hybrid_params": HYBRID_PARAMS.copy() if 'HYBRID_PARAMS' in dir() else {},
+        "feature_params": {
+            "lag_windows": LAG_WINDOWS,
+            "rolling_windows": ROLLING_WINDOWS,
+            "pct_change_windows": PCT_CHANGE_WINDOWS,
+        },
+        "random_state": RANDOM_STATE,
+        "test_size": TEST_SIZE,
+        "n_splits_cv": N_SPLITS_CV,
+    }
+
+
+def reset_to_defaults() -> None:
+    """Reset all parameters to their default values."""
+    global LGBM_PARAMS, XGB_PARAMS, DEFAULT_DECAY_RATE, ACTIVE_CONFIG_ID
+    
+    ACTIVE_CONFIG_ID = 'default'
+    
+    # Reset LGBM
+    LGBM_PARAMS.update({
+        'learning_rate': 0.03,
+        'n_estimators': 500,
+        'num_leaves': 31,
+        'feature_fraction': 0.8,
+        'bagging_fraction': 0.8,
+    })
+    
+    # Reset XGB
+    XGB_PARAMS.update({
+        'learning_rate': 0.03,
+        'n_estimators': 500,
+        'max_depth': 6,
+        'subsample': 0.8,
+        'colsample_bytree': 0.8,
+    })
+    
+    DEFAULT_DECAY_RATE = 0.02
+
 
 # =============================================================================
 # 3. PATHS
@@ -184,7 +441,7 @@ BUCKET_2_WEIGHT = 1         # Bucket 2 errors weighted 1× (normal)
 # 💡 TIP: Higher weight for Bucket 1 = model focuses more on high-erosion brands
 
 USE_SAMPLE_WEIGHTS = True       # Apply bucket-based sample weights during training
-BUCKET_1_SAMPLE_WEIGHT = 2.0    # Weight for Bucket 1 samples (high erosion)
+BUCKET_1_SAMPLE_WEIGHT = 4.0    # Weight for Bucket 1 samples (high erosion)
 BUCKET_2_SAMPLE_WEIGHT = 1.0    # Weight for Bucket 2 samples (normal)
 
 # =============================================================================

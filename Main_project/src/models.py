@@ -23,7 +23,8 @@ from datetime import datetime
 import shutil
 
 sys.path.insert(0, str(Path(__file__).parent))
-from config import *
+import config  # Import module to get live values during multi-config
+from config import *  # Also import for convenience
 
 
 # =============================================================================
@@ -179,11 +180,11 @@ class GradientBoostingModel:
         self.feature_names = None
         
     def _default_params(self) -> dict:
-        """Get default parameters for model type."""
+        """Get default parameters for model type (reads live from config module)."""
         if self.model_type == 'lightgbm':
-            return LGBM_PARAMS.copy()
+            return config.LGBM_PARAMS.copy()  # Read from module for multi-config
         else:
-            return XGB_PARAMS.copy()
+            return config.XGB_PARAMS.copy()  # Read from module for multi-config
 
 
 # =============================================================================
@@ -403,12 +404,14 @@ class HybridPhysicsMLModel:
         return importance_df.head(top_n)
     
     def save(self, name: str) -> Path:
-        """Save hybrid model to disk with timestamp and latest copy."""
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        """Save hybrid model to disk with date+timestamp (no overwrites)."""
+        date_str = datetime.now().strftime('%Y%m%d')
+        time_str = datetime.now().strftime('%H%M%S')
+        timestamp = f"{date_str}_{time_str}"
         
-        # Timestamped path
+        # Always timestamped path (no overwrites)
         timestamped_path = MODELS_DIR / f"{name}_hybrid_{timestamp}.joblib"
-        # Latest path (for easy access)
+        # Latest path (for easy loading)
         latest_path = MODELS_DIR / f"{name}_hybrid.joblib"
         
         save_data = {
@@ -418,16 +421,21 @@ class HybridPhysicsMLModel:
             'params': self.params,
             'feature_names': self.feature_names,
             'is_fitted': self.is_fitted,
-            'timestamp': timestamp
+            'timestamp': timestamp,
+            'date': date_str,
+            'time': time_str,
+            'saved_at': datetime.now().isoformat(),
+            'config_snapshot': config.get_current_config_snapshot(),  # Full config for reproducibility
         }
         
-        # Save timestamped version
+        # Save timestamped version (permanent record)
         joblib.dump(save_data, timestamped_path)
-        # Save/overwrite latest version
+        # Save/overwrite latest version (for easy access)
         joblib.dump(save_data, latest_path)
         
         print(f"✅ Hybrid model saved to {timestamped_path}")
         print(f"   (latest copy: {latest_path})")
+        print(f"   Config ID: {config.ACTIVE_CONFIG_ID}")
         return timestamped_path
     
     def load(self, name: str) -> 'HybridPhysicsMLModel':
@@ -880,12 +888,14 @@ class ARIHOWModel:
         return pd.DataFrame(weights)
     
     def save(self, name: str) -> Path:
-        """Save ARHOW model to disk with timestamp and latest copy."""
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        """Save ARHOW model to disk with date+timestamp (no overwrites)."""
+        date_str = datetime.now().strftime('%Y%m%d')
+        time_str = datetime.now().strftime('%H%M%S')
+        timestamp = f"{date_str}_{time_str}"
         
-        # Timestamped path
+        # Always timestamped path (no overwrites)
         timestamped_path = MODELS_DIR / f"{name}_arihow_{timestamp}.joblib"
-        # Latest path (for easy access)
+        # Latest path (for easy loading)
         latest_path = MODELS_DIR / f"{name}_arihow.joblib"
         
         # Save configuration and brand weights (statsmodels objects don't serialize well)
@@ -898,6 +908,10 @@ class ARIHOWModel:
             'weight_window': self.weight_window,
             'is_fitted': self.is_fitted,
             'timestamp': timestamp,
+            'date': date_str,
+            'time': time_str,
+            'saved_at': datetime.now().isoformat(),
+            'config_snapshot': config.get_current_config_snapshot(),  # Full config for reproducibility
             # Save weights and fallback values for each brand
             'brand_data': {
                 str(k): {
@@ -910,13 +924,14 @@ class ARIHOWModel:
             }
         }
         
-        # Save timestamped version
+        # Save timestamped version (permanent record)
         joblib.dump(save_data, timestamped_path)
-        # Save/overwrite latest version
+        # Save/overwrite latest version (for easy access)
         joblib.dump(save_data, latest_path)
         
         print(f"✅ ARHOW model config saved to {timestamped_path}")
         print(f"   (latest copy: {latest_path})")
+        print(f"   Config ID: {config.ACTIVE_CONFIG_ID}")
         return timestamped_path
     
     @classmethod
@@ -956,11 +971,11 @@ class GradientBoostingModel:
         self.feature_names = None
         
     def _default_params(self) -> dict:
-        """Get default parameters for model type."""
+        """Get default parameters for model type (reads live from config module)."""
         if self.model_type == 'lightgbm':
-            return LGBM_PARAMS.copy()
+            return config.LGBM_PARAMS.copy()  # Read from module for multi-config
         else:
-            return XGB_PARAMS.copy()
+            return config.XGB_PARAMS.copy()  # Read from module for multi-config
     
     def fit(self, X_train: pd.DataFrame, y_train: pd.Series,
             X_val: pd.DataFrame = None, y_val: pd.Series = None,
@@ -1187,12 +1202,14 @@ class GradientBoostingModel:
         return results
     
     def save(self, name: str) -> Path:
-        """Save model to disk with timestamp and latest copy."""
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        """Save model to disk with date+timestamp (no overwrites)."""
+        date_str = datetime.now().strftime('%Y%m%d')
+        time_str = datetime.now().strftime('%H%M%S')
+        timestamp = f"{date_str}_{time_str}"
         
-        # Timestamped path
+        # Always timestamped path (no overwrites)
         timestamped_path = MODELS_DIR / f"{name}_{timestamp}.joblib"
-        # Latest path (for easy access)
+        # Latest path (for easy loading)
         latest_path = MODELS_DIR / f"{name}.joblib"
         
         save_data = {
@@ -1200,16 +1217,21 @@ class GradientBoostingModel:
             'model_type': self.model_type,
             'params': self.params,
             'feature_names': self.feature_names,
-            'timestamp': timestamp
+            'timestamp': timestamp,
+            'date': date_str,
+            'time': time_str,
+            'saved_at': datetime.now().isoformat(),
+            'config_snapshot': config.get_current_config_snapshot(),  # Full config for reproducibility
         }
         
-        # Save timestamped version
+        # Save timestamped version (permanent record)
         joblib.dump(save_data, timestamped_path)
-        # Save/overwrite latest version
+        # Save/overwrite latest version (for easy access)
         joblib.dump(save_data, latest_path)
         
         print(f"✅ Model saved to {timestamped_path}")
         print(f"   (latest copy: {latest_path})")
+        print(f"   Config ID: {config.ACTIVE_CONFIG_ID}")
         return timestamped_path
     
     def load(self, name: str) -> 'GradientBoostingModel':

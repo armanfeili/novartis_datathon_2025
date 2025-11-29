@@ -40,8 +40,10 @@ plt.style.use('seaborn-v0_8-whitegrid')
 sns.set_palette("husl")
 
 # Create EDA data directory for JSON files
-EDA_DATA_DIR = REPORTS_DIR / 'eda_data'
+EDA_DATA_DIR = REPORTS_DIR / '01_eda_data'
 EDA_DATA_DIR.mkdir(parents=True, exist_ok=True)
+EDA_FIGURES_DIR = EDA_DATA_DIR / 'figures'
+EDA_FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 print(f"✅ Setup complete!")
 print(f"📁 EDA data will be saved to: {EDA_DATA_DIR}")
@@ -156,8 +158,9 @@ for i, (b, c) in enumerate(zip(bucket_data['bucket'], bucket_data['count'])):
     axes[1].text(i, c + 5, str(int(c)), ha='center', fontsize=12)
 
 plt.tight_layout()
-plt.savefig(FIGURES_DIR / 'bucket_distribution.png', dpi=150, bbox_inches='tight')
-plt.show()
+plt.savefig(EDA_FIGURES_DIR / 'fig01_bucket_distribution.png', dpi=150, bbox_inches='tight')
+plt.close()
+print(f"✅ Saved figure: fig01_bucket_distribution.png")
 
 # %% [markdown]
 # ## 3. Erosion Curves by Bucket
@@ -260,7 +263,7 @@ ax.set_xlim(-1, 24)
 ax.set_ylim(0, 1.5)
 
 plt.tight_layout()
-plt.savefig(FIGURES_DIR / 'erosion_curves_by_bucket.png', dpi=150, bbox_inches='tight')
+plt.savefig(EDA_FIGURES_DIR / 'fig02_erosion_curves.png', dpi=150, bbox_inches='tight')
 plt.show()
 
 # %% [markdown]
@@ -348,7 +351,7 @@ for idx, (_, row) in enumerate(sample_brands.iterrows()):
 
 plt.suptitle('Sample Brand Volume Trajectories', fontsize=14, y=1.02)
 plt.tight_layout()
-plt.savefig(FIGURES_DIR / 'sample_brand_trajectories.png', dpi=150, bbox_inches='tight')
+plt.savefig(EDA_FIGURES_DIR / 'fig03_sample_trajectories.png', dpi=150, bbox_inches='tight')
 plt.show()
 
 # %% [markdown]
@@ -411,7 +414,7 @@ axes[1].set_ylabel('Number of Generics', fontsize=12)
 axes[1].set_title('Generic Competition Over Time', fontsize=12)
 
 plt.tight_layout()
-plt.savefig(FIGURES_DIR / 'n_gxs_impact.png', dpi=150, bbox_inches='tight')
+plt.savefig(EDA_FIGURES_DIR / 'fig04_competition_impact.png', dpi=150, bbox_inches='tight')
 plt.show()
 
 # %% [markdown]
@@ -469,7 +472,7 @@ if len(ther_analysis) > 0:
     ax.legend()
     
     plt.tight_layout()
-    plt.savefig(FIGURES_DIR / 'ther_area_erosion.png', dpi=150, bbox_inches='tight')
+    plt.savefig(EDA_FIGURES_DIR / 'fig05_therapeutic_areas.png', dpi=150, bbox_inches='tight')
     plt.show()
 else:
     print("   ⚠️ No therapeutic area data available")
@@ -527,7 +530,7 @@ if len(bio_vs_small) > 0:
     ax.legend(title='Drug Type')
     
     plt.tight_layout()
-    plt.savefig(FIGURES_DIR / 'biological_vs_small_molecule.png', dpi=150, bbox_inches='tight')
+    plt.savefig(EDA_FIGURES_DIR / 'fig06_biological_vs_small.png', dpi=150, bbox_inches='tight')
     plt.show()
 else:
     print("   ⚠️ No biological/small molecule data available")
@@ -584,7 +587,7 @@ if len(hospital_analysis) > 0:
     ax.legend(title='Hospital Rate')
     
     plt.tight_layout()
-    plt.savefig(FIGURES_DIR / 'hospital_rate_erosion.png', dpi=150, bbox_inches='tight')
+    plt.savefig(EDA_FIGURES_DIR / 'fig07_hospital_rate.png', dpi=150, bbox_inches='tight')
     plt.show()
 else:
     print("   ⚠️ No hospital rate data available")
@@ -688,7 +691,7 @@ axes[2].set_title('Final Equilibrium Level')
 axes[2].legend()
 
 plt.tight_layout()
-plt.savefig(FIGURES_DIR / 'erosion_speed_analysis.png', dpi=150, bbox_inches='tight')
+plt.savefig(EDA_FIGURES_DIR / 'fig08_erosion_speed.png', dpi=150, bbox_inches='tight')
 plt.show()
 
 # %% [markdown]

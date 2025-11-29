@@ -1196,34 +1196,87 @@ python scripts/validate_submissions.py
 
 **These are for VISUALIZATION only** - all logic is in `src/` files.
 
-### EDA Data Export 🆕
+### Reports Structure 🆕 (Updated)
 
-The EDA notebook (`01_eda_visualization.py`) now exports both JSON and CSV files for all figures:
+All three notebooks export figures with corresponding JSON summaries and CSV data files in organized subfolders:
 
 ```
-reports/eda_data/
-├── fig01_volume_distribution.json      # JSON summary
-├── fig01_volume_distribution.csv       # Full data (histogram bin edges, counts)
-├── fig02_erosion_curves.json
-├── fig02_erosion_curves.csv            # Erosion curves per bucket
-├── fig03_bucket_distribution.json
-├── fig03_bucket_distribution.csv       # Bucket counts by country
-├── fig04_generic_impact.json
-├── fig04_generic_impact.csv            # Volume by generics count
-├── fig05_therapeutic_area.json
-├── fig05_therapeutic_area.csv          # Metrics by therapeutic area
-├── fig06_monthly_patterns.json
-├── fig06_monthly_patterns.csv          # Monthly volume trends
-├── fig07_correlation_matrix.json
-├── fig07_correlation_matrix.csv        # Feature correlations
-├── fig08_country_analysis.json
-└── fig08_country_analysis.csv          # Country-level analysis
+reports/
+├── 01_eda_data/                        # EDA visualization data
+│   ├── figures/                        # PNG figures
+│   │   ├── fig01_bucket_distribution.png
+│   │   ├── fig02_erosion_curves.png
+│   │   ├── fig03_sample_trajectories.png
+│   │   ├── fig04_competition_impact.png
+│   │   ├── fig05_therapeutic_areas.png
+│   │   ├── fig06_biological_vs_small.png
+│   │   ├── fig07_hospital_rate.png
+│   │   └── fig08_erosion_speed.png
+│   ├── fig01_bucket_distribution.json/csv
+│   ├── fig02_erosion_curves.json/csv
+│   ├── fig03_sample_trajectories.json/csv
+│   ├── fig04_competition_impact.json + n_gxs_impact.csv
+│   ├── fig05_therapeutic_areas.json/csv
+│   ├── fig06_biological_vs_small.json/csv
+│   ├── fig07_hospital_rate.json/csv
+│   ├── fig08_erosion_speed.json + erosion_speed_full.csv
+│   └── eda_complete_summary.json
+│
+├── 02_feature_data/                    # Feature exploration data
+│   ├── figures/                        # PNG figures
+│   │   ├── fig01_feature_correlation.png
+│   │   ├── fig02_target_correlation.png
+│   │   ├── fig03_feature_distributions.png
+│   │   ├── fig04_lag_features.png
+│   │   ├── fig05_rolling_features.png
+│   │   ├── fig06_competition_features.png
+│   │   └── fig07_time_features.png
+│   ├── fig01_feature_correlation.json/csv
+│   ├── fig02_target_correlation.json/csv
+│   ├── fig03_feature_distributions.json/csv
+│   ├── fig04_lag_features.json/csv
+│   ├── fig05_rolling_features.json/csv
+│   ├── fig06_competition_features.json/csv
+│   ├── fig07_time_features.json/csv
+│   └── feature_exploration_complete_summary.json
+│
+├── 03_model_data/                      # Model results data
+│   ├── figures/                        # PNG figures
+│   │   ├── fig01_model_comparison.png
+│   │   ├── fig02_bucket_performance.png
+│   │   ├── fig03_feature_importance.png
+│   │   ├── fig04_submission_predictions.png
+│   │   └── fig05_prediction_distribution.png
+│   ├── fig01_model_comparison.json + s1.csv + s2.csv
+│   ├── fig02_bucket_performance.json
+│   ├── fig03_feature_importance.json + s1.csv + s2.csv
+│   ├── fig04_submission_analysis.json + by_month_s1.csv + by_month_s2.csv
+│   ├── fig05_prediction_distribution.json
+│   └── model_results_complete_summary.json
+│
+├── model_comparison_scenario1.csv      # Training results
+├── model_comparison_scenario2.csv
+├── run_summary_scenario1_*.json        # Run summaries with full config
+└── run_summary_scenario2_*.json
 ```
 
-**CSV Data Contents:**
+**JSON File Contents:**
+- Metadata (filename, description, generated timestamp)
+- Summary statistics for the visualization
+- Interpretations and key insights
+- References to corresponding figure files
+
+**CSV File Contents:**
 - Raw data used to generate each figure
 - Can be used for custom visualizations or further analysis
-- Complements JSON summary files
+- Full data tables for deeper analysis
+
+**Running the notebooks:**
+```powershell
+python notebooks/01_eda_visualization.py      # Generates 01_eda_data/
+python notebooks/02_feature_exploration.py    # Generates 02_feature_data/
+python notebooks/03_model_results.py          # Generates 03_model_data/
+```
 
 ---
 
@@ -1726,10 +1779,11 @@ Main_project/
 - Added `warnings.catch_warnings()` context managers to suppress statsmodels convergence warnings
 - Cleaner console output during training
 
-### 5. **EDA Data Export**
-- All EDA figures now export accompanying CSV files with raw data
-- Enables custom visualizations and further analysis
-- 9 JSON + 9 CSV files in `reports/eda_data/`
+### 5. **Organized Reports Structure** 🆕
+- **Three subfolders**: `01_eda_data/`, `02_feature_data/`, `03_model_data/`
+- **Each figure has**: PNG image + JSON summary + CSV raw data
+- **Figures subfolder**: Each notebook saves figures to its own `figures/` subfolder
+- **Complete summaries**: Each notebook generates a `*_complete_summary.json`
 
 ### 6. **Pandas FutureWarning Fix**
 - Updated `feature_engineering.py` to use `include_groups=False` in groupby operations
@@ -1742,9 +1796,36 @@ Main_project/
 - **`create_time_to_50pct_features()`** - Calculates time to 50% erosion and speed category
 - **`impute_avg_vol_regression()`** - ML-based imputation for missing avg_vol
 - **`create_vol_norm_gt1_flag()`** - Flags anomalous volume growth above baseline
-- **`clean_data()`** - Master function that runs all cleaning steps
 
-### 8. **Feature Engineering Enhancements** 🆕🔥
+### 8. **Full Config in Submission JSON** 🆕
+- Submission JSON files now include ALL configuration parameters
+- Enables complete reproducibility of any submission
+- All 13 config sections saved: run_mode, models_enabled, paths, weights, model params, etc.
+
+---
+
+## ⚠️ Important Notes & Gotchas
+
+### TEST_MODE Warning
+
+**Problem:** When `TEST_MODE = True`, only 50 random brands are used for training. Since Bucket 1 brands (high-erosion) are rare (~6.7% of total), there's a high chance **no Bucket 1 brands** will be selected.
+
+**Symptom:** `bucket1_pe = NaN` in model comparison results
+
+**Solution:** Set `TEST_MODE = False` in `src/config.py` for full training with all 1,953 brands:
+
+```python
+# In src/config.py
+TEST_MODE = False  # Use all brands for proper Bucket 1 evaluation
+```
+
+### Bucket Distribution
+- **Bucket 1 (high erosion)**: ~130 brands (6.7%) - **2× weight in scoring!**
+- **Bucket 2 (lower erosion)**: ~1,823 brands (93.3%)
+
+Focus extra effort on Bucket 1 predictions since they count double in the final PE score.
+
+### 9. **Feature Engineering Enhancements** 🆕🔥
 - **Feature count increased from 40 to 76 features!**
 - **`FeatureScaler` class** - StandardScaler, MinMaxScaler, and log transforms with outlier clipping
 - **`target_encode_cv()`** - Leakage-safe target encoding within CV folds
@@ -1755,20 +1836,20 @@ Main_project/
 - **`compute_time_window_weights()`** - Sample weights aligned with PE scoring formula
 - **`create_horizon_as_row_dataset()`** - Alternative dataset structure for forecasting
 
-### 9. **Time-Window Sample Weighting** 🆕🔥
+### 10. **Time-Window Sample Weighting** 🆕🔥
 - New config parameters: `USE_TIME_WINDOW_WEIGHTS`, `S1_TIME_WINDOW_WEIGHTS`, `S2_TIME_WINDOW_WEIGHTS`
 - Weights align with PE scoring formula:
   - **Scenario 1:** months 0-5 get 2.5× weight (50% of PE score)
   - **Scenario 2:** months 6-11 get 2.5× weight (50% of PE score)
 - Trains models to focus on time periods that matter most for competition scoring
 
-### 10. **GroupKFold Cross-Validation** 🆕
+### 11. **GroupKFold Cross-Validation** 🆕
 - **`cross_validate_grouped()`** method in `GBTModel` class
 - Ensures all months of a brand stay together in CV folds
 - Prevents data leakage from brand months spanning train/val splits
 - More realistic estimate of generalization to new brands
 
-### 11. **EnsembleBlender Class** 🆕
+### 12. **EnsembleBlender Class** 🆕
 - **`EnsembleBlender`** - Learns optimal ensemble weights from validation data
 - **`optimize_ensemble_weights()`** - Convenience function for weight optimization
 - Three blending methods: `ridge`, `nnls` (non-negative), `simple` (equal)
