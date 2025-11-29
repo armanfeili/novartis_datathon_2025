@@ -1,0 +1,64 @@
+# CatBoost model configuration for Novartis Datathon 2025
+# Primary hero model for the competition
+
+model:
+  name: "catboost"
+  task: "regression"
+
+# CatBoost hyperparameters
+params:
+  # Core parameters
+  loss_function: "RMSE"
+  eval_metric: "RMSE"
+  
+  # Tree parameters - conservative to prevent overfitting
+  depth: 6
+  min_data_in_leaf: 20
+  max_leaves: 31
+  
+  # Learning parameters - slower learning for better generalization
+  learning_rate: 0.03
+  iterations: 2000
+  
+  # Regularization
+  l2_leaf_reg: 3.0
+  random_strength: 1.0
+  bagging_temperature: 1.0
+  
+  # Early stopping
+  early_stopping_rounds: 100
+  
+  # Reproducibility
+  random_seed: 42
+  
+  # Output
+  verbose: 100
+  thread_count: -1
+
+# Training settings
+training:
+  use_early_stopping: true
+  use_sample_weights: true            # CRITICAL: use sample weights aligned with metric
+  eval_metric: "RMSE"
+
+# Categorical features to pass to CatBoost
+# CatBoost handles categoricals natively - no encoding needed
+categorical_features:
+  - "ther_area"
+  - "main_package"
+  - "time_bucket"
+  - "hospital_rate_bin"
+  - "n_gxs_bin"
+
+# Hyperparameter tuning (Optuna)
+tuning:
+  enabled: false
+  n_trials: 100
+  timeout: 3600
+  search_space:
+    depth: [4, 8]
+    learning_rate: [0.01, 0.1]
+    l2_leaf_reg: [1.0, 10.0]
+    min_data_in_leaf: [10, 50]
+    random_strength: [0.0, 5.0]
+    bagging_temperature: [0.0, 5.0]

@@ -1,0 +1,419 @@
+{
+  "timestamp": "2025-11-29T05:31:16.348144",
+  "git_commit": "fa32b4af",
+  "scenario": 1,
+  "model_type": "lightgbm",
+  "random_seed": 42,
+  "dataset": {
+    "total_rows": 93744,
+    "total_series": 1953,
+    "train_rows": 37488,
+    "train_series": 1562,
+    "val_rows": 9384,
+    "val_series": 391
+  },
+  "validation": {
+    "val_fraction": 0.2,
+    "stratify_by": "bucket",
+    "split_level": "series"
+  },
+  "configs": {
+    "run_config": {
+      "reproducibility": {
+        "seed": 42,
+        "deterministic": true
+      },
+      "validation": {
+        "val_fraction": 0.2,
+        "stratify_by": "bucket",
+        "split_level": "series"
+      },
+      "scenarios": {
+        "scenario1": {
+          "name": "Scenario 1 - No Post-Entry Actuals",
+          "forecast_start": 0,
+          "forecast_end": 23,
+          "feature_cutoff": 0,
+          "target_months": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23
+          ]
+        },
+        "scenario2": {
+          "name": "Scenario 2 - First 6 Months Available",
+          "forecast_start": 6,
+          "forecast_end": 23,
+          "feature_cutoff": 6,
+          "target_months": [
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23
+          ]
+        }
+      },
+      "official_metric": {
+        "bucket_threshold": 0.25,
+        "bucket_weights": {
+          "bucket1": 2.0,
+          "bucket2": 1.0
+        },
+        "metric1": {
+          "monthly_weight": 0.2,
+          "accumulated_0_5_weight": 0.5,
+          "accumulated_6_11_weight": 0.2,
+          "accumulated_12_23_weight": 0.1,
+          "monthly_range": [
+            0,
+            23
+          ],
+          "early_range": [
+            0,
+            5
+          ],
+          "mid_range": [
+            6,
+            11
+          ],
+          "late_range": [
+            12,
+            23
+          ]
+        },
+        "metric2": {
+          "monthly_weight": 0.2,
+          "accumulated_6_11_weight": 0.5,
+          "accumulated_12_23_weight": 0.3,
+          "monthly_range": [
+            6,
+            23
+          ],
+          "early_range": [
+            6,
+            11
+          ],
+          "late_range": [
+            12,
+            23
+          ]
+        }
+      },
+      "sample_weights": {
+        "scenario1": {
+          "months_0_5": 3.0,
+          "months_6_11": 1.5,
+          "months_12_23": 1.0
+        },
+        "scenario2": {
+          "months_6_11": 2.5,
+          "months_12_23": 1.0
+        },
+        "bucket_weights": {
+          "bucket1": 2.0,
+          "bucket2": 1.0
+        }
+      },
+      "paths": {
+        "artifacts_dir": "artifacts",
+        "submissions_dir": "submissions",
+        "logs_dir": "artifacts/logs",
+        "metrics_dir": "artifacts/metrics"
+      },
+      "output": {
+        "save_oof_predictions": true,
+        "save_test_predictions": true,
+        "save_feature_importance": true,
+        "save_training_curves": true,
+        "save_config_snapshot": true
+      },
+      "metrics": {
+        "primary": "metric1_official",
+        "secondary": [
+          "rmse_y_norm",
+          "mae_y_norm",
+          "mape_y_norm"
+        ],
+        "log_per_series": true,
+        "log_dir_pattern": "artifacts/{run_id}/metrics",
+        "names": {
+          "scenario1": "metric1_official",
+          "scenario2": "metric2_official",
+          "rmse": "rmse_y_norm",
+          "mae": "mae_y_norm",
+          "mape": "mape_y_norm"
+        }
+      },
+      "logging": {
+        "level": "INFO",
+        "console": true,
+        "file": true,
+        "log_to_file": true,
+        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+      },
+      "drive": {
+        "folder_id": "1iP8ffP5MfJ6hqig1-lQpVwzfrl9uuU03",
+        "mount_path": "/content/drive",
+        "base_path": "/content/drive/MyDrive/novartis-datathon-2025",
+        "sync_artifacts": true
+      },
+      "hardware": {
+        "use_gpu": false,
+        "num_workers": 4
+      },
+      "experiment": {
+        "name": "novartis-datathon-2025",
+        "description": "Generic Erosion Forecasting"
+      },
+      "experiment_tracking": {
+        "enabled": false,
+        "backend": "mlflow",
+        "experiment_name": "novartis-datathon-2025",
+        "tracking_uri": null,
+        "project_name": "novartis-datathon-2025"
+      },
+      "run": {
+        "name_format": "{timestamp}_{model}_{scenario}",
+        "timestamp_format": "%Y-%m-%d_%H-%M"
+      }
+    },
+    "data_config": {
+      "paths": {
+        "raw_dir": "data/raw",
+        "interim_dir": "data/interim",
+        "processed_dir": "data/processed",
+        "artifacts_dir": "artifacts"
+      },
+      "files": {
+        "train": {
+          "volume": "TRAIN/df_volume_train.csv",
+          "generics": "TRAIN/df_generics_train.csv",
+          "medicine_info": "TRAIN/df_medicine_info_train.csv"
+        },
+        "test": {
+          "volume": "TEST/df_volume_test.csv",
+          "generics": "TEST/df_generics_test.csv",
+          "medicine_info": "TEST/df_medicine_info_test.csv"
+        },
+        "aux_metric": "docs/guide/auxiliar_metric_computation_example.csv",
+        "submission_template": "docs/guide/submission_template.csv",
+        "submission_example": "docs/guide/submission_example.csv"
+      },
+      "columns": {
+        "id_keys": [
+          "country",
+          "brand_name"
+        ],
+        "time_key": "months_postgx",
+        "calendar_month": "month",
+        "raw_target": "volume",
+        "model_target": "y_norm",
+        "meta_cols": [
+          "country",
+          "brand_name",
+          "months_postgx",
+          "bucket",
+          "avg_vol_12m",
+          "y_norm",
+          "volume",
+          "mean_erosion",
+          "month"
+        ],
+        "generics_cols": [
+          "n_gxs"
+        ],
+        "medicine_info_categorical": [
+          "ther_area",
+          "main_package"
+        ],
+        "medicine_info_numerical": [
+          "hospital_rate"
+        ],
+        "medicine_info_boolean": [
+          "biological",
+          "small_molecule"
+        ]
+      },
+      "schema": {
+        "volume": {
+          "primary_key": [
+            "country",
+            "brand_name",
+            "months_postgx"
+          ],
+          "columns": [
+            "country",
+            "brand_name",
+            "month",
+            "months_postgx",
+            "volume"
+          ]
+        },
+        "generics": {
+          "primary_key": [
+            "country",
+            "brand_name",
+            "months_postgx"
+          ],
+          "columns": [
+            "country",
+            "brand_name",
+            "months_postgx",
+            "n_gxs"
+          ]
+        },
+        "medicine_info": {
+          "primary_key": [
+            "country",
+            "brand_name"
+          ],
+          "columns": [
+            "country",
+            "brand_name",
+            "ther_area",
+            "hospital_rate",
+            "main_package",
+            "biological",
+            "small_molecule"
+          ]
+        }
+      },
+      "missing_values": {
+        "volume": "keep",
+        "n_gxs": {
+          "strategy": "ffill_then_zero"
+        },
+        "hospital_rate": {
+          "strategy": "median_by_group",
+          "group_by": "ther_area",
+          "add_missing_flag": true
+        },
+        "ther_area": "Unknown",
+        "main_package": "Unknown",
+        "biological": {
+          "default": false,
+          "add_missing_flag": true
+        },
+        "small_molecule": {
+          "default": false,
+          "add_missing_flag": true
+        }
+      },
+      "drive": {
+        "base_path": "/content/drive/MyDrive/novartis-datathon-2025",
+        "raw_dir": "/content/drive/MyDrive/novartis-datathon-2025/data/raw",
+        "interim_dir": "/content/drive/MyDrive/novartis-datathon-2025/data/interim",
+        "processed_dir": "/content/drive/MyDrive/novartis-datathon-2025/data/processed"
+      },
+      "validation": {
+        "expected_train_series": 1953,
+        "expected_test_series_s1": 228,
+        "expected_test_series_s2": 112,
+        "forecast_horizon": 24
+      }
+    },
+    "model_config": {
+      "model": {
+        "name": "lightgbm",
+        "task": "regression"
+      },
+      "params": {
+        "boosting_type": "gbdt",
+        "objective": "regression",
+        "metric": "rmse",
+        "num_leaves": 31,
+        "max_depth": -1,
+        "min_data_in_leaf": 20,
+        "min_sum_hessian_in_leaf": "1e-3",
+        "learning_rate": 0.05,
+        "n_estimators": 1000,
+        "lambda_l1": 0.0,
+        "lambda_l2": 0.0,
+        "feature_fraction": 0.8,
+        "bagging_fraction": 0.8,
+        "bagging_freq": 5,
+        "cat_smooth": 10,
+        "early_stopping_rounds": 50,
+        "verbose": -1,
+        "n_jobs": -1,
+        "seed": 42
+      },
+      "training": {
+        "use_early_stopping": true,
+        "eval_metric": "rmse",
+        "verbose_eval": 100
+      },
+      "tuning": {
+        "enabled": false,
+        "n_trials": 100,
+        "timeout": 3600,
+        "search_space": {
+          "num_leaves": [
+            15,
+            255
+          ],
+          "max_depth": [
+            3,
+            12
+          ],
+          "learning_rate": [
+            0.01,
+            0.3
+          ],
+          "feature_fraction": [
+            0.5,
+            1.0
+          ],
+          "bagging_fraction": [
+            0.5,
+            1.0
+          ],
+          "lambda_l1": [
+            0.0,
+            10.0
+          ],
+          "lambda_l2": [
+            0.0,
+            10.0
+          ]
+        }
+      }
+    }
+  },
+  "config_hash": "04e3f26c"
+}

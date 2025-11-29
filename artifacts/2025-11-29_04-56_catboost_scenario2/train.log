@@ -1,0 +1,39 @@
+2025-11-29 04:56:05,215 - __main__ - INFO - Starting experiment: 2025-11-29_04-56_catboost_scenario2
+2025-11-29 04:56:05,256 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_04-56_catboost_scenario2/configs (hash: d65a3eca)
+2025-11-29 04:56:05,257 - __main__ - INFO - Config hash: d65a3eca
+2025-11-29 04:56:05,276 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 04:56:05,276 - src.utils - INFO - [Load cached features for train S2 train] starting...
+2025-11-29 04:56:05,277 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s2_train.parquet
+2025-11-29 04:56:05,354 - src.features - INFO - Loaded X: (35154, 99), y: 35154
+2025-11-29 04:56:05,354 - src.utils - INFO - [Load cached features for train S2 train] done in 0.078s
+2025-11-29 04:56:05,373 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 04:56:05,373 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 04:56:05,385 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 04:56:05,385 - src.utils - INFO - [Load cached train panel] done in 0.012s
+2025-11-29 04:56:05,385 - src.utils - INFO - [Load features (cached)] done in 0.109s
+2025-11-29 04:56:05,385 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 04:56:05,398 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 04:56:05,473 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 04:56:05,474 - src.validation - INFO - Train rows: 28,116, Val rows: 7,038
+2025-11-29 04:56:05,476 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 04:56:05,477 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 04:56:05,477 - src.utils - INFO - [Create validation split] done in 0.092s
+2025-11-29 04:56:05,506 - __main__ - INFO - Features: 101 columns
+2025-11-29 04:56:05,506 - __main__ - INFO - Meta: 9 columns
+2025-11-29 04:56:05,511 - __main__ - INFO - Features: 101 columns
+2025-11-29 04:56:05,511 - __main__ - INFO - Meta: 9 columns
+2025-11-29 04:56:06,257 - __main__ - INFO - Sample weights - min: 0.63, max: 3.13, mean: 1.00
+2025-11-29 04:56:06,257 - src.utils - INFO - [Train catboost for scenario 2] starting...
+2025-11-29 04:56:21,651 - src.models.cat_model - INFO - CatBoost trained for 229 iterations
+2025-11-29 04:56:21,652 - src.utils - INFO - [Train catboost for scenario 2] done in 15.395s
+2025-11-29 04:56:22,395 - __main__ - INFO - Validation metrics: Official=0.2940, RMSE=0.2052, MAE=0.1276
+2025-11-29 04:56:22,396 - __main__ - INFO - Training time: 15.39 seconds
+2025-11-29 04:56:22,404 - src.models.cat_model - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_04-56_catboost_scenario2/model_2.bin
+2025-11-29 04:56:22,404 - __main__ - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_04-56_catboost_scenario2/model_2.bin
+2025-11-29 04:56:22,414 - __main__ - INFO - Experiment 2025-11-29_04-56_catboost_scenario2 completed. Artifacts saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_04-56_catboost_scenario2

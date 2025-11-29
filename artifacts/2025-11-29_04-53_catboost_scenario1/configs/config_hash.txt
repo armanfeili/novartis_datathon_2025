@@ -1,0 +1,7 @@
+cdd5bacd
+Generated: 2025-11-29T04:53:23.953236
+Files:
+  run_config: configs/run_defaults.yaml
+  data_config: configs/data.yaml
+  features_config: configs/features.yaml
+  model_config: configs/model_cat_depth4.yaml

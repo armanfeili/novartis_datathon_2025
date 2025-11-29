@@ -1,0 +1,39 @@
+2025-11-29 05:39:39,893 - __main__ - INFO - Starting experiment: 2025-11-29_05-39_lightgbm_scenario2
+2025-11-29 05:39:39,932 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_05-39_lightgbm_scenario2/configs (hash: 04e3f26c)
+2025-11-29 05:39:39,933 - __main__ - INFO - Config hash: 04e3f26c
+2025-11-29 05:39:39,957 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 05:39:39,958 - src.utils - INFO - [Load cached features for train S2 train] starting...
+2025-11-29 05:39:39,958 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s2_train.parquet
+2025-11-29 05:39:40,078 - src.features - INFO - Loaded X: (35154, 99), y: 35154
+2025-11-29 05:39:40,078 - src.utils - INFO - [Load cached features for train S2 train] done in 0.120s
+2025-11-29 05:39:40,095 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 05:39:40,096 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 05:39:40,115 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 05:39:40,115 - src.utils - INFO - [Load cached train panel] done in 0.019s
+2025-11-29 05:39:40,115 - src.utils - INFO - [Load features (cached)] done in 0.158s
+2025-11-29 05:39:40,115 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 05:39:40,131 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 05:39:40,218 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 05:39:40,219 - src.validation - INFO - Train rows: 28,116, Val rows: 7,038
+2025-11-29 05:39:40,220 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 05:39:40,221 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 05:39:40,221 - src.utils - INFO - [Create validation split] done in 0.106s
+2025-11-29 05:39:40,248 - __main__ - INFO - Features: 101 columns
+2025-11-29 05:39:40,248 - __main__ - INFO - Meta: 9 columns
+2025-11-29 05:39:40,254 - __main__ - INFO - Features: 101 columns
+2025-11-29 05:39:40,254 - __main__ - INFO - Meta: 9 columns
+2025-11-29 05:39:41,420 - __main__ - INFO - Sample weights - min: 0.63, max: 3.13, mean: 1.00
+2025-11-29 05:39:41,421 - src.utils - INFO - [Train lightgbm for scenario 2] starting...
+2025-11-29 05:39:44,195 - src.models.lgbm_model - INFO - LightGBM trained for 109 iterations
+2025-11-29 05:39:44,207 - src.utils - INFO - [Train lightgbm for scenario 2] done in 2.786s
+2025-11-29 05:39:45,105 - __main__ - INFO - Validation metrics: Official=0.2941, RMSE=0.2095, MAE=0.1293
+2025-11-29 05:39:45,105 - __main__ - INFO - Training time: 2.79 seconds
+2025-11-29 05:39:45,126 - src.models.lgbm_model - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_05-39_lightgbm_scenario2/model_2.bin
+2025-11-29 05:39:45,127 - __main__ - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_05-39_lightgbm_scenario2/model_2.bin
+2025-11-29 05:39:45,130 - __main__ - INFO - Experiment 2025-11-29_05-39_lightgbm_scenario2 completed. Artifacts saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_05-39_lightgbm_scenario2

@@ -75,14 +75,24 @@ class XGBModel(BaseModel):
         """
         self.feature_names = list(X_train.columns)
         
+        # Convert categorical columns to numeric codes for XGBoost
+        X_train_proc = X_train.copy()
+        X_val_proc = X_val.copy() if X_val is not None else None
+        
+        for col in X_train_proc.columns:
+            if X_train_proc[col].dtype.name == 'category':
+                X_train_proc[col] = X_train_proc[col].cat.codes
+                if X_val_proc is not None:
+                    X_val_proc[col] = X_val_proc[col].cat.codes
+        
         # Create DMatrix with sample weights
         weight = sample_weight.values if sample_weight is not None else None
-        dtrain = xgb.DMatrix(X_train, label=y_train, weight=weight)
+        dtrain = xgb.DMatrix(X_train_proc, label=y_train, weight=weight)
         
         evals = [(dtrain, 'train')]
         
         if X_val is not None and y_val is not None:
-            dval = xgb.DMatrix(X_val, label=y_val)
+            dval = xgb.DMatrix(X_val_proc, label=y_val)
             evals.append((dval, 'eval'))
         
         self.model = xgb.train(
@@ -98,7 +108,12 @@ class XGBModel(BaseModel):
     
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """Generate predictions using trained model."""
-        dtest = xgb.DMatrix(X)
+        # Convert categorical columns to numeric codes
+        X_proc = X.copy()
+        for col in X_proc.columns:
+            if X_proc[col].dtype.name == 'category':
+                X_proc[col] = X_proc[col].cat.codes
+        dtest = xgb.DMatrix(X_proc)
         return self.model.predict(dtest)
     
     def save(self, path: str) -> None:

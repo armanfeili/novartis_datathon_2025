@@ -121,8 +121,16 @@ class NNModel(BaseModel):
         """
         self.feature_names = list(X_train.columns)
         
+        # Convert categorical columns to numeric codes
+        X_train_proc = X_train.copy()
+        for col in X_train_proc.columns:
+            if X_train_proc[col].dtype.name == 'category':
+                X_train_proc[col] = X_train_proc[col].cat.codes.astype(float)
+            elif X_train_proc[col].dtype == 'object':
+                X_train_proc[col] = pd.Categorical(X_train_proc[col]).codes.astype(float)
+        
         # Convert to numpy arrays (handle DataFrames)
-        X_train_np = X_train.values if hasattr(X_train, 'values') else X_train
+        X_train_np = X_train_proc.values.astype(np.float32) if hasattr(X_train_proc, 'values') else np.array(X_train_proc, dtype=np.float32)
         y_train_np = y_train.values if hasattr(y_train, 'values') else y_train
         
         # Handle missing values
@@ -155,7 +163,14 @@ class NNModel(BaseModel):
         
         val_dl = None
         if X_val is not None and y_val is not None:
-            X_val_np = X_val.values if hasattr(X_val, 'values') else X_val
+            # Convert categorical columns to numeric codes
+            X_val_proc = X_val.copy()
+            for col in X_val_proc.columns:
+                if X_val_proc[col].dtype.name == 'category':
+                    X_val_proc[col] = X_val_proc[col].cat.codes.astype(float)
+                elif X_val_proc[col].dtype == 'object':
+                    X_val_proc[col] = pd.Categorical(X_val_proc[col]).codes.astype(float)
+            X_val_np = X_val_proc.values.astype(np.float32) if hasattr(X_val_proc, 'values') else np.array(X_val_proc, dtype=np.float32)
             y_val_np = y_val.values if hasattr(y_val, 'values') else y_val
             X_val_np = np.nan_to_num(X_val_np, nan=0.0)
             
@@ -248,7 +263,15 @@ class NNModel(BaseModel):
         """Generate predictions using trained model."""
         self.model.eval()
         
-        X_np = X.values if hasattr(X, 'values') else X
+        # Convert categorical columns to numeric codes
+        X_proc = X.copy()
+        for col in X_proc.columns:
+            if X_proc[col].dtype.name == 'category':
+                X_proc[col] = X_proc[col].cat.codes.astype(float)
+            elif X_proc[col].dtype == 'object':
+                X_proc[col] = pd.Categorical(X_proc[col]).codes.astype(float)
+        
+        X_np = X_proc.values.astype(np.float32) if hasattr(X_proc, 'values') else np.array(X_proc, dtype=np.float32)
         X_np = np.nan_to_num(X_np, nan=0.0)
         
         X_t = torch.FloatTensor(X_np).to(self.device)
