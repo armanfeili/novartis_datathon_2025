@@ -68,7 +68,7 @@ def create_validation_split(
         
         if len(stratify_available) > 0:
             if len(stratify_available) == 1:
-                stratify_values = series_info[stratify_available[0]]
+                stratify_values = series_info[stratify_available[0]].astype(str)
             else:
                 # Multi-column stratification: combine columns
                 series_info['_stratify_combined'] = series_info[stratify_available].astype(str).agg('_'.join, axis=1)

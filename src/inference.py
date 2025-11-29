@@ -242,6 +242,105 @@ def verify_inverse_transform(
     return True
 
 
+def _expand_panel_for_prediction(
+    panel: pd.DataFrame,
+    start_month: int,
+    end_month: int
+) -> pd.DataFrame:
+    """
+    Expand panel to include rows for future months that need predictions.
+    
+    For test data, we often only have historical (pre-entry) data but need to
+    create features for future months (0-23 for S1, 6-23 for S2).
+    
+    This function creates placeholder rows for the future months by:
+    1. Creating rows for each series × future month combination
+    2. Forward-filling static columns (country, brand_name, ther_area, etc.)
+    3. Setting time-varying columns (volume, n_gxs) to NaN or appropriate values
+    
+    Args:
+        panel: Existing panel DataFrame
+        start_month: First prediction month (0 for S1, 6 for S2)
+        end_month: Last prediction month (23)
+        
+    Returns:
+        Expanded panel with future month rows
+    """
+    series_keys = ['country', 'brand_name']
+    
+    # Get unique series with their static info (use observed=True to avoid category expansion)
+    series_info = panel.groupby(series_keys, observed=True).first().reset_index()
+    
+    # Get columns that are static per series (carry forward)
+    # Include 'month' (calendar month) but we'll compute it for future months
+    time_varying = ['months_postgx', 'volume', 'n_gxs', 'y_norm']
+    static_cols = [c for c in panel.columns if c not in time_varying]
+    
+    # Get the last known calendar month and months_postgx to extrapolate
+    last_known = panel.groupby(series_keys, observed=True).agg({
+        'months_postgx': 'max',
+        'month': 'last'
+    }).reset_index()
+    last_known.columns = series_keys + ['last_months_postgx', 'last_month']
+    
+    # Convert month from category to string for mapping
+    last_known['last_month'] = last_known['last_month'].astype(str)
+    
+    # Calendar month names for mapping
+    month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    month_to_num = {m: i+1 for i, m in enumerate(month_names)}
+    num_to_month = {i+1: m for i, m in enumerate(month_names)}
+    
+    # Create rows for future months
+    future_months = list(range(start_month, end_month + 1))
+    
+    # Build expanded rows
+    future_rows = []
+    for month_postgx in future_months:
+        month_df = series_info[static_cols].copy()
+        month_df['months_postgx'] = month_postgx
+        month_df['volume'] = np.nan  # Will be predicted
+        month_df['n_gxs'] = np.nan  # Will be filled below
+        
+        # Compute calendar month for each series
+        month_df = month_df.merge(last_known, on=series_keys, how='left')
+        
+        # Calculate how many months to advance from last known
+        months_advance = month_postgx - month_df['last_months_postgx']
+        
+        # Convert last_month to number, add advance, wrap around
+        if 'last_month' in month_df.columns:
+            last_month_num = month_df['last_month'].map(month_to_num).fillna(1).astype(int)
+            new_month_num = ((last_month_num - 1 + months_advance) % 12) + 1
+            month_df['month'] = new_month_num.map(num_to_month)
+        
+        # Drop helper columns
+        month_df = month_df.drop(columns=['last_months_postgx', 'last_month'], errors='ignore')
+        
+        future_rows.append(month_df)
+    
+    future_df = pd.concat(future_rows, ignore_index=True)
+    
+    # Combine with existing panel (keep all historical data for feature engineering)
+    expanded = pd.concat([panel, future_df], ignore_index=True)
+    
+    # Sort by series and month
+    expanded = expanded.sort_values(series_keys + ['months_postgx']).reset_index(drop=True)
+    
+    # Forward-fill n_gxs within each series (use last known value for future months)
+    expanded['n_gxs'] = expanded.groupby(series_keys, observed=True)['n_gxs'].transform(
+        lambda x: x.ffill().bfill()
+    )
+    
+    logger.info(
+        f"Expanded panel: {len(panel)} -> {len(expanded)} rows "
+        f"(added months {start_month}-{end_month})"
+    )
+    
+    return expanded
+
+
 def detect_test_scenarios(test_volume: pd.DataFrame) -> Dict[int, List[Tuple[str, str]]]:
     """
     Identify which test series belong to Scenario 1 vs 2.
@@ -264,15 +363,15 @@ def detect_test_scenarios(test_volume: pd.DataFrame) -> Dict[int, List[Tuple[str
     
     series_keys = ['country', 'brand_name']
     
-    # Get min months_postgx per series
-    series_min_month = test_volume.groupby(series_keys)['months_postgx'].min().reset_index()
+    # Get min months_postgx per series (use observed=True to avoid creating all category combinations)
+    series_min_month = test_volume.groupby(series_keys, observed=True)['months_postgx'].min().reset_index()
     series_min_month.columns = series_keys + ['min_month']
     
     # Scenario 1: series that need predictions from month 0
     # Scenario 2: series that need predictions from month 6 (have months 0-5)
     
     # Get max months_postgx to understand the series range
-    series_max_month = test_volume.groupby(series_keys)['months_postgx'].max().reset_index()
+    series_max_month = test_volume.groupby(series_keys, observed=True)['months_postgx'].max().reset_index()
     series_max_month.columns = series_keys + ['max_month']
     
     series_info = series_min_month.merge(series_max_month, on=series_keys)
@@ -360,13 +459,16 @@ def generate_submission(
         
         predictions = []
         
-        # Process Scenario 1 series
+        # Process Scenario 1 series (need predictions for months 0-23)
         if len(scenario_split[1]) > 0:
             s1_series = pd.DataFrame(scenario_split[1], columns=['country', 'brand_name'])
             s1_panel = test_panel.merge(s1_series, on=['country', 'brand_name'])
             
+            # Expand panel to include future months (0-23) for prediction
+            s1_panel_expanded = _expand_panel_for_prediction(s1_panel, start_month=0, end_month=23)
+            
             # Build features for Scenario 1
-            s1_features = make_features(s1_panel, scenario=1, mode='test')
+            s1_features = make_features(s1_panel_expanded, scenario=1, mode='test')
             
             # Filter to prediction rows (months 0-23)
             s1_pred_rows = s1_features[
@@ -394,13 +496,16 @@ def generate_submission(
                 
                 logger.info(f"Scenario 1: {len(pred_df)} predictions generated")
         
-        # Process Scenario 2 series
+        # Process Scenario 2 series (need predictions for months 6-23)
         if len(scenario_split[2]) > 0:
             s2_series = pd.DataFrame(scenario_split[2], columns=['country', 'brand_name'])
             s2_panel = test_panel.merge(s2_series, on=['country', 'brand_name'])
             
+            # Expand panel to include future months (6-23) for prediction  
+            s2_panel_expanded = _expand_panel_for_prediction(s2_panel, start_month=6, end_month=23)
+            
             # Build features for Scenario 2
-            s2_features = make_features(s2_panel, scenario=2, mode='test')
+            s2_features = make_features(s2_panel_expanded, scenario=2, mode='test')
             
             # Filter to prediction rows (months 6-23)
             s2_pred_rows = s2_features[
@@ -1171,10 +1276,41 @@ def main():
     template_path = get_project_root() / data_config['files']['submission_template']
     template = pd.read_csv(template_path)
     
-    # Load models
-    import joblib
-    model_s1 = joblib.load(args.model_s1)
-    model_s2 = joblib.load(args.model_s2)
+    # Load models - detect format and use appropriate loader
+    def load_model(path: str):
+        """Load model with appropriate loader based on file extension."""
+        import joblib
+        from pathlib import Path
+        path_obj = Path(path)
+        
+        # Check file extension to determine loader
+        if path_obj.suffix in ['.cbm', '.bin']:
+            # CatBoost native format
+            try:
+                from catboost import CatBoostRegressor
+                model = CatBoostRegressor()
+                model.load_model(path)
+                return model
+            except Exception:
+                pass
+        
+        # Try joblib for other formats (pkl, joblib, etc.)
+        try:
+            return joblib.load(path)
+        except Exception:
+            pass
+        
+        # Try CatBoost as fallback
+        try:
+            from catboost import CatBoostRegressor
+            model = CatBoostRegressor()
+            model.load_model(path)
+            return model
+        except Exception as e:
+            raise ValueError(f"Could not load model from {path}: {e}")
+    
+    model_s1 = load_model(args.model_s1)
+    model_s2 = load_model(args.model_s2)
     
     # Model info for logging
     model_info = {

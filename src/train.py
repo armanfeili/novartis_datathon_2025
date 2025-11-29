@@ -1661,7 +1661,8 @@ def get_feature_matrix_and_meta(
     """
     For INFERENCE: separate features from meta (no target).
     
-    CRITICAL: feature_cols must match training exactly!
+    CRITICAL: Uses META_COLS same as training's split_features_target_meta
+    to ensure feature_cols match the model exactly!
     
     Args:
         df: DataFrame with features and meta columns
@@ -1670,8 +1671,16 @@ def get_feature_matrix_and_meta(
         X: Pure features for model
         meta: Meta columns including avg_vol_12m for inverse transform
     """
-    # Identify feature columns (everything except meta)
-    feature_cols = [c for c in df.columns if c not in META_COLS]
+    # Use META_COLS to exclude same columns as training
+    # This ensures feature columns match the trained model exactly
+    feature_cols = []
+    for col in df.columns:
+        if col in META_COLS:
+            continue
+        if pd.api.types.is_numeric_dtype(df[col]):
+            feature_cols.append(col)
+        elif df[col].dtype.name == 'category':
+            feature_cols.append(col)
     
     X = df[feature_cols].copy()
     
