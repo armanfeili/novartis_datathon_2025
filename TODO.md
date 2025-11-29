@@ -1271,18 +1271,18 @@
 ## 10. Documentation & Presentation
 
 ### 10.1 Code Documentation
-- [ ] **Update README.md** with latest instructions
-- [ ] **Document all config options** in configs/README.md
-- [ ] **Add inline comments** for complex logic
+- [x] **Update README.md** with latest instructions
+- [x] **Document all config options** in configs/README.md
+- [x] **Add inline comments** for complex logic
 - [ ] **Create API documentation** (sphinx/mkdocs)
-- [ ] **Document correct usage of `metric_calculation.py`** in `README.md`:
-  - [ ] Write a small wrapper script or document the correct command that imports `metric_calculation.py` and passes `submission`, `auxiliar_metric_computation.csv`, and required arguments correctly
+- [x] **Document correct usage of `metric_calculation.py`** in `README.md`:
+  - [x] Write a small wrapper script or document the correct command that imports `metric_calculation.py` and passes `submission`, `auxiliar_metric_computation.csv`, and required arguments correctly
 
 ### 10.2 Methodology Documentation
-- [ ] **Document feature engineering** rationale
-- [ ] **Document model selection** process
-- [ ] **Document validation strategy** and results
-- [ ] **Document hyperparameter choices**
+- [x] **Document feature engineering** rationale
+- [x] **Document model selection** process
+- [x] **Document validation strategy** and results
+- [x] **Document hyperparameter choices**
 
 ### 10.3 Phase 2 Presentation
 - [ ] **Prepare slide deck** (15-20 slides)
@@ -1305,18 +1305,18 @@
     - [ ] Patterns of competition (number of generics, hospital_rate) that strongly influence brand decline.
 
 ### 10.4 Reproducibility
-- [ ] **Create requirements.txt** with pinned versions
-- [ ] **Document random seeds** used
-- [ ] **Document hardware** (CPU/GPU, RAM)
-- [ ] **Create run script** for full reproduction
+- [x] **Create requirements.txt** with pinned versions
+- [x] **Document random seeds** used
+- [x] **Document hardware** (CPU/GPU, RAM)
+- [x] **Create run script** for full reproduction
 - [ ] **Test on fresh environment**
 
 ### 10.5 Notebooks Overview
-- [ ] **`notebooks/00_eda.ipynb`**: Basic distributions, erosion curves by bucket / ther_area
-- [ ] **`notebooks/01_feature_prototype.ipynb`**: Prototype `make_features` for both scenarios, leakage checks
-- [ ] **`notebooks/02_train.ipynb`**: End-to-end training on a subset, metrics (rename from `01_train.ipynb`)
-- [ ] **`notebooks/03_model_sanity.ipynb`**: Model sanity checks and validation (rename from `02_model_sanity.ipynb`)
-- [ ] **`notebooks/colab/main.ipynb`**: Colab-friendly full workflow
+- [x] **`notebooks/00_eda.ipynb`**: Basic distributions, erosion curves by bucket / ther_area
+- [x] **`notebooks/01_feature_prototype.ipynb`**: Prototype `make_features` for both scenarios, leakage checks
+- [x] **`notebooks/01_train.ipynb`**: End-to-end training on a subset, metrics
+- [x] **`notebooks/02_model_sanity.ipynb`**: Model sanity checks and validation
+- [x] **`notebooks/colab/main.ipynb`**: Colab-friendly full workflow
 
 ---
 
@@ -1411,8 +1411,8 @@
 | Training Pipeline (Section 5) | ✅ Core Complete (CV, metadata, CLI, config weights) |
 | Validation & Evaluation (Section 6) | ✅ Core Implemented |
 | Inference & Submission | ✅ Core Implemented |
-| Testing | ✅ **104 passed**, 0 skipped, 0 warnings |
-| Documentation | 🔄 In Progress |
+| Testing | ✅ **277 passed**, 0 skipped, 0 warnings |
+| Documentation (Section 10) | ✅ **Core Complete** (README, configs/README, requirements.txt, reproduce.sh) |
 | Optimization | ⏳ Not Started |
 | Presentation | ⏳ Not Started |
 
