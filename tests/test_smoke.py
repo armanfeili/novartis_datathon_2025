@@ -6067,6 +6067,255 @@ class TestCodeQuality:
         assert True
 
 
+# =============================================================================
+# SECTION 10 TESTS: DOCUMENTATION
+# =============================================================================
+
+
+class TestDocumentation:
+    """Tests for documentation completeness and correctness (Section 10)."""
+    
+    def test_readme_exists(self):
+        """Test that main README.md exists."""
+        readme_path = Path(__file__).parent.parent / 'README.md'
+        assert readme_path.exists(), "README.md should exist"
+    
+    def test_readme_has_required_sections(self):
+        """Test that README.md has all required sections."""
+        readme_path = Path(__file__).parent.parent / 'README.md'
+        content = readme_path.read_text()
+        
+        required_sections = [
+            '## Competition Overview',
+            '## Quick Start',
+            '## Project Structure',
+            '## Installation',
+            '## Data Overview',
+            '## Configuration',
+            '## CLI Reference',
+            '## Feature Engineering',
+            '## Models',
+            '## Validation Strategy',
+            '## Metric Calculation',
+            '## Testing',
+            '## Notebooks',
+            '## Reproducibility',
+        ]
+        
+        for section in required_sections:
+            assert section in content, f"README.md should have section: {section}"
+    
+    def test_readme_has_cli_examples(self):
+        """Test that README.md has CLI usage examples."""
+        readme_path = Path(__file__).parent.parent / 'README.md'
+        content = readme_path.read_text()
+        
+        # Should have training CLI examples
+        assert 'python -m src.train' in content, "README should show training CLI"
+        assert '--scenario' in content, "README should document --scenario flag"
+        assert '--model' in content, "README should document --model flag"
+        
+        # Should have inference CLI examples
+        assert 'python -m src.inference' in content, "README should show inference CLI"
+    
+    def test_readme_documents_metric_calculation(self):
+        """Test that README.md documents metric calculation usage."""
+        readme_path = Path(__file__).parent.parent / 'README.md'
+        content = readme_path.read_text()
+        
+        # Should document official metric script usage
+        assert 'compute_metric1' in content, "README should document compute_metric1"
+        assert 'compute_metric2' in content, "README should document compute_metric2"
+        assert 'df_aux' in content or 'auxiliary' in content.lower(), \
+            "README should document auxiliary file"
+    
+    def test_configs_readme_exists(self):
+        """Test that configs/README.md exists."""
+        readme_path = Path(__file__).parent.parent / 'configs' / 'README.md'
+        assert readme_path.exists(), "configs/README.md should exist"
+    
+    def test_configs_readme_documents_all_configs(self):
+        """Test that configs/README.md documents all config files."""
+        readme_path = Path(__file__).parent.parent / 'configs' / 'README.md'
+        content = readme_path.read_text()
+        
+        config_files = [
+            'data.yaml',
+            'features.yaml',
+            'run_defaults.yaml',
+            'model_cat.yaml',
+            'model_lgbm.yaml',
+            'model_xgb.yaml',
+            'model_linear.yaml',
+            'model_nn.yaml',
+        ]
+        
+        for config_file in config_files:
+            assert config_file in content, f"configs/README.md should document {config_file}"
+    
+    def test_configs_readme_has_usage_examples(self):
+        """Test that configs/README.md has usage examples."""
+        readme_path = Path(__file__).parent.parent / 'configs' / 'README.md'
+        content = readme_path.read_text()
+        
+        # Should have loading examples
+        assert 'load_config' in content, "Should show how to load configs"
+        
+        # Should document key sections
+        assert 'reproducibility' in content.lower(), "Should document reproducibility settings"
+        assert 'sample_weights' in content.lower() or 'sample weights' in content.lower(), \
+            "Should document sample weights"
+    
+    def test_requirements_has_pinned_versions(self):
+        """Test that requirements.txt has pinned versions."""
+        requirements_path = Path(__file__).parent.parent / 'requirements.txt'
+        assert requirements_path.exists(), "requirements.txt should exist"
+        
+        content = requirements_path.read_text()
+        
+        # Check that versions are pinned (have ==)
+        lines = [l.strip() for l in content.split('\n') 
+                 if l.strip() and not l.strip().startswith('#')]
+        
+        pinned_count = sum(1 for l in lines if '==' in l)
+        
+        # At least 80% should be pinned
+        assert pinned_count >= len(lines) * 0.8, \
+            f"Most dependencies should have pinned versions ({pinned_count}/{len(lines)})"
+    
+    def test_requirements_has_core_packages(self):
+        """Test that requirements.txt has core packages."""
+        requirements_path = Path(__file__).parent.parent / 'requirements.txt'
+        content = requirements_path.read_text().lower()
+        
+        core_packages = [
+            'numpy',
+            'pandas',
+            'scikit-learn',
+            'catboost',
+            'pytest',
+        ]
+        
+        for pkg in core_packages:
+            assert pkg in content, f"requirements.txt should have {pkg}"
+    
+    def test_reproduce_script_exists(self):
+        """Test that reproduce.sh script exists."""
+        script_path = Path(__file__).parent.parent / 'reproduce.sh'
+        assert script_path.exists(), "reproduce.sh should exist"
+    
+    def test_reproduce_script_is_executable(self):
+        """Test that reproduce.sh is executable (Unix permissions)."""
+        import os
+        script_path = Path(__file__).parent.parent / 'reproduce.sh'
+        
+        if script_path.exists():
+            # Check executable bit
+            mode = os.stat(script_path).st_mode
+            is_executable = mode & 0o111  # Any execute bit
+            assert is_executable, "reproduce.sh should be executable"
+    
+    def test_reproduce_script_has_required_sections(self):
+        """Test that reproduce.sh has required functionality."""
+        script_path = Path(__file__).parent.parent / 'reproduce.sh'
+        content = script_path.read_text()
+        
+        # Should train both scenarios
+        assert 'scenario 1' in content.lower() or '--scenario 1' in content.lower(), \
+            "Should train Scenario 1"
+        assert 'scenario 2' in content.lower() or '--scenario 2' in content.lower(), \
+            "Should train Scenario 2"
+        
+        # Should generate submission
+        assert 'inference' in content.lower() or 'submission' in content.lower(), \
+            "Should generate submission"
+        
+        # Should activate virtual environment
+        assert '.venv' in content or 'venv' in content, \
+            "Should reference virtual environment"
+    
+    def test_todo_md_exists(self):
+        """Test that TODO.md exists."""
+        todo_path = Path(__file__).parent.parent / 'TODO.md'
+        assert todo_path.exists(), "TODO.md should exist"
+    
+    def test_contributing_md_exists(self):
+        """Test that CONTRIBUTING.md exists."""
+        contributing_path = Path(__file__).parent.parent / 'CONTRIBUTING.md'
+        assert contributing_path.exists(), "CONTRIBUTING.md should exist"
+    
+    def test_license_exists(self):
+        """Test that LICENSE exists."""
+        license_path = Path(__file__).parent.parent / 'LICENSE'
+        assert license_path.exists(), "LICENSE should exist"
+    
+    def test_metric_calculation_script_exists(self):
+        """Test that official metric calculation script exists."""
+        script_path = Path(__file__).parent.parent / 'docs' / 'guide' / 'metric_calculation.py'
+        assert script_path.exists(), "docs/guide/metric_calculation.py should exist"
+    
+    def test_metric_calculation_script_importable(self):
+        """Test that official metric calculation script can be imported."""
+        import sys
+        script_dir = str(Path(__file__).parent.parent / 'docs' / 'guide')
+        
+        # Temporarily add to path
+        sys.path.insert(0, script_dir)
+        try:
+            import metric_calculation
+            assert hasattr(metric_calculation, 'compute_metric1')
+            assert hasattr(metric_calculation, 'compute_metric2')
+        finally:
+            sys.path.remove(script_dir)
+    
+    def test_notebooks_exist(self):
+        """Test that expected notebooks exist."""
+        notebooks_dir = Path(__file__).parent.parent / 'notebooks'
+        
+        expected_notebooks = [
+            '00_eda.ipynb',
+            '01_feature_prototype.ipynb',
+            '01_train.ipynb',
+            '02_model_sanity.ipynb',
+        ]
+        
+        for notebook in expected_notebooks:
+            notebook_path = notebooks_dir / notebook
+            assert notebook_path.exists(), f"Notebook {notebook} should exist"
+    
+    def test_colab_notebook_exists(self):
+        """Test that Colab notebook exists."""
+        colab_path = Path(__file__).parent.parent / 'notebooks' / 'colab' / 'main.ipynb'
+        assert colab_path.exists(), "notebooks/colab/main.ipynb should exist"
+    
+    def test_all_yaml_configs_valid(self):
+        """Test that all YAML configs are valid and loadable."""
+        import yaml
+        
+        configs_dir = Path(__file__).parent.parent / 'configs'
+        yaml_files = list(configs_dir.glob('*.yaml'))
+        
+        assert len(yaml_files) >= 7, "Should have at least 7 YAML config files"
+        
+        for yaml_file in yaml_files:
+            try:
+                with open(yaml_file, 'r') as f:
+                    config = yaml.safe_load(f)
+                assert isinstance(config, dict), f"{yaml_file.name} should load as dict"
+            except yaml.YAMLError as e:
+                pytest.fail(f"Invalid YAML in {yaml_file.name}: {e}")
+    
+    def test_data_readme_exists(self):
+        """Test that data/README.md exists."""
+        readme_path = Path(__file__).parent.parent / 'data' / 'README.md'
+        assert readme_path.exists(), "data/README.md should exist"
+    
+    def test_submissions_readme_exists(self):
+        """Test that submissions/README.md exists."""
+        readme_path = Path(__file__).parent.parent / 'submissions' / 'README.md'
+        assert readme_path.exists(), "submissions/README.md should exist"
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
 
