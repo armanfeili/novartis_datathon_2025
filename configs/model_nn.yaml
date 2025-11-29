@@ -1,11 +1,75 @@
-# Neural Network model configuration for Novartis Datathon 2025
+# =============================================================================
+# Neural Network Model Configuration - Novartis Datathon 2025
+# =============================================================================
+# Experimental: PyTorch-based neural network for time series forecasting
+#
+# Usage:
+#   python -m src.train --scenario 1 --model nn --model-config configs/model_nn.yaml
+#   python -m src.train --scenario 1 --model nn --config-id large
+#   python -m src.train --scenario 1 --model nn --sweep
+# =============================================================================
 
 model:
   name: "neural_network"
-  framework: "pytorch"  # pytorch, tensorflow
-  task: "regression"    # regression, binary, multiclass
+  framework: "pytorch"
+  task: "regression"
+  priority: 5  # Lower priority - experimental
 
-# Architecture
+# =============================================================================
+# ACTIVE CONFIGURATION ID
+# =============================================================================
+active_config_id: null
+
+# =============================================================================
+# SWEEP CONFIGURATION
+# =============================================================================
+sweep:
+  enabled: false
+  mode: "configs"
+  selection_metric: "official_metric"
+  n_folds: 3
+  
+  # Grid mode parameters
+  grid:
+    learning_rate: [0.001, 0.0005, 0.0001]
+    hidden_layers_idx: [0, 1, 2]  # Maps to hidden_layer_configs below
+    dropout: [0.1, 0.2, 0.3]
+
+# =============================================================================
+# NAMED CONFIGURATIONS
+# =============================================================================
+sweep_configs:
+  - id: "default"
+    description: "Default neural network configuration"
+    params:
+      learning_rate: 0.001
+      hidden_layers: [256, 128, 64]
+      dropout: 0.2
+
+  - id: "small"
+    description: "Smaller network, faster training"
+    params:
+      learning_rate: 0.001
+      hidden_layers: [128, 64]
+      dropout: 0.1
+
+  - id: "large"
+    description: "Larger network for complex patterns"
+    params:
+      learning_rate: 0.0005
+      hidden_layers: [512, 256, 128, 64]
+      dropout: 0.3
+
+  - id: "deep"
+    description: "Deeper network with more layers"
+    params:
+      learning_rate: 0.0001
+      hidden_layers: [256, 256, 128, 128, 64]
+      dropout: 0.2
+
+# =============================================================================
+# ARCHITECTURE
+# =============================================================================
 architecture:
   type: "mlp"           # mlp, tabnet, transformer
   
@@ -15,9 +79,11 @@ architecture:
     activation: "relu"          # relu, leaky_relu, gelu, silu
     dropout: 0.2
     batch_norm: true
-    output_activation: null     # null for regression, sigmoid/softmax for classification
+    output_activation: null     # null for regression
 
-# Training hyperparameters
+# =============================================================================
+# TRAINING HYPERPARAMETERS
+# =============================================================================
 training:
   epochs: 100
   batch_size: 256
@@ -41,37 +107,48 @@ training:
     min_delta: 0.000001
     restore_best_weights: true
 
-# Checkpointing
+# =============================================================================
+# CHECKPOINTING
+# =============================================================================
 checkpointing:
   save_every_n_epochs: 10
   save_best: true
   metric: "val_loss"
-  mode: "min"                   # min for loss, max for accuracy
+  mode: "min"
 
-# Data
+# =============================================================================
+# DATA LOADING
+# =============================================================================
 data:
   num_workers: 4
   pin_memory: true
   shuffle_train: true
 
-# Preprocessing for NN
+# =============================================================================
+# PREPROCESSING
+# =============================================================================
 preprocessing:
   scale_features: true
   scaler: "standard"
   handle_missing: "mean"
-  categorical_encoding: "embedding"  # embedding, onehot
+  categorical_encoding: "embedding"
 
-# Mixed precision training
+# =============================================================================
+# PERFORMANCE OPTIMIZATION
+# =============================================================================
 amp:
-  enabled: true
+  enabled: true  # Mixed precision training
   
-# Device
 device: "auto"  # auto, cuda, cpu
 
-# Reproducibility
+# =============================================================================
+# REPRODUCIBILITY
+# =============================================================================
 seed: 42
 
-# Logging
+# =============================================================================
+# LOGGING
+# =============================================================================
 logging:
   log_every_n_steps: 50
   use_tensorboard: false

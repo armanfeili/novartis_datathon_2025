@@ -70,7 +70,12 @@ from .evaluate import (
     make_metric_record, save_metric_records,
     METRIC_NAME_S1, METRIC_NAME_S2, METRIC_NAME_RMSE, METRIC_NAME_MAE
 )
-from .config_sweep import expand_sweep, get_sweep_axes, build_sweep_run_id
+from .config_sweep import (
+    expand_sweep, get_sweep_axes, build_sweep_run_id,
+    get_config_by_id, apply_config_overrides, get_active_config,
+    generate_sweep_runs, SweepResultsLogger, get_model_filename, 
+    get_submission_filename, deep_merge
+)
 
 logger = logging.getLogger(__name__)
 
@@ -2095,13 +2100,197 @@ def _get_model(model_type: str, config: Optional[dict] = None):
         from .models.ensemble import BlendingEnsemble
         return BlendingEnsemble(config)
     
+    # Hybrid Physics + ML model
+    elif model_type_lower in ('hybrid_lgbm', 'hybrid_lightgbm'):
+        from .models.hybrid_physics_ml import HybridPhysicsMLModel
+        decay_rate = config.get('physics', {}).get('decay_rate', 0.05)
+        ml_params = config.get('ml_model', {}).get('lightgbm', {})
+        return HybridPhysicsMLModel(
+            ml_model_type='lightgbm',
+            decay_rate=decay_rate,
+            params=ml_params if ml_params else None
+        )
+    elif model_type_lower in ('hybrid_xgb', 'hybrid_xgboost'):
+        from .models.hybrid_physics_ml import HybridPhysicsMLModel
+        decay_rate = config.get('physics', {}).get('decay_rate', 0.05)
+        ml_params = config.get('ml_model', {}).get('xgboost', {})
+        return HybridPhysicsMLModel(
+            ml_model_type='xgboost',
+            decay_rate=decay_rate,
+            params=ml_params if ml_params else None
+        )
+    elif model_type_lower == 'hybrid':
+        from .models.hybrid_physics_ml import HybridPhysicsMLModel
+        decay_rate = config.get('physics', {}).get('decay_rate', 0.05)
+        ml_type = config.get('ml_model', {}).get('type', 'lightgbm')
+        ml_params = config.get('ml_model', {}).get(ml_type, {})
+        return HybridPhysicsMLModel(
+            ml_model_type=ml_type,
+            decay_rate=decay_rate,
+            params=ml_params if ml_params else None
+        )
+    
+    # ARIMA + Holt-Winters hybrid model
+    elif model_type_lower in ('arihow', 'arima_hw', 'arima_holtwinters'):
+        from .models.arihow import ARIHOWModel
+        arima_params = config.get('arima', {})
+        hw_params = config.get('holt_winters', {})
+        
+        # Map config to model parameters
+        arima_order = tuple(arima_params.get('order', [1, 1, 1]))
+        seasonal_order = tuple(arima_params.get('seasonal_order', [0, 0, 0, 0])) if arima_params.get('seasonal', False) else (0, 0, 0, 0)
+        
+        return ARIHOWModel(
+            arima_order=arima_order,
+            seasonal_order=seasonal_order,
+            hw_trend=hw_params.get('trend', 'add'),
+            hw_seasonal=hw_params.get('seasonal', None),
+            hw_seasonal_periods=hw_params.get('seasonal_periods', 12),
+            weight_window=config.get('weight_window', 12),
+            suppress_warnings=config.get('suppress_warnings', True)
+        )
+    
     else:
         available = [
             'catboost', 'lightgbm', 'xgboost', 'linear', 'nn',
             'global_mean', 'flat', 'trend', 'historical_curve',
-            'averaging', 'weighted', 'stacking', 'blending'
+            'averaging', 'weighted', 'stacking', 'blending',
+            'hybrid', 'hybrid_lgbm', 'hybrid_xgb', 'arihow'
         ]
         raise ValueError(f"Unknown model type: {model_type}. Available: {available}")
+
+
+def train_hybrid_model(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    meta_train: pd.DataFrame,
+    X_val: pd.DataFrame,
+    y_val: pd.Series,
+    meta_val: pd.DataFrame,
+    scenario,
+    model_config: Optional[dict] = None,
+    run_config: Optional[dict] = None,
+    run_id: Optional[str] = None,
+    metrics_dir: Optional[Path] = None
+) -> Tuple[Any, Dict]:
+    """
+    Train a hybrid physics + ML model for a specific scenario.
+    
+    The hybrid model requires additional inputs:
+    - avg_vol: Pre-LOE average volume (from meta_train/meta_val)
+    - months_postgx: Months since generic entry
+    
+    Args:
+        X_train, y_train, meta_train: Training data
+        X_val, y_val, meta_val: Validation data
+        scenario: 1 or 2
+        model_config: Hybrid model configuration
+        run_config: Run configuration for sample weights
+        run_id: Optional run ID for tracking
+        metrics_dir: Optional directory for metrics
+        
+    Returns:
+        (trained_model, metrics_dict)
+    """
+    from .models.hybrid_physics_ml import HybridPhysicsMLModel
+    
+    scenario = _normalize_scenario(scenario)
+    model_config = model_config or {}
+    
+    # Extract hybrid-specific config
+    decay_rate = model_config.get('physics', {}).get('decay_rate', 0.05)
+    ml_type = model_config.get('ml_model', {}).get('type', 'lightgbm')
+    ml_params = model_config.get('ml_model', {}).get(ml_type, {})
+    
+    # Create model
+    model = HybridPhysicsMLModel(
+        ml_model_type=ml_type,
+        decay_rate=decay_rate,
+        params=ml_params if ml_params else None
+    )
+    
+    # Extract avg_vol and months from metadata
+    avg_vol_train = meta_train['avg_vol_12m'].values
+    months_train = meta_train['months_postgx'].values
+    avg_vol_val = meta_val['avg_vol_12m'].values
+    months_val = meta_val['months_postgx'].values
+    
+    # Compute sample weights
+    sample_weights = compute_sample_weights(meta_train, scenario, config=run_config)
+    
+    # Train
+    train_start = time.time()
+    
+    early_stopping_rounds = model_config.get('training', {}).get('early_stopping_rounds', 50)
+    
+    model.fit(
+        X_train, y_train.values if isinstance(y_train, pd.Series) else y_train,
+        avg_vol_train=avg_vol_train,
+        months_train=months_train,
+        X_val=X_val,
+        y_val=y_val.values if isinstance(y_val, pd.Series) else y_val,
+        avg_vol_val=avg_vol_val,
+        months_val=months_val,
+        sample_weight_train=sample_weights.values if isinstance(sample_weights, pd.Series) else sample_weights,
+        early_stopping_rounds=early_stopping_rounds
+    )
+    
+    train_time = time.time() - train_start
+    
+    # Compute validation metrics
+    val_preds_norm = model.predict(X_val, avg_vol_val, months_val)
+    
+    # Denormalize for official metric
+    val_preds_volume = val_preds_norm * avg_vol_val
+    val_actual_volume = y_val.values * avg_vol_val
+    
+    # Build DataFrames for official metric
+    df_pred = meta_val[['country', 'brand_name', 'months_postgx']].copy()
+    df_pred['volume'] = val_preds_volume
+    
+    df_actual = meta_val[['country', 'brand_name', 'months_postgx']].copy()
+    df_actual['volume'] = val_actual_volume
+    
+    # Create aux file from validation data
+    val_with_bucket = meta_val[['country', 'brand_name', 'avg_vol_12m', 'bucket']].drop_duplicates()
+    val_with_bucket = val_with_bucket.rename(columns={'avg_vol_12m': 'avg_vol'})
+    
+    # Compute official metric
+    try:
+        if scenario == 1:
+            official_metric = compute_metric1(df_actual, df_pred, val_with_bucket)
+        else:
+            official_metric = compute_metric2(df_actual, df_pred, val_with_bucket)
+    except Exception as e:
+        logger.warning(f"Could not compute official metric: {e}")
+        official_metric = np.nan
+    
+    # Additional metrics
+    rmse = np.sqrt(np.mean((val_preds_norm - y_val.values) ** 2))
+    mae = np.mean(np.abs(val_preds_norm - y_val.values))
+    
+    # Get physics vs ML contribution stats
+    train_stats = model.get_training_stats()
+    
+    metrics = {
+        'official_metric': official_metric,
+        'rmse_norm': rmse,
+        'mae_norm': mae,
+        'scenario': scenario,
+        'model_type': f'hybrid_{ml_type}',
+        'train_time_seconds': train_time,
+        'n_train_samples': len(X_train),
+        'n_val_samples': len(X_val),
+        'n_features': len(X_train.columns),
+        'decay_rate': decay_rate,
+        'physics_rmse': train_stats.get('physics_rmse', np.nan),
+        'residual_std': train_stats.get('residual_std', np.nan),
+    }
+    
+    logger.info(f"Hybrid model metrics: Official={official_metric:.4f}, RMSE={rmse:.4f}")
+    logger.info(f"Physics baseline RMSE: {train_stats.get('physics_rmse', 'N/A')}")
+    
+    return model, metrics
 
 
 def run_cross_validation(
@@ -2273,6 +2462,7 @@ def run_experiment(
     scenario,
     model_type: str = 'catboost',
     model_config_path: Optional[str] = None,
+    model_config: Optional[Dict] = None,
     run_config_path: str = 'configs/run_defaults.yaml',
     data_config_path: str = 'configs/data.yaml',
     features_config_path: str = 'configs/features.yaml',
@@ -2289,6 +2479,7 @@ def run_experiment(
         scenario: 1, 2, "scenario1", or "scenario2"
         model_type: Model type to train
         model_config_path: Path to model config
+        model_config: Model config dict (takes precedence over path)
         run_config_path: Path to run defaults config
         data_config_path: Path to data config
         features_config_path: Path to features config
@@ -2304,7 +2495,10 @@ def run_experiment(
     run_config = load_config(run_config_path)
     data_config = load_config(data_config_path)
     features_config = load_config(features_config_path) if features_config_path else {}
-    model_config = load_config(model_config_path) if model_config_path else {}
+    
+    # Load model config from dict or path
+    if model_config is None:
+        model_config = load_config(model_config_path) if model_config_path else {}
     
     # Setup
     set_seed(run_config['reproducibility']['seed'])
@@ -3099,27 +3293,30 @@ def run_sweep_experiments(
     scenario: int,
     model_type: str = 'catboost',
     model_config_path: Optional[str] = None,
+    model_config: Optional[Dict] = None,
     run_config_path: str = 'configs/run_defaults.yaml',
     data_config_path: str = 'configs/data.yaml',
     features_config_path: str = 'configs/features.yaml',
     base_run_name: Optional[str] = None,
     use_cached_features: bool = True,
     force_rebuild: bool = False,
-    collect_summary: bool = True
+    collect_summary: bool = True,
+    quick_sweep: bool = False,
+    use_named_configs: bool = True,
+    use_sweep_grid: bool = False
 ) -> Dict[str, Any]:
     """
-    Run a sweep of experiments based on config lists.
+    Run a sweep of experiments based on named configs or sweep grid.
     
-    When a model config contains list values for sweepable parameters
-    (e.g., depth: [4, 6, 8]), this function:
-    1. Expands all combinations via Cartesian product
-    2. Trains a model for each combination
-    3. Collects results and returns summary
+    Supports two sweep modes:
+    1. Named configs: Pre-defined parameter sets in 'named_configs' list
+    2. Sweep grid: Cartesian product of 'sweep_grid' parameter lists
     
     Args:
         scenario: 1 or 2
         model_type: Model type to train
-        model_config_path: Path to model config with potential list values
+        model_config_path: Path to model config file
+        model_config: Model config dict (takes precedence over path)
         run_config_path: Path to run defaults config
         data_config_path: Path to data config
         features_config_path: Path to features config
@@ -3127,6 +3324,9 @@ def run_sweep_experiments(
         use_cached_features: If True, use cached feature loading
         force_rebuild: If True, rebuild features even if cached
         collect_summary: If True, aggregate all metrics into summary
+        quick_sweep: If True, only run first 3 configs
+        use_named_configs: If True, iterate over named_configs list
+        use_sweep_grid: If True, use sweep_grid cartesian product
         
     Returns:
         Dictionary with:
@@ -3143,69 +3343,98 @@ def run_sweep_experiments(
     run_config = load_config(run_config_path)
     data_config = load_config(data_config_path)
     features_config = load_config(features_config_path) if features_config_path else {}
-    model_config = load_config(model_config_path) if model_config_path else {}
     
-    # Check if sweep is enabled
-    sweep_config = model_config.get('sweep', {})
-    sweep_enabled = sweep_config.get('enabled', False)
+    # Load model config from path or use provided dict
+    if model_config is None:
+        model_config = load_config(model_config_path) if model_config_path else {}
     
-    if not sweep_enabled:
-        # No sweep - run single experiment
-        logger.info("Sweep not enabled in config, running single experiment")
-        model, metrics = run_experiment(
-            scenario=scenario,
-            model_type=model_type,
-            model_config_path=model_config_path,
-            run_config_path=run_config_path,
-            data_config_path=data_config_path,
-            features_config_path=features_config_path,
-            run_name=base_run_name,
-            use_cached_features=use_cached_features,
-            force_rebuild=force_rebuild
-        )
-        return {
-            'n_runs': 1,
-            'runs': [(base_run_name, metrics)],
-            'best_run': base_run_name,
-            'best_metrics': metrics,
-            'sweep_metadata': [{}],
-            'summary_df': pd.DataFrame([metrics]) if collect_summary else None
-        }
+    # Generate sweep runs using the new sweep engine
+    sweep_runs = generate_sweep_runs(
+        model_config, 
+        mode='explicit' if use_named_configs else 'grid' if use_sweep_grid else 'both'
+    )
     
-    # Get sweep axes from config
-    sweep_axes = sweep_config.get('axes', [])
-    if not sweep_axes:
-        # Try to detect sweep axes from model type
-        sweep_axes = get_sweep_axes(model_config, model_type)
+    # Check if we have any configs to sweep
+    if not sweep_runs:
+        # Fallback: Check for old-style sweep config
+        sweep_config = model_config.get('sweep', {})
+        sweep_enabled = sweep_config.get('enabled', False)
+        
+        if not sweep_enabled:
+            # No sweep - run single experiment
+            logger.info("Sweep not enabled in config, running single experiment")
+            model, metrics = run_experiment(
+                scenario=scenario,
+                model_type=model_type,
+                model_config_path=model_config_path,
+                run_config_path=run_config_path,
+                data_config_path=data_config_path,
+                features_config_path=features_config_path,
+                run_name=base_run_name,
+                use_cached_features=use_cached_features,
+                force_rebuild=force_rebuild
+            )
+            return {
+                'n_runs': 1,
+                'runs': [(base_run_name, metrics)],
+                'best_run': base_run_name,
+                'best_metrics': metrics,
+                'sweep_metadata': [{}],
+                'summary_df': pd.DataFrame([metrics]) if collect_summary else None
+            }
+        
+        # Legacy sweep mode fallback - try old-style sweep axes
+        sweep_axes = sweep_config.get('axes', [])
+        if not sweep_axes:
+            sweep_axes = get_sweep_axes(model_config, model_type)
+        
+        expanded_configs = expand_sweep(model_config, sweep_axes)
+        n_runs = len(expanded_configs)
+        
+        if n_runs <= 1:
+            logger.info("No sweep configurations found, running single experiment")
+            model, metrics = run_experiment(
+                scenario=scenario,
+                model_type=model_type,
+                model_config_path=model_config_path,
+                run_config_path=run_config_path,
+                data_config_path=data_config_path,
+                features_config_path=features_config_path,
+                run_name=base_run_name,
+                use_cached_features=use_cached_features,
+                force_rebuild=force_rebuild
+            )
+            return {
+                'n_runs': 1,
+                'runs': [(base_run_name, metrics)],
+                'best_run': base_run_name,
+                'best_metrics': metrics,
+                'sweep_metadata': [{}],
+                'summary_df': pd.DataFrame([metrics]) if collect_summary else None
+            }
+        
+        # Convert legacy configs to new format
+        sweep_runs = []
+        for cfg in expanded_configs:
+            meta = cfg.pop('_sweep_metadata', {})
+            sweep_runs.append({
+                'config_id': f"sweep_{len(sweep_runs)+1}",
+                'params': meta.get('axes', {}),
+                'full_config': cfg,
+                'source': 'legacy_sweep'
+            })
     
-    # Expand sweep configurations
-    expanded_configs = expand_sweep(model_config, sweep_axes)
-    n_runs = len(expanded_configs)
+    # Apply quick sweep filter (first 3 configs)
+    if quick_sweep and len(sweep_runs) > 3:
+        logger.info(f"Quick sweep: limiting from {len(sweep_runs)} to 3 configs")
+        sweep_runs = sweep_runs[:3]
     
-    logger.info(f"Config sweep detected: {n_runs} runs across axes {sweep_axes}")
-    
-    if n_runs == 1:
-        # No actual sweep (no lists in sweepable params)
-        logger.info("No list values found in sweep axes, running single experiment")
-        model, metrics = run_experiment(
-            scenario=scenario,
-            model_type=model_type,
-            model_config_path=model_config_path,
-            run_config_path=run_config_path,
-            data_config_path=data_config_path,
-            features_config_path=features_config_path,
-            run_name=base_run_name,
-            use_cached_features=use_cached_features,
-            force_rebuild=force_rebuild
-        )
-        return {
-            'n_runs': 1,
-            'runs': [(base_run_name, metrics)],
-            'best_run': base_run_name,
-            'best_metrics': metrics,
-            'sweep_metadata': [{}],
-            'summary_df': pd.DataFrame([metrics]) if collect_summary else None
-        }
+    n_runs = len(sweep_runs)
+    logger.info(f"Config sweep: {n_runs} configurations to evaluate")
+    for i, run_info in enumerate(sweep_runs[:5], 1):  # Show first 5
+        logger.info(f"  {i}. {run_info.get('config_id', 'unnamed')}: {run_info.get('params', {})}")
+    if n_runs > 5:
+        logger.info(f"  ... and {n_runs - 5} more configs")
     
     # Setup
     set_seed(run_config['reproducibility']['seed'])
@@ -3263,16 +3492,35 @@ def run_sweep_experiments(
     best_official = float('inf')
     all_metrics = []
     
-    for run_idx, resolved_config in enumerate(expanded_configs, 1):
-        sweep_meta = resolved_config.pop('_sweep_metadata', {})
+    for run_idx, run_info in enumerate(sweep_runs, 1):
+        config_id = run_info.get('config_id', f'config_{run_idx}')
+        run_params = run_info.get('params', {})
+        source = run_info.get('source', 'named_config')
+        
+        # Build resolved config by merging base params with run-specific params
+        base_params = model_config.get('params', {})
+        resolved_params = apply_config_overrides(base_params, run_params)
+        
+        # Create full resolved config
+        resolved_config = model_config.copy()
+        resolved_config['params'] = resolved_params
+        resolved_config['_active_config_id'] = config_id
+        
+        # Build sweep metadata for compatibility
+        sweep_meta = {
+            'config_id': config_id,
+            'axes': run_params,
+            'source': source
+        }
         results['sweep_metadata'].append(sweep_meta)
         
-        # Generate unique run ID
-        run_id = build_sweep_run_id(base_run_name, sweep_meta)
+        # Generate unique run ID using config_id
+        run_id = f"{base_run_name}_{config_id}"
         
         logger.info(f"\n{'='*60}")
         logger.info(f"Sweep run {run_idx}/{n_runs}: {run_id}")
-        logger.info(f"Parameters: {sweep_meta.get('axes', {})}")
+        logger.info(f"Config ID: {config_id}")
+        logger.info(f"Parameters: {run_params}")
         logger.info(f"{'='*60}")
         
         try:
@@ -3286,6 +3534,7 @@ def run_sweep_experiments(
                     'model_config': resolved_config,
                     'scenario': scenario,
                     'model_type': model_type,
+                    'config_id': config_id,
                     'sweep_metadata': sweep_meta
                 }, f)
             
@@ -3301,10 +3550,12 @@ def run_sweep_experiments(
             
             # Add sweep info to metrics
             metrics['run_id'] = run_id
+            metrics['config_id'] = config_id
             metrics['sweep_params'] = sweep_meta
             
-            # Save model and metrics
-            model_path = artifacts_dir / f"model_{scenario}.bin"
+            # Save model using naming convention
+            model_filename = get_model_filename(config_id, model_type, scenario)
+            model_path = artifacts_dir / model_filename
             model.save(str(model_path))
             
             with open(artifacts_dir / "metrics.json", "w") as f:
@@ -3322,6 +3573,7 @@ def run_sweep_experiments(
                 'git_commit': get_git_commit_hash(),
                 'scenario': scenario,
                 'model_type': model_type,
+                'config_id': config_id,
                 'sweep_metadata': sweep_meta,
                 'n_train_samples': len(X_train),
                 'n_val_samples': len(X_val),
@@ -3345,8 +3597,8 @@ def run_sweep_experiments(
             logger.error(f"Run {run_idx} failed: {e}")
             import traceback
             traceback.print_exc()
-            results['runs'].append((run_id, {'error': str(e), 'run_id': run_id, 'sweep_params': sweep_meta}))
-            all_metrics.append({'error': str(e), 'run_id': run_id, 'official_metric': float('inf')})
+            results['runs'].append((run_id, {'error': str(e), 'run_id': run_id, 'config_id': config_id, 'sweep_params': sweep_meta}))
+            all_metrics.append({'error': str(e), 'run_id': run_id, 'config_id': config_id, 'official_metric': float('inf')})
     
     # Create summary DataFrame
     if collect_summary and all_metrics:
@@ -3726,8 +3978,17 @@ Examples:
     parser.add_argument('--model', type=str, default='catboost',
                         choices=['catboost', 'lightgbm', 'xgboost', 'linear', 
                                 'nn', 'historical_curve', 'global_mean', 'flat', 'trend',
-                                'baseline_global_mean', 'baseline_flat'],
+                                'baseline_global_mean', 'baseline_flat', 'hybrid', 'arihow'],
                         help="Model type to train (default: catboost)")
+    
+    # Config ID selection (new sweep schema)
+    parser.add_argument('--config-id', type=str, default=None,
+                        help="Named configuration ID from sweep_configs (e.g., 'low_lr', 'deep'). "
+                             "Overrides active_config_id in model config.")
+    parser.add_argument('--all-models', action='store_true',
+                        help="Run for all enabled models (xgboost, lightgbm, catboost)")
+    parser.add_argument('--quick-sweep', action='store_true',
+                        help="Run quick sweep with fewer configs (first 3 sweep_configs only)")
     
     # Config paths
     parser.add_argument('--model-config', type=str, default=None,
@@ -3763,8 +4024,8 @@ Examples:
     
     # Config sweep options
     parser.add_argument('--sweep', action='store_true',
-                        help="Run config sweep: train all combinations of list values in config. "
-                             "Set sweep.enabled: true in model config and define sweep.axes.")
+                        help="Run config sweep: iterate over all sweep_configs defined in model config. "
+                             "Use with --all-models to sweep all models.")
     parser.add_argument('--sweep-cv', action='store_true',
                         help="Run config sweep with K-fold CV for robust hyperparameter selection. "
                              "Uses --n-folds for number of CV folds (default 3).")
@@ -3894,6 +4155,97 @@ Examples:
         logger.info(f"Best metric: {hpo_results['best_value']:.4f}")
         return
     
+    # Handle running specific config by ID
+    if args.config_id:
+        # Load config and find named config
+        model_config = load_config(args.model_config) if args.model_config else {}
+        named_config = get_config_by_id(model_config, args.config_id)
+        
+        if named_config is None:
+            # List available configs
+            available_ids = [c.get('id', 'unnamed') for c in model_config.get('named_configs', [])]
+            logger.error(f"Config ID '{args.config_id}' not found. Available: {available_ids}")
+            return
+        
+        # Apply config params to base params
+        base_params = model_config.get('params', {})
+        merged_params = apply_config_overrides(base_params, named_config.get('params', {}))
+        
+        # Create merged config for training
+        resolved_config = model_config.copy()
+        resolved_config['params'] = merged_params
+        resolved_config['_active_config_id'] = args.config_id
+        
+        # Save resolved config for artifact tracking
+        run_name = args.run_name or f"{datetime.now().strftime('%Y-%m-%d_%H-%M')}_{args.model}_{args.config_id}_scenario{args.scenario}"
+        
+        logger.info(f"Running named config: {args.config_id}")
+        logger.info(f"Description: {named_config.get('description', 'N/A')}")
+        logger.info(f"Merged params: {merged_params}")
+        
+        model, metrics = run_experiment(
+            scenario=args.scenario,
+            model_type=args.model,
+            model_config=resolved_config,
+            run_config_path=args.run_config,
+            data_config_path=args.data_config,
+            features_config_path=args.features_config,
+            run_name=run_name,
+            use_cached_features=not args.no_cache,
+            force_rebuild=args.force_rebuild
+        )
+        logger.info(f"Config '{args.config_id}' complete. Official metric: {metrics.get('official_metric', 'N/A'):.4f}")
+        return
+    
+    # Handle all-models sweep
+    if args.all_models:
+        enabled_models = ['xgboost', 'lightgbm']  # Add catboost if needed
+        results_file = get_project_root() / 'artifacts' / f"sweep_results_{datetime.now().strftime('%Y-%m-%d_%H-%M')}.csv"
+        sweep_logger = SweepResultsLogger(str(results_file))
+        
+        for model_type in enabled_models:
+            model_config_map = {
+                'xgboost': 'configs/model_xgb.yaml',
+                'lightgbm': 'configs/model_lgbm.yaml',
+                'catboost': 'configs/model_cat.yaml'
+            }
+            config_path = model_config_map.get(model_type)
+            if not config_path:
+                continue
+                
+            logger.info(f"\n{'='*60}")
+            logger.info(f"Running sweep for model: {model_type}")
+            logger.info(f"{'='*60}")
+            
+            results = run_sweep_experiments(
+                scenario=args.scenario,
+                model_type=model_type,
+                model_config_path=config_path,
+                run_config_path=args.run_config,
+                data_config_path=args.data_config,
+                features_config_path=args.features_config,
+                base_run_name=args.run_name,
+                use_cached_features=not args.no_cache,
+                force_rebuild=args.force_rebuild,
+                collect_summary=True,
+                quick_sweep=args.quick_sweep
+            )
+            
+            # Log to sweep results
+            for run_id, metrics in results.get('runs', []):
+                if 'error' not in metrics:
+                    sweep_logger.log_result(
+                        model_name=model_type,
+                        config_id=metrics.get('sweep_params', {}).get('config_id', 'unknown'),
+                        params=metrics.get('sweep_params', {}).get('axes', {}),
+                        metrics=metrics
+                    )
+        
+        # Print summary
+        sweep_logger.summarize()
+        logger.info(f"All-models sweep complete. Results saved to {results_file}")
+        return
+    
     # Handle sweep mode
     if args.sweep:
         results = run_sweep_experiments(
@@ -3906,7 +4258,8 @@ Examples:
             base_run_name=args.run_name,
             use_cached_features=not args.no_cache,
             force_rebuild=args.force_rebuild,
-            collect_summary=True
+            collect_summary=True,
+            quick_sweep=args.quick_sweep
         )
         logger.info(f"Sweep complete. {results['n_runs']} runs executed.")
         logger.info(f"Best run: {results['best_run']}")

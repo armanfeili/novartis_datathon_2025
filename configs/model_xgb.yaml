@@ -8,15 +8,31 @@
 #   Scenario 2: max_depth=4, learning_rate=0.05 → official_metric: 0.2659
 #
 # Usage:
-#   - Single run: Set sweep.enabled=false, use scalar params
-#   - Sweep mode: Set sweep.enabled=true, use list params for sweep axes
-#   - GPU mode:   Set gpu.enabled=true (auto-configured in notebook)
+#   - Single run: Set sweep.enabled=false, use params directly
+#   - Named config: Set active_config_id to use a preset from sweep_configs
+#   - Sweep mode: Set sweep.enabled=true to iterate over all sweep_configs
+#   - Grid mode: Set sweep.mode='grid' to expand sweep.grid into combinations
+#   - GPU mode: Set gpu.enabled=true (auto-configured in notebook)
+#
+# CLI Examples:
+#   python -m src.train --scenario 1 --model xgboost
+#   python -m src.train --scenario 1 --model xgboost --config-id low_lr
+#   python -m src.train --scenario 1 --model xgboost --sweep
+#   python -m src.train --all-models --sweep
 # =============================================================================
 
 model:
   name: "xgboost"
   task: "regression"
   priority: 1  # Primary model - highest priority
+
+# =============================================================================
+# ACTIVE CONFIGURATION ID
+# =============================================================================
+# Set this to use a specific named configuration from sweep_configs.
+# Set to null or "default" to use the base params below.
+# This value is embedded in model filenames and logs.
+active_config_id: null
 
 # =============================================================================
 # GPU CONFIGURATION
@@ -30,38 +46,103 @@ gpu:
 # =============================================================================
 # Selection criterion: official_metric (PE), NOT RMSE
 # K-fold CV: Use n_folds for robust hyperparameter selection
+#
+# Modes:
+#   - "configs": Iterate over sweep_configs list (explicit configs)
+#   - "grid": Expand sweep.grid into Cartesian product of all combinations
 sweep:
   enabled: false
+  mode: "configs"  # "configs" or "grid"
   selection_metric: "official_metric"  # PRIMARY: Use official PE metric
-  n_folds: 3                           # K-fold CV for robustness
-  # Sweep axes with values (from sweep_presets.full)
-  axes:
+  n_folds: 3  # K-fold CV for robustness
+  
+  # Grid mode: Expand all combinations of these values
+  grid:
     max_depth: [3, 4, 5, 6]
     learning_rate: [0.02, 0.03, 0.05, 0.07]
     reg_lambda: [1, 3, 5]
 
 # =============================================================================
-# MODEL HYPERPARAMETERS
+# NAMED SWEEP CONFIGURATIONS (explicit config list)
 # =============================================================================
+# Each config has: id, description (optional), and param overrides.
+# Use with --config-id <id> or --sweep to iterate all.
+sweep_configs:
+  - id: "default"
+    description: "Default balanced configuration"
+    params:
+      max_depth: 6
+      learning_rate: 0.03
+      reg_lambda: 1
+
+  - id: "low_lr"
+    description: "Lower learning rate for more trees, better generalization"
+    params:
+      max_depth: 6
+      learning_rate: 0.02
+      n_estimators: 5000
+      reg_lambda: 1
+
+  - id: "shallow"
+    description: "Shallow trees to reduce overfitting"
+    params:
+      max_depth: 4
+      learning_rate: 0.05
+      reg_lambda: 3
+
+  - id: "deep"
+    description: "Deeper trees for complex patterns"
+    params:
+      max_depth: 8
+      learning_rate: 0.02
+      reg_lambda: 5
+      min_child_weight: 3
+
+  - id: "regularized"
+    description: "Strong regularization"
+    params:
+      max_depth: 5
+      learning_rate: 0.03
+      reg_lambda: 10
+      reg_alpha: 1
+      subsample: 0.7
+      colsample_bytree: 0.7
+
+  - id: "s1_best"
+    description: "Best configuration for Scenario 1"
+    params:
+      max_depth: 6
+      learning_rate: 0.03
+      reg_lambda: 1
+
+  - id: "s2_best"
+    description: "Best configuration for Scenario 2"
+    params:
+      max_depth: 4
+      learning_rate: 0.05
+      reg_lambda: 1
+
+# =============================================================================
+# MODEL HYPERPARAMETERS (Base Configuration)
+# =============================================================================
+# These are the default parameters used when active_config_id is null.
+# Named configs in sweep_configs override specific values.
 params:
   # Core
   booster: "gbtree"
   objective: "reg:squarederror"
   eval_metric: "rmse"  # Early stopping metric (fast/stable)
   
-  # Tree structure - SWEEPABLE
-  # Recommended sweep: [3, 4, 5, 6]
+  # Tree structure
   max_depth: 6
   min_child_weight: 1
   max_leaves: 0  # 0 = no limit
   
-  # Learning - SWEEPABLE
-  # Recommended sweep: [0.02, 0.03, 0.05, 0.07]
+  # Learning
   learning_rate: 0.03
   n_estimators: 3000  # High value, rely on early stopping
   
-  # Regularization - SWEEPABLE
-  # Recommended sweep: [1, 3, 5]
+  # Regularization
   gamma: 0
   reg_alpha: 0
   reg_lambda: 1
@@ -79,10 +160,6 @@ params:
   verbosity: 0
   n_jobs: -1
   seed: 42
-  
-  # GPU settings (applied when gpu.enabled=true)
-  # tree_method: "gpu_hist"  # Set programmatically
-  # gpu_id: 0
 
 # =============================================================================
 # TRAINING SETTINGS
@@ -96,7 +173,7 @@ training:
 # =============================================================================
 # SCENARIO-SPECIFIC BEST PARAMS (for quick reference)
 # =============================================================================
-# Use these when running final models, not sweeps
+# Mapped to sweep_configs: s1_best, s2_best
 best_params:
   scenario1:
     max_depth: 6
@@ -108,9 +185,9 @@ best_params:
     reg_lambda: 1
 
 # =============================================================================
-# SWEEP PRESETS
+# SWEEP PRESETS (Quick/Full/Focused)
 # =============================================================================
-# Quick sweep configurations for different compute budgets
+# Use these presets to quickly configure sweep.grid
 sweep_presets:
   # Fast sweep: 16 combinations (4 x 4)
   fast:

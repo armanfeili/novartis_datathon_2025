@@ -8,15 +8,29 @@
 #   Scenario 2: num_leaves=31, learning_rate=0.05 → close to XGBoost
 #
 # Usage:
-#   - Single run: Set sweep.enabled=false, use scalar params
-#   - Sweep mode: Set sweep.enabled=true, use list params for sweep axes
-#   - GPU mode:   Set gpu.enabled=true (auto-configured in notebook)
+#   - Single run: Set sweep.enabled=false, use params directly
+#   - Named config: Set active_config_id to use a preset from sweep_configs
+#   - Sweep mode: Set sweep.enabled=true to iterate over all sweep_configs
+#   - Grid mode: Set sweep.mode='grid' to expand sweep.grid into combinations
+#   - GPU mode: Set gpu.enabled=true (auto-configured in notebook)
+#
+# CLI Examples:
+#   python -m src.train --scenario 1 --model lightgbm
+#   python -m src.train --scenario 1 --model lightgbm --config-id high_leaves
+#   python -m src.train --scenario 1 --model lightgbm --sweep
 # =============================================================================
 
 model:
   name: "lightgbm"
   task: "regression"
   priority: 2  # Secondary model - for ensemble with XGBoost
+
+# =============================================================================
+# ACTIVE CONFIGURATION ID
+# =============================================================================
+# Set this to use a specific named configuration from sweep_configs.
+# Set to null or "default" to use the base params below.
+active_config_id: null
 
 # =============================================================================
 # GPU CONFIGURATION
@@ -31,37 +45,102 @@ gpu:
 # =============================================================================
 # Selection criterion: official_metric (PE), NOT RMSE
 # K-fold CV: Use n_folds for robust hyperparameter selection
+#
+# Modes:
+#   - "configs": Iterate over sweep_configs list (explicit configs)
+#   - "grid": Expand sweep.grid into Cartesian product of all combinations
 sweep:
   enabled: false
+  mode: "configs"  # "configs" or "grid"
   selection_metric: "official_metric"  # PRIMARY: Use official PE metric
-  n_folds: 3                           # K-fold CV for robustness
-  # Sweep axes with values (from sweep_presets.full)
-  axes:
+  n_folds: 3  # K-fold CV for robustness
+  
+  # Grid mode: Expand all combinations of these values
+  grid:
     num_leaves: [31, 63, 127]
     learning_rate: [0.02, 0.03, 0.05]
     min_data_in_leaf: [20, 40, 80]
 
 # =============================================================================
-# MODEL HYPERPARAMETERS
+# NAMED SWEEP CONFIGURATIONS (explicit config list)
 # =============================================================================
+# Each config has: id, description (optional), and param overrides.
+# Use with --config-id <id> or --sweep to iterate all.
+sweep_configs:
+  - id: "default"
+    description: "Default balanced configuration"
+    params:
+      num_leaves: 63
+      learning_rate: 0.05
+      min_data_in_leaf: 20
+
+  - id: "low_lr"
+    description: "Lower learning rate for better generalization"
+    params:
+      num_leaves: 63
+      learning_rate: 0.02
+      n_estimators: 5000
+      min_data_in_leaf: 20
+
+  - id: "high_leaves"
+    description: "More leaves for complex patterns"
+    params:
+      num_leaves: 127
+      learning_rate: 0.03
+      min_data_in_leaf: 10
+
+  - id: "conservative"
+    description: "Conservative settings to reduce overfitting"
+    params:
+      num_leaves: 31
+      learning_rate: 0.03
+      min_data_in_leaf: 40
+      feature_fraction: 0.7
+      bagging_fraction: 0.7
+
+  - id: "regularized"
+    description: "With L1/L2 regularization"
+    params:
+      num_leaves: 63
+      learning_rate: 0.05
+      lambda_l1: 0.1
+      lambda_l2: 0.1
+      min_data_in_leaf: 30
+
+  - id: "s1_best"
+    description: "Best configuration for Scenario 1"
+    params:
+      num_leaves: 63
+      learning_rate: 0.05
+      min_data_in_leaf: 20
+
+  - id: "s2_best"
+    description: "Best configuration for Scenario 2"
+    params:
+      num_leaves: 31
+      learning_rate: 0.05
+      min_data_in_leaf: 20
+
+# =============================================================================
+# MODEL HYPERPARAMETERS (Base Configuration)
+# =============================================================================
+# These are the default parameters used when active_config_id is null.
+# Named configs in sweep_configs override specific values.
 params:
   # Core
   boosting_type: "gbdt"
   objective: "regression"
   metric: "rmse"  # Early stopping metric (fast/stable)
   
-  # Tree structure - SWEEPABLE
-  # Recommended sweep: [31, 63, 127]
+  # Tree structure
   num_leaves: 63
   max_depth: -1  # -1 = no limit
   
-  # Min samples - SWEEPABLE
-  # Recommended sweep: [20, 40, 80]
+  # Min samples
   min_data_in_leaf: 20
   min_sum_hessian_in_leaf: 0.001
   
-  # Learning - SWEEPABLE
-  # Recommended sweep: [0.02, 0.03, 0.05]
+  # Learning
   learning_rate: 0.05
   n_estimators: 3000  # High value, rely on early stopping
   
@@ -84,9 +163,6 @@ params:
   verbose: -1
   n_jobs: -1
   seed: 42
-  
-  # GPU settings (applied when gpu.enabled=true)
-  # device: "gpu"  # Set programmatically
 
 # =============================================================================
 # TRAINING SETTINGS
@@ -100,6 +176,7 @@ training:
 # =============================================================================
 # SCENARIO-SPECIFIC BEST PARAMS (for quick reference)
 # =============================================================================
+# Mapped to sweep_configs: s1_best, s2_best
 best_params:
   scenario1:
     num_leaves: 63
@@ -111,7 +188,7 @@ best_params:
     min_data_in_leaf: 20
 
 # =============================================================================
-# SWEEP PRESETS
+# SWEEP PRESETS (Quick/Full/Focused)
 # =============================================================================
 sweep_presets:
   # Fast sweep: 9 combinations (3 x 3)

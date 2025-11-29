@@ -856,3 +856,186 @@ def create_ensemble(
     else:
         raise ValueError(f"Unknown ensemble method: {method}. "
                         f"Available: averaging, weighted, stacking, blending")
+
+
+# ==============================================================================
+# ENSEMBLE BLENDER - Lightweight prediction combiner
+# ==============================================================================
+
+class EnsembleBlender:
+    """
+    Lightweight ensemble blender for combining prediction arrays.
+    
+    Unlike the BaseModel-based ensembles above, this class works directly
+    with numpy arrays of predictions, making it suitable for:
+    - Combining predictions from heterogeneous model types
+    - Post-hoc blending of already-generated predictions
+    - Quick experimentation with ensemble weights
+    
+    Example usage:
+        blender = EnsembleBlender(constrain_weights=True)
+        blender.fit(
+            predictions={'catboost': preds_cat, 'lgbm': preds_lgbm, 'xgb': preds_xgb},
+            y_true=y_val
+        )
+        blended = blender.predict({'catboost': preds_cat_test, ...})
+        print(blender.get_weights())
+    """
+    
+    def __init__(self, constrain_weights: bool = True):
+        """
+        Initialize ensemble blender.
+        
+        Args:
+            constrain_weights: If True, weights are constrained to sum to 1
+        """
+        self.constrain_weights = constrain_weights
+        self.model_names: List[str] = []
+        self.weights: Optional[np.ndarray] = None
+        self.is_fitted: bool = False
+    
+    def fit(
+        self,
+        predictions: Dict[str, np.ndarray],
+        y_true: np.ndarray,
+        sample_weights: Optional[np.ndarray] = None
+    ) -> 'EnsembleBlender':
+        """
+        Learn optimal ensemble weights via constrained optimization.
+        
+        Minimizes weighted MSE subject to:
+        - weights >= 0
+        - sum(weights) == 1 (if constrain_weights=True)
+        
+        Args:
+            predictions: Dict mapping model names to prediction arrays
+            y_true: True target values
+            sample_weights: Optional per-sample weights
+            
+        Returns:
+            self (fitted blender)
+        """
+        self.model_names = list(predictions.keys())
+        n_models = len(self.model_names)
+        
+        if n_models == 0:
+            raise ValueError("No predictions provided")
+        
+        # Stack predictions into matrix
+        pred_matrix = np.column_stack([predictions[name] for name in self.model_names])
+        
+        # Define objective function
+        def objective(weights):
+            weighted_pred = pred_matrix @ weights
+            if sample_weights is not None:
+                return np.average((weighted_pred - y_true) ** 2, weights=sample_weights)
+            return np.mean((weighted_pred - y_true) ** 2)
+        
+        # Bounds: weights >= 0
+        bounds = [(0, 1) for _ in range(n_models)]
+        
+        # Constraints
+        constraints = []
+        if self.constrain_weights:
+            constraints.append({'type': 'eq', 'fun': lambda w: np.sum(w) - 1})
+        
+        # Initial weights (uniform)
+        w0 = np.ones(n_models) / n_models
+        
+        # Optimize
+        result = minimize(
+            objective,
+            w0,
+            method='SLSQP',
+            bounds=bounds,
+            constraints=constraints if constraints else None
+        )
+        
+        if result.success:
+            self.weights = result.x
+        else:
+            logger.warning(f"Weight optimization failed: {result.message}. Using uniform weights.")
+            self.weights = w0
+        
+        self.is_fitted = True
+        
+        # Log metrics
+        blended_pred = pred_matrix @ self.weights
+        if sample_weights is not None:
+            rmse = np.sqrt(np.average((blended_pred - y_true) ** 2, weights=sample_weights))
+            mae = np.average(np.abs(blended_pred - y_true), weights=sample_weights)
+        else:
+            rmse = np.sqrt(np.mean((blended_pred - y_true) ** 2))
+            mae = np.mean(np.abs(blended_pred - y_true))
+        
+        logger.info(f"Ensemble blender fitted: RMSE={rmse:.4f}, MAE={mae:.4f}")
+        logger.info(f"Weights: {dict(zip(self.model_names, self.weights.round(4)))}")
+        
+        # Also compute per-model RMSE
+        for i, name in enumerate(self.model_names):
+            solo_rmse = np.sqrt(np.mean((pred_matrix[:, i] - y_true) ** 2))
+            logger.info(f"  {name} solo RMSE: {solo_rmse:.4f}")
+        
+        return self
+    
+    def predict(self, predictions: Dict[str, np.ndarray]) -> np.ndarray:
+        """
+        Generate blended predictions using learned weights.
+        
+        Args:
+            predictions: Dict mapping model names to prediction arrays
+            
+        Returns:
+            Blended prediction array
+        """
+        if not self.is_fitted:
+            raise ValueError("Blender not fitted. Call fit() first.")
+        
+        # Ensure same models in same order
+        missing = set(self.model_names) - set(predictions.keys())
+        if missing:
+            raise ValueError(f"Missing predictions for models: {missing}")
+        
+        pred_matrix = np.column_stack([predictions[name] for name in self.model_names])
+        return pred_matrix @ self.weights
+    
+    def get_weights(self) -> Dict[str, float]:
+        """Get learned weights as a dictionary."""
+        if not self.is_fitted:
+            return {}
+        return dict(zip(self.model_names, self.weights.tolist()))
+
+
+def optimize_ensemble_weights(
+    val_df: pd.DataFrame,
+    model_predictions: Dict[str, np.ndarray],
+    target_col: str = 'volume',
+    sample_weights: Optional[np.ndarray] = None
+) -> Dict[str, Any]:
+    """
+    Convenience function to optimize ensemble weights on validation data.
+    
+    Args:
+        val_df: Validation DataFrame containing target column
+        model_predictions: Dict mapping model names to prediction arrays
+        target_col: Name of target column in val_df
+        sample_weights: Optional per-sample weights
+        
+    Returns:
+        Dict with:
+        - 'weights': Dict[str, float] of model weights
+        - 'blended_predictions': np.ndarray of blended predictions
+        - 'blender': Fitted EnsembleBlender instance
+    """
+    y_true = val_df[target_col].values
+    
+    blender = EnsembleBlender(constrain_weights=True)
+    blender.fit(model_predictions, y_true, sample_weights)
+    
+    blended_preds = blender.predict(model_predictions)
+    
+    return {
+        'weights': blender.get_weights(),
+        'blended_predictions': blended_preds,
+        'blender': blender
+    }

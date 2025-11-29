@@ -20,11 +20,17 @@ Available models:
 - XGBModel: XGBoost gradient boosting
 - NNModel: Simple MLP neural network
 
+Specialized models:
+- BaselineModels: Pure deterministic baselines (naive, linear/exp decay)
+- HybridPhysicsMLModel: Physics-based decay + ML residual learning
+- ARIHOWModel: ARIMA + Holt-Winters hybrid for time series
+
 Ensemble models:
 - AveragingEnsemble: Simple averaging of predictions
 - WeightedAveragingEnsemble: Weighted average with optimizable weights
 - StackingEnsemble: Two-level stacking with meta-learner
 - BlendingEnsemble: Blending with holdout predictions
+- EnsembleBlender: Lightweight prediction combiner for numpy arrays
 """
 
 from .base import BaseModel
@@ -36,13 +42,29 @@ from .linear import (
     HistoricalCurveBaseline
 )
 
+# Specialized models (no native deps)
+from .baselines import BaselineModels
+from .hybrid_physics_ml import HybridPhysicsMLModel
+
+# ARIHOW model (requires statsmodels, imported lazily)
+_ARIHOWModel = None
+
+def _import_arihow():
+    global _ARIHOWModel
+    if _ARIHOWModel is None:
+        from .arihow import ARIHOWModel
+        _ARIHOWModel = ARIHOWModel
+    return _ARIHOWModel
+
 # Ensemble models (pure Python, no native dependencies)
 from .ensemble import (
     AveragingEnsemble,
     WeightedAveragingEnsemble,
     StackingEnsemble,
     BlendingEnsemble,
-    create_ensemble
+    EnsembleBlender,
+    create_ensemble,
+    optimize_ensemble_weights
 )
 
 # Lazy imports for models that require native libraries
@@ -94,15 +116,36 @@ __all__ = [
     'FlatBaseline',
     'TrendBaseline',
     'HistoricalCurveBaseline',
+    # Specialized models
+    'BaselineModels',
+    'HybridPhysicsMLModel',
+    'ARIHOWModel',  # Lazy import - requires statsmodels
     # Ensemble models
     'AveragingEnsemble',
     'WeightedAveragingEnsemble',
     'StackingEnsemble',
     'BlendingEnsemble',
+    'EnsembleBlender',
     'create_ensemble',
+    'optimize_ensemble_weights',
     # Factory function
     'get_model_class',
 ]
+
+
+def __getattr__(name: str):
+    """Lazy import for models with heavy dependencies."""
+    if name == 'ARIHOWModel':
+        return _import_arihow()
+    elif name == 'CatBoostModel':
+        return _import_catboost()
+    elif name == 'LGBMModel':
+        return _import_lgbm()
+    elif name == 'XGBModel':
+        return _import_xgb()
+    elif name == 'NNModel':
+        return _import_nn()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def get_model_class(name: str):
@@ -115,6 +158,7 @@ def get_model_class(name: str):
             - Linear: 'linear', 'ridge', 'lasso', 'elasticnet', 'huber'
             - Neural: 'nn', 'neural', 'mlp'
             - Baselines: 'global_mean', 'flat', 'trend', 'historical_curve', 'knn_curve'
+            - Specialized: 'hybrid_lgbm', 'hybrid_xgb', 'arihow'
             - Ensembles: 'averaging', 'weighted', 'stacking', 'blending'
 
     Returns:
@@ -147,6 +191,17 @@ def get_model_class(name: str):
         'trend': lambda: TrendBaseline,
         'historical_curve': lambda: HistoricalCurveBaseline,
         'knn_curve': lambda: HistoricalCurveBaseline,
+        # Deterministic baselines
+        'baseline_naive': lambda: BaselineModels,
+        'baseline_linear': lambda: BaselineModels,
+        'baseline_exp': lambda: BaselineModels,
+        'baseline': lambda: BaselineModels,
+        # Specialized models
+        'hybrid_lgbm': lambda: HybridPhysicsMLModel,
+        'hybrid_xgb': lambda: HybridPhysicsMLModel,
+        'hybrid': lambda: HybridPhysicsMLModel,
+        'arihow': _import_arihow,
+        'ts_hybrid': _import_arihow,
         # Ensembles (eager import)
         'averaging': lambda: AveragingEnsemble,
         'averaging_ensemble': lambda: AveragingEnsemble,
@@ -157,6 +212,7 @@ def get_model_class(name: str):
         'stacking_ensemble': lambda: StackingEnsemble,
         'blending': lambda: BlendingEnsemble,
         'blending_ensemble': lambda: BlendingEnsemble,
+        'blender': lambda: EnsembleBlender,
     }
 
     name_lower = name.lower()
