@@ -992,3 +992,995 @@ def upload_files(target_dir: str = None) -> Dict[str, bytes]:
         logger.error(f"Failed to upload: {e}")
         return {}
 
+
+# =============================================================================
+# Section 12: Competition Strategy Utilities
+# =============================================================================
+
+class SubmissionTracker:
+    """
+    Track all submissions with scores and notes for leaderboard management.
+    
+    This class helps:
+    - Track all submissions with timestamps, scores, and notes
+    - Analyze score variance between local CV and LB
+    - Identify potential overfitting to leaderboard
+    - Save submissions for final selection
+    
+    Example usage:
+        tracker = SubmissionTracker(log_path='submissions/submission_tracker.json')
+        tracker.log_submission(
+            submission_path='submissions/v1/submission.csv',
+            cv_score=0.15,
+            lb_score=0.18,
+            model_info={'type': 'catboost', 'params': {...}},
+            notes='First CatBoost submission'
+        )
+        analysis = tracker.analyze_cv_lb_variance()
+    """
+    
+    def __init__(self, log_path: str = 'submissions/submission_tracker.json'):
+        """
+        Initialize submission tracker.
+        
+        Args:
+            log_path: Path to JSON file for tracking submissions
+        """
+        self.log_path = Path(log_path)
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        self.submissions: List[Dict[str, Any]] = []
+        self._load()
+    
+    def _load(self) -> None:
+        """Load existing submissions from log file."""
+        import json
+        if self.log_path.exists():
+            try:
+                with open(self.log_path, 'r') as f:
+                    self.submissions = json.load(f)
+                logger.info(f"Loaded {len(self.submissions)} submissions from {self.log_path}")
+            except Exception as e:
+                logger.warning(f"Could not load submissions: {e}")
+                self.submissions = []
+    
+    def _save(self) -> None:
+        """Save submissions to log file."""
+        import json
+        with open(self.log_path, 'w') as f:
+            json.dump(self.submissions, f, indent=2, default=str)
+    
+    def log_submission(
+        self,
+        submission_path: str,
+        cv_score: Optional[float] = None,
+        lb_score: Optional[float] = None,
+        scenario: Optional[int] = None,
+        model_info: Optional[Dict[str, Any]] = None,
+        notes: str = ''
+    ) -> Dict[str, Any]:
+        """
+        Log a submission with scores and notes.
+        
+        Args:
+            submission_path: Path to submission file
+            cv_score: Local cross-validation score
+            lb_score: Leaderboard score (can be updated later)
+            scenario: Scenario number (1 or 2)
+            model_info: Model configuration and parameters
+            notes: Free-form notes about this submission
+            
+        Returns:
+            The submission record
+        """
+        from datetime import datetime
+        
+        record = {
+            'id': len(self.submissions) + 1,
+            'timestamp': datetime.now().isoformat(),
+            'submission_path': str(submission_path),
+            'cv_score': cv_score,
+            'lb_score': lb_score,
+            'scenario': scenario,
+            'model_info': model_info or {},
+            'notes': notes,
+            'cv_lb_gap': None
+        }
+        
+        if cv_score is not None and lb_score is not None:
+            record['cv_lb_gap'] = lb_score - cv_score
+        
+        self.submissions.append(record)
+        self._save()
+        
+        logger.info(f"Logged submission #{record['id']}: CV={cv_score}, LB={lb_score}")
+        return record
+    
+    def update_lb_score(self, submission_id: int, lb_score: float) -> None:
+        """
+        Update leaderboard score for a submission.
+        
+        Args:
+            submission_id: ID of submission to update
+            lb_score: Leaderboard score to set
+        """
+        for sub in self.submissions:
+            if sub['id'] == submission_id:
+                sub['lb_score'] = lb_score
+                if sub['cv_score'] is not None:
+                    sub['cv_lb_gap'] = lb_score - sub['cv_score']
+                self._save()
+                logger.info(f"Updated submission #{submission_id} LB score: {lb_score}")
+                return
+        
+        logger.warning(f"Submission #{submission_id} not found")
+    
+    def analyze_cv_lb_variance(self) -> Dict[str, Any]:
+        """
+        Analyze score variance between local CV and leaderboard.
+        
+        Returns:
+            Dictionary with variance analysis
+        """
+        submissions_with_both = [
+            s for s in self.submissions 
+            if s['cv_score'] is not None and s['lb_score'] is not None
+        ]
+        
+        if len(submissions_with_both) == 0:
+            return {
+                'n_submissions': 0,
+                'mean_gap': None,
+                'std_gap': None,
+                'correlation': None,
+                'overfitting_warning': False
+            }
+        
+        cv_scores = [s['cv_score'] for s in submissions_with_both]
+        lb_scores = [s['lb_score'] for s in submissions_with_both]
+        gaps = [s['cv_lb_gap'] for s in submissions_with_both]
+        
+        mean_gap = np.mean(gaps)
+        std_gap = np.std(gaps) if len(gaps) > 1 else 0.0
+        
+        # Compute correlation between CV and LB
+        if len(cv_scores) > 1:
+            correlation = np.corrcoef(cv_scores, lb_scores)[0, 1]
+        else:
+            correlation = None
+        
+        # Check for overfitting: LB consistently worse than CV
+        overfitting_warning = mean_gap > 0.05 and len(gaps) >= 3
+        
+        analysis = {
+            'n_submissions': len(submissions_with_both),
+            'mean_gap': float(mean_gap),
+            'std_gap': float(std_gap),
+            'correlation': float(correlation) if correlation is not None else None,
+            'overfitting_warning': overfitting_warning,
+            'best_cv': min(cv_scores),
+            'best_lb': min(lb_scores),
+            'most_recent_gap': gaps[-1] if gaps else None
+        }
+        
+        if overfitting_warning:
+            logger.warning(
+                f"Potential overfitting detected! Mean CV-LB gap: {mean_gap:.4f}. "
+                f"Consider using simpler models or more regularization."
+            )
+        
+        return analysis
+    
+    def get_best_submission(self, by: str = 'lb_score') -> Optional[Dict[str, Any]]:
+        """
+        Get the best submission by specified metric.
+        
+        Args:
+            by: 'lb_score' or 'cv_score'
+            
+        Returns:
+            Best submission record, or None if no valid submissions
+        """
+        valid = [s for s in self.submissions if s.get(by) is not None]
+        if not valid:
+            return None
+        return min(valid, key=lambda x: x[by])
+    
+    def get_submissions_df(self) -> pd.DataFrame:
+        """
+        Get all submissions as a DataFrame for analysis.
+        
+        Returns:
+            DataFrame with all submissions
+        """
+        if not self.submissions:
+            return pd.DataFrame()
+        return pd.DataFrame(self.submissions)
+    
+    def identify_overfitting_submissions(self, gap_threshold: float = 0.1) -> List[Dict[str, Any]]:
+        """
+        Identify submissions that may be overfitting (large CV-LB gap).
+        
+        Args:
+            gap_threshold: Maximum acceptable CV-LB gap
+            
+        Returns:
+            List of potentially overfitting submissions
+        """
+        return [
+            s for s in self.submissions
+            if s['cv_lb_gap'] is not None and s['cv_lb_gap'] > gap_threshold
+        ]
+
+
+class TimeAllocationTracker:
+    """
+    Track time allocation across different competition phases.
+    
+    Recommended allocation:
+    - EDA: 20%
+    - Feature Engineering: 25%
+    - Modeling: 30%
+    - Tuning/Ensemble: 15%
+    - Documentation: 10%
+    
+    Example usage:
+        tracker = TimeAllocationTracker()
+        tracker.start_phase('eda')
+        # ... do EDA work ...
+        tracker.end_phase()
+        summary = tracker.get_summary()
+    """
+    
+    RECOMMENDED_ALLOCATION = {
+        'eda': 0.20,
+        'feature_engineering': 0.25,
+        'modeling': 0.30,
+        'tuning': 0.15,
+        'documentation': 0.10
+    }
+    
+    def __init__(self, log_path: Optional[str] = None):
+        """
+        Initialize time tracker.
+        
+        Args:
+            log_path: Optional path to persist time logs
+        """
+        self.log_path = Path(log_path) if log_path else None
+        self.time_logs: List[Dict[str, Any]] = []
+        self.current_phase: Optional[str] = None
+        self.phase_start: Optional[float] = None
+        
+        if self.log_path and self.log_path.exists():
+            self._load()
+    
+    def _load(self) -> None:
+        """Load existing time logs."""
+        import json
+        try:
+            with open(self.log_path, 'r') as f:
+                self.time_logs = json.load(f)
+        except Exception:
+            self.time_logs = []
+    
+    def _save(self) -> None:
+        """Save time logs to file."""
+        if self.log_path:
+            import json
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.log_path, 'w') as f:
+                json.dump(self.time_logs, f, indent=2, default=str)
+    
+    def start_phase(self, phase: str) -> None:
+        """
+        Start tracking time for a phase.
+        
+        Args:
+            phase: Phase name (eda, feature_engineering, modeling, tuning, documentation)
+        """
+        if self.current_phase is not None:
+            self.end_phase()
+        
+        self.current_phase = phase.lower()
+        self.phase_start = time.time()
+        logger.info(f"Started phase: {phase}")
+    
+    def end_phase(self) -> float:
+        """
+        End tracking for current phase.
+        
+        Returns:
+            Duration in hours
+        """
+        if self.current_phase is None or self.phase_start is None:
+            return 0.0
+        
+        duration_hours = (time.time() - self.phase_start) / 3600
+        
+        from datetime import datetime
+        self.time_logs.append({
+            'phase': self.current_phase,
+            'duration_hours': duration_hours,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+        logger.info(f"Ended phase: {self.current_phase}, duration: {duration_hours:.2f} hours")
+        
+        self.current_phase = None
+        self.phase_start = None
+        self._save()
+        
+        return duration_hours
+    
+    def get_summary(self) -> Dict[str, Any]:
+        """
+        Get summary of time allocation.
+        
+        Returns:
+            Dictionary with time allocation summary
+        """
+        phase_totals: Dict[str, float] = {}
+        for log in self.time_logs:
+            phase = log['phase']
+            phase_totals[phase] = phase_totals.get(phase, 0) + log['duration_hours']
+        
+        total_hours = sum(phase_totals.values())
+        
+        # Calculate actual percentages
+        actual_pct = {}
+        for phase, hours in phase_totals.items():
+            actual_pct[phase] = hours / total_hours if total_hours > 0 else 0
+        
+        # Compare with recommended
+        deviations = {}
+        for phase, recommended in self.RECOMMENDED_ALLOCATION.items():
+            actual = actual_pct.get(phase, 0)
+            deviations[phase] = {
+                'recommended': recommended,
+                'actual': actual,
+                'deviation': actual - recommended
+            }
+        
+        return {
+            'total_hours': total_hours,
+            'phase_hours': phase_totals,
+            'phase_percentages': actual_pct,
+            'deviations': deviations
+        }
+
+
+def create_backup_submission(
+    submission_path: str,
+    backup_dir: str = 'submissions/backups',
+    model_path: Optional[str] = None
+) -> Dict[str, str]:
+    """
+    Create a backup of submission and optionally the model.
+    
+    Args:
+        submission_path: Path to submission CSV
+        backup_dir: Directory for backups
+        model_path: Optional path to model file
+        
+    Returns:
+        Dictionary with paths to backup files
+    """
+    import shutil
+    from datetime import datetime
+    
+    backup_path = Path(backup_dir)
+    backup_path.mkdir(parents=True, exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    result = {}
+    
+    # Backup submission
+    submission_src = Path(submission_path)
+    if submission_src.exists():
+        submission_dst = backup_path / f"submission_{timestamp}.csv"
+        shutil.copy2(submission_src, submission_dst)
+        result['submission'] = str(submission_dst)
+        logger.info(f"Backed up submission to {submission_dst}")
+    
+    # Backup model if provided
+    if model_path:
+        model_src = Path(model_path)
+        if model_src.exists():
+            model_dst = backup_path / f"model_{timestamp}{model_src.suffix}"
+            shutil.copy2(model_src, model_dst)
+            result['model'] = str(model_dst)
+            logger.info(f"Backed up model to {model_dst}")
+    
+    return result
+
+
+def validate_submission_completeness(
+    submission_df: pd.DataFrame,
+    template_df: pd.DataFrame
+) -> Dict[str, Any]:
+    """
+    Validate that submission covers all required series and months.
+    
+    Args:
+        submission_df: Generated submission
+        template_df: Official template
+        
+    Returns:
+        Dictionary with validation results
+    """
+    results = {
+        'is_complete': True,
+        'missing_rows': 0,
+        'extra_rows': 0,
+        'missing_series': [],
+        'missing_months': []
+    }
+    
+    # Key columns
+    key_cols = ['country', 'brand_name', 'months_postgx']
+    
+    # Create key tuples
+    submission_keys = set(submission_df[key_cols].apply(tuple, axis=1))
+    template_keys = set(template_df[key_cols].apply(tuple, axis=1))
+    
+    # Check for missing
+    missing = template_keys - submission_keys
+    extra = submission_keys - template_keys
+    
+    results['missing_rows'] = len(missing)
+    results['extra_rows'] = len(extra)
+    
+    if missing:
+        results['is_complete'] = False
+        # Identify missing series
+        missing_series = set((k[0], k[1]) for k in missing)
+        results['missing_series'] = list(missing_series)[:10]  # Limit to 10
+        # Identify missing months
+        missing_months = set(k[2] for k in missing)
+        results['missing_months'] = sorted(missing_months)
+        
+        logger.warning(f"Submission incomplete: {len(missing)} rows missing")
+    
+    if extra:
+        logger.warning(f"Submission has {len(extra)} extra rows not in template")
+    
+    return results
+
+
+def check_prediction_sanity(
+    predictions_df: pd.DataFrame,
+    volume_col: str = 'volume'
+) -> Dict[str, Any]:
+    """
+    Perform sanity checks on predictions.
+    
+    Checks:
+    - No negative values
+    - No NaN/Inf values
+    - Reasonable range (not all zeros, not extreme values)
+    - Reasonable erosion pattern (volume should generally decrease)
+    
+    Args:
+        predictions_df: DataFrame with predictions
+        volume_col: Name of volume column
+        
+    Returns:
+        Dictionary with sanity check results
+    """
+    volume = predictions_df[volume_col]
+    
+    results = {
+        'is_sane': True,
+        'issues': [],
+        'statistics': {
+            'mean': float(volume.mean()),
+            'std': float(volume.std()),
+            'min': float(volume.min()),
+            'max': float(volume.max()),
+            'pct_zero': float((volume == 0).mean() * 100),
+            'pct_negative': float((volume < 0).mean() * 100)
+        }
+    }
+    
+    # Check for negative values
+    n_negative = (volume < 0).sum()
+    if n_negative > 0:
+        results['is_sane'] = False
+        results['issues'].append(f"{n_negative} negative predictions")
+    
+    # Check for NaN/Inf
+    n_nan = volume.isna().sum()
+    n_inf = np.isinf(volume).sum()
+    if n_nan > 0:
+        results['is_sane'] = False
+        results['issues'].append(f"{n_nan} NaN predictions")
+    if n_inf > 0:
+        results['is_sane'] = False
+        results['issues'].append(f"{n_inf} Inf predictions")
+    
+    # Check for all zeros
+    pct_zero = (volume == 0).mean()
+    if pct_zero > 0.5:
+        results['issues'].append(f"Warning: {pct_zero*100:.1f}% of predictions are zero")
+    
+    # Check for extreme values
+    pct_extreme = (volume > volume.quantile(0.99) * 10).mean()
+    if pct_extreme > 0.01:
+        results['issues'].append(f"Warning: {pct_extreme*100:.1f}% extreme predictions")
+    
+    # Check erosion pattern (volume should decrease over time)
+    if 'months_postgx' in predictions_df.columns:
+        avg_by_month = predictions_df.groupby('months_postgx')[volume_col].mean()
+        if len(avg_by_month) > 6:
+            early_avg = avg_by_month.iloc[:6].mean()
+            late_avg = avg_by_month.iloc[-6:].mean()
+            if late_avg > early_avg * 1.5:
+                results['issues'].append(
+                    f"Warning: Late months have higher volume ({late_avg:.0f}) "
+                    f"than early months ({early_avg:.0f})"
+                )
+    
+    return results
+
+
+def generate_final_submission_report(
+    submission_path: str,
+    model_paths: Dict[str, str],
+    cv_scores: Dict[str, float],
+    output_path: Optional[str] = None
+) -> str:
+    """
+    Generate a final submission report with all details.
+    
+    Args:
+        submission_path: Path to final submission
+        model_paths: Dictionary of scenario -> model path
+        cv_scores: Dictionary of scenario -> CV score
+        output_path: Optional path to save report
+        
+    Returns:
+        Report as string
+    """
+    from datetime import datetime
+    
+    lines = [
+        "=" * 60,
+        "FINAL SUBMISSION REPORT",
+        f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "=" * 60,
+        "",
+        "SUBMISSION FILE",
+        f"  Path: {submission_path}",
+    ]
+    
+    # Check submission exists and get stats
+    submission_file = Path(submission_path)
+    if submission_file.exists():
+        submission_df = pd.read_csv(submission_file)
+        lines.extend([
+            f"  Rows: {len(submission_df)}",
+            f"  Volume range: [{submission_df['volume'].min():.2f}, {submission_df['volume'].max():.2f}]",
+            f"  Volume mean: {submission_df['volume'].mean():.2f}",
+        ])
+    else:
+        lines.append("  WARNING: Submission file not found!")
+    
+    lines.extend(["", "MODELS"])
+    for scenario, path in model_paths.items():
+        exists = "✓" if Path(path).exists() else "✗"
+        lines.append(f"  Scenario {scenario}: {path} [{exists}]")
+    
+    lines.extend(["", "CV SCORES"])
+    for scenario, score in cv_scores.items():
+        lines.append(f"  Scenario {scenario}: {score:.4f}")
+    
+    lines.extend([
+        "",
+        "CHECKLIST",
+        "  [ ] Submission format validated",
+        "  [ ] All series predicted",
+        "  [ ] Predictions are reasonable",
+        "  [ ] Code and models backed up",
+        "",
+        "=" * 60
+    ])
+    
+    report = "\n".join(lines)
+    
+    if output_path:
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, 'w') as f:
+            f.write(report)
+        logger.info(f"Saved final report to {output_path}")
+    
+    return report
+
+
+class FinalWeekPlaybook:
+    """
+    Manage final week execution with frozen configuration.
+    
+    Helps teams:
+    - Define a frozen best config 48 hours before deadline
+    - Generate multiple submission variants
+    - Track submission verification
+    
+    Example usage:
+        playbook = FinalWeekPlaybook()
+        playbook.freeze_config(config_dict)
+        variants = playbook.generate_submission_variants()
+    """
+    
+    def __init__(self, playbook_path: str = 'artifacts/final_week_playbook.json'):
+        """
+        Initialize playbook.
+        
+        Args:
+            playbook_path: Path to save playbook state
+        """
+        self.playbook_path = Path(playbook_path)
+        self.frozen_config: Optional[Dict[str, Any]] = None
+        self.freeze_timestamp: Optional[str] = None
+        self.submissions_generated: List[Dict[str, Any]] = []
+        self.verifications: List[Dict[str, Any]] = []
+        
+        self._load()
+    
+    def _load(self) -> None:
+        """Load playbook state."""
+        import json
+        if self.playbook_path.exists():
+            try:
+                with open(self.playbook_path, 'r') as f:
+                    data = json.load(f)
+                self.frozen_config = data.get('frozen_config')
+                self.freeze_timestamp = data.get('freeze_timestamp')
+                self.submissions_generated = data.get('submissions_generated', [])
+                self.verifications = data.get('verifications', [])
+            except Exception:
+                pass
+    
+    def _save(self) -> None:
+        """Save playbook state."""
+        import json
+        self.playbook_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.playbook_path, 'w') as f:
+            json.dump({
+                'frozen_config': self.frozen_config,
+                'freeze_timestamp': self.freeze_timestamp,
+                'submissions_generated': self.submissions_generated,
+                'verifications': self.verifications
+            }, f, indent=2, default=str)
+    
+    def freeze_config(
+        self,
+        model_type: str,
+        model_config: Dict[str, Any],
+        feature_config: Dict[str, Any],
+        cv_scheme: str,
+        ensemble_weights: Optional[Dict[str, float]] = None,
+        notes: str = ''
+    ) -> None:
+        """
+        Freeze the best configuration 48 hours before deadline.
+        
+        Args:
+            model_type: Type of model (catboost, lightgbm, etc.)
+            model_config: Model hyperparameters
+            feature_config: Feature engineering settings
+            cv_scheme: Cross-validation scheme used
+            ensemble_weights: Optional ensemble weights
+            notes: Additional notes
+        """
+        from datetime import datetime
+        
+        self.frozen_config = {
+            'model_type': model_type,
+            'model_config': model_config,
+            'feature_config': feature_config,
+            'cv_scheme': cv_scheme,
+            'ensemble_weights': ensemble_weights,
+            'notes': notes
+        }
+        self.freeze_timestamp = datetime.now().isoformat()
+        self._save()
+        
+        logger.info(f"Configuration frozen at {self.freeze_timestamp}")
+        logger.info("IMPORTANT: No major changes allowed after this point!")
+    
+    def is_config_frozen(self) -> bool:
+        """Check if configuration has been frozen."""
+        return self.frozen_config is not None
+    
+    def get_frozen_config(self) -> Optional[Dict[str, Any]]:
+        """Get the frozen configuration."""
+        return self.frozen_config
+    
+    def suggest_submission_variants(self) -> List[Dict[str, str]]:
+        """
+        Suggest submission variants to generate.
+        
+        Returns:
+            List of suggested variants
+        """
+        return [
+            {
+                'name': 'best_cv',
+                'description': 'Model with best CV score (frozen config)',
+                'modifications': 'None - use frozen config exactly'
+            },
+            {
+                'name': 'underfitted',
+                'description': 'Slightly simpler model for robustness',
+                'modifications': 'Reduce iterations/depth by 20%'
+            },
+            {
+                'name': 'overfitted',
+                'description': 'Slightly more complex model',
+                'modifications': 'Increase iterations/depth by 20%'
+            },
+            {
+                'name': 'bucket1_focus',
+                'description': 'Higher weight on bucket 1 (high erosion)',
+                'modifications': 'Increase bucket 1 sample weight by 50%'
+            },
+            {
+                'name': 'multi_seed',
+                'description': 'Ensemble of models with different seeds',
+                'modifications': 'Train with seeds [42, 123, 456, 789, 1234]'
+            }
+        ]
+    
+    def log_submission_generated(
+        self,
+        variant_name: str,
+        submission_path: str,
+        cv_score: float,
+        notes: str = ''
+    ) -> None:
+        """
+        Log that a submission variant was generated.
+        
+        Args:
+            variant_name: Name of variant
+            submission_path: Path to submission file
+            cv_score: CV score for this variant
+            notes: Additional notes
+        """
+        from datetime import datetime
+        
+        self.submissions_generated.append({
+            'variant': variant_name,
+            'path': str(submission_path),
+            'cv_score': cv_score,
+            'timestamp': datetime.now().isoformat(),
+            'notes': notes
+        })
+        self._save()
+        logger.info(f"Logged submission variant: {variant_name}")
+    
+    def log_verification(
+        self,
+        submission_path: str,
+        format_ok: bool,
+        metric_score: Optional[float] = None,
+        issues: Optional[List[str]] = None
+    ) -> None:
+        """
+        Log verification of a submission.
+        
+        Args:
+            submission_path: Path to verified submission
+            format_ok: Whether format validation passed
+            metric_score: Official metric score if computed
+            issues: List of issues found
+        """
+        from datetime import datetime
+        
+        self.verifications.append({
+            'path': str(submission_path),
+            'format_ok': format_ok,
+            'metric_score': metric_score,
+            'issues': issues or [],
+            'timestamp': datetime.now().isoformat()
+        })
+        self._save()
+    
+    def get_summary(self) -> Dict[str, Any]:
+        """
+        Get playbook summary.
+        
+        Returns:
+            Dictionary with playbook status
+        """
+        return {
+            'is_frozen': self.is_config_frozen(),
+            'freeze_timestamp': self.freeze_timestamp,
+            'n_submissions_generated': len(self.submissions_generated),
+            'n_verified': len([v for v in self.verifications if v['format_ok']]),
+            'submissions': self.submissions_generated,
+            'verifications': self.verifications
+        }
+
+
+def verify_external_data_compliance(project_root: str = '.') -> Dict[str, Any]:
+    """
+    Verify that no prohibited external data is used.
+    
+    Checks:
+    - Only official competition data in data/raw/
+    - No external API calls in code
+    - No hardcoded external URLs
+    
+    Args:
+        project_root: Root directory of project
+        
+    Returns:
+        Dictionary with compliance check results
+    """
+    root = Path(project_root)
+    
+    results = {
+        'is_compliant': True,
+        'issues': [],
+        'data_sources': []
+    }
+    
+    # Check data directories
+    raw_dir = root / 'data' / 'raw'
+    if raw_dir.exists():
+        for item in raw_dir.iterdir():
+            if item.is_dir():
+                results['data_sources'].append({
+                    'path': str(item),
+                    'type': 'directory',
+                    'files': len(list(item.glob('*')))
+                })
+            else:
+                results['data_sources'].append({
+                    'path': str(item),
+                    'type': 'file'
+                })
+    
+    # Check for external data in code (simple heuristic)
+    suspicious_patterns = [
+        'requests.get',
+        'urllib.request',
+        'http://',
+        'https://api.',
+        'kaggle.com',
+        'huggingface.co',
+        'drive.google.com'
+    ]
+    
+    src_dir = root / 'src'
+    if src_dir.exists():
+        for py_file in src_dir.glob('**/*.py'):
+            try:
+                content = py_file.read_text()
+                for pattern in suspicious_patterns:
+                    if pattern in content:
+                        # Skip if it's in a comment or docstring context
+                        if f'# {pattern}' not in content and f"'{pattern}" not in content:
+                            results['issues'].append(
+                                f"Potential external data access in {py_file}: {pattern}"
+                            )
+            except Exception:
+                pass
+    
+    if results['issues']:
+        results['is_compliant'] = False
+        logger.warning(f"External data compliance issues found: {len(results['issues'])}")
+    else:
+        logger.info("External data compliance check passed")
+    
+    return results
+
+
+def run_pre_submission_checklist(
+    submission_path: str,
+    template_path: str,
+    model_s1_path: Optional[str] = None,
+    model_s2_path: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Run complete pre-submission checklist.
+    
+    Checks:
+    1. Submission format matches template
+    2. All series are predicted
+    3. Predictions are reasonable
+    4. Models are saved
+    
+    Args:
+        submission_path: Path to submission file
+        template_path: Path to template file
+        model_s1_path: Optional path to S1 model
+        model_s2_path: Optional path to S2 model
+        
+    Returns:
+        Dictionary with checklist results
+    """
+    results = {
+        'all_passed': True,
+        'checks': {}
+    }
+    
+    submission_file = Path(submission_path)
+    template_file = Path(template_path)
+    
+    # Check 1: Submission file exists
+    if not submission_file.exists():
+        results['checks']['file_exists'] = {'passed': False, 'message': 'Submission file not found'}
+        results['all_passed'] = False
+        return results
+    results['checks']['file_exists'] = {'passed': True}
+    
+    # Load files
+    try:
+        submission_df = pd.read_csv(submission_file)
+        template_df = pd.read_csv(template_file)
+    except Exception as e:
+        results['checks']['file_readable'] = {'passed': False, 'message': str(e)}
+        results['all_passed'] = False
+        return results
+    results['checks']['file_readable'] = {'passed': True}
+    
+    # Check 2: Column structure
+    expected_cols = list(template_df.columns)
+    actual_cols = list(submission_df.columns)
+    cols_match = expected_cols == actual_cols
+    results['checks']['columns_match'] = {
+        'passed': cols_match,
+        'expected': expected_cols,
+        'actual': actual_cols
+    }
+    if not cols_match:
+        results['all_passed'] = False
+    
+    # Check 3: All series predicted
+    completeness = validate_submission_completeness(submission_df, template_df)
+    results['checks']['completeness'] = {
+        'passed': completeness['is_complete'],
+        'missing_rows': completeness['missing_rows'],
+        'extra_rows': completeness['extra_rows']
+    }
+    if not completeness['is_complete']:
+        results['all_passed'] = False
+    
+    # Check 4: Sanity check
+    sanity = check_prediction_sanity(submission_df)
+    results['checks']['sanity'] = {
+        'passed': sanity['is_sane'],
+        'issues': sanity['issues'],
+        'statistics': sanity['statistics']
+    }
+    if not sanity['is_sane']:
+        results['all_passed'] = False
+    
+    # Check 5: Models saved
+    if model_s1_path:
+        s1_exists = Path(model_s1_path).exists()
+        results['checks']['model_s1_saved'] = {'passed': s1_exists}
+        if not s1_exists:
+            results['all_passed'] = False
+    
+    if model_s2_path:
+        s2_exists = Path(model_s2_path).exists()
+        results['checks']['model_s2_saved'] = {'passed': s2_exists}
+        if not s2_exists:
+            results['all_passed'] = False
+    
+    # Summary
+    passed_count = sum(1 for c in results['checks'].values() if c.get('passed', False))
+    total_count = len(results['checks'])
+    
+    logger.info(f"Pre-submission checklist: {passed_count}/{total_count} checks passed")
+    
+    if results['all_passed']:
+        logger.info("✓ All pre-submission checks passed!")
+    else:
+        logger.warning("✗ Some pre-submission checks failed - review before submitting")
+    
+    return results

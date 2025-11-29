@@ -2424,6 +2424,398 @@ def run_experiment(
     return model, metrics
 
 
+# =============================================================================
+# SECTION 8.2: MODEL EXPERIMENTS - Compare Models & Loss Functions
+# =============================================================================
+
+def compare_models(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    X_val: pd.DataFrame,
+    y_val: pd.Series,
+    meta_train: pd.DataFrame,
+    meta_val: pd.DataFrame,
+    scenario: int,
+    model_configs: Dict[str, Dict],
+    sample_weight_train: Optional[pd.Series] = None,
+    sample_weight_val: Optional[pd.Series] = None
+) -> pd.DataFrame:
+    """
+    Compare multiple model types on the same train/validation split.
+    
+    This function trains and evaluates different model configurations
+    to identify the best performing approach.
+    
+    Args:
+        X_train, y_train: Training features and target
+        X_val, y_val: Validation features and target
+        meta_train, meta_val: Metadata for metric computation
+        scenario: 1 or 2
+        model_configs: Dict mapping model name to configuration dict
+                      Each config should have 'model_type' and optional 'params'
+        sample_weight_train: Training sample weights
+        sample_weight_val: Validation sample weights (for weighted metrics)
+        
+    Returns:
+        DataFrame with comparison results sorted by official metric
+    """
+    from sklearn.metrics import mean_squared_error, mean_absolute_error
+    
+    results = []
+    
+    for model_name, config in model_configs.items():
+        model_type = config.get('model_type', model_name)
+        model_params = config.get('params', {})
+        
+        logger.info(f"Training model: {model_name} ({model_type})")
+        
+        try:
+            start_time = time.time()
+            
+            # Get model instance
+            model = _get_model(model_type, model_params)
+            
+            # Train
+            model.fit(
+                X_train, y_train, X_val, y_val,
+                sample_weight=sample_weight_train
+            )
+            
+            train_time = time.time() - start_time
+            
+            # Predict
+            y_pred = model.predict(X_val)
+            
+            # Compute metrics
+            rmse = np.sqrt(mean_squared_error(y_val, y_pred))
+            mae = mean_absolute_error(y_val, y_pred)
+            
+            # Compute official metric if possible
+            official_metric = np.nan
+            try:
+                pred_volume = y_pred * meta_val['avg_vol_12m'].values
+                actual_volume = y_val.values * meta_val['avg_vol_12m'].values
+                
+                pred_df = meta_val[['country', 'brand_name', 'months_postgx']].copy()
+                pred_df['volume'] = pred_volume
+                
+                actual_df = pred_df[['country', 'brand_name', 'months_postgx']].copy()
+                actual_df['volume'] = actual_volume
+                
+                aux_df = create_aux_file(meta_val, y_val)
+                
+                if scenario == 1:
+                    official_metric = compute_metric1(actual_df, pred_df, aux_df)
+                else:
+                    official_metric = compute_metric2(actual_df, pred_df, aux_df)
+            except Exception as e:
+                logger.warning(f"Could not compute official metric for {model_name}: {e}")
+            
+            results.append({
+                'model_name': model_name,
+                'model_type': model_type,
+                'official_metric': official_metric,
+                'rmse': rmse,
+                'mae': mae,
+                'train_time_s': train_time,
+                'n_features': len(X_train.columns),
+                'status': 'success'
+            })
+            
+            logger.info(f"  {model_name}: Official={official_metric:.4f}, RMSE={rmse:.4f}, "
+                       f"MAE={mae:.4f}, Time={train_time:.1f}s")
+            
+        except Exception as e:
+            logger.error(f"  {model_name} failed: {e}")
+            results.append({
+                'model_name': model_name,
+                'model_type': model_type,
+                'official_metric': np.nan,
+                'rmse': np.nan,
+                'mae': np.nan,
+                'train_time_s': np.nan,
+                'n_features': len(X_train.columns),
+                'status': f'failed: {str(e)[:50]}'
+            })
+    
+    results_df = pd.DataFrame(results)
+    results_df = results_df.sort_values('official_metric', ascending=True)
+    
+    logger.info(f"\nModel Comparison Results:")
+    logger.info(f"\n{results_df.to_string()}")
+    
+    return results_df
+
+
+def test_loss_functions(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    X_val: pd.DataFrame,
+    y_val: pd.Series,
+    meta_train: pd.DataFrame,
+    meta_val: pd.DataFrame,
+    scenario: int,
+    model_type: str = 'catboost',
+    loss_functions: Optional[List[str]] = None,
+    sample_weight_train: Optional[pd.Series] = None
+) -> pd.DataFrame:
+    """
+    Test different loss functions for a given model type.
+    
+    Args:
+        X_train, y_train: Training data
+        X_val, y_val: Validation data
+        meta_train, meta_val: Metadata
+        scenario: 1 or 2
+        model_type: Base model type
+        loss_functions: List of loss functions to test.
+                       For CatBoost: 'RMSE', 'MAE', 'Quantile', 'Huber'
+        sample_weight_train: Training sample weights
+        
+    Returns:
+        DataFrame with results for each loss function
+    """
+    if loss_functions is None:
+        if model_type.lower() in ('catboost', 'cat'):
+            loss_functions = ['RMSE', 'MAE', 'Quantile:alpha=0.5', 'Huber:delta=1.0']
+        elif model_type.lower() in ('lightgbm', 'lgbm'):
+            loss_functions = ['regression', 'regression_l1', 'huber', 'quantile']
+        elif model_type.lower() in ('xgboost', 'xgb'):
+            loss_functions = ['reg:squarederror', 'reg:absoluteerror', 'reg:pseudohubererror']
+        else:
+            loss_functions = ['mse']  # Default for linear models
+    
+    # Build configs for each loss function
+    model_configs = {}
+    for loss_fn in loss_functions:
+        config_name = f'{model_type}_{loss_fn.replace(":", "_").replace("=", "_")}'
+        
+        if model_type.lower() in ('catboost', 'cat'):
+            model_configs[config_name] = {
+                'model_type': model_type,
+                'params': {'loss_function': loss_fn}
+            }
+        elif model_type.lower() in ('lightgbm', 'lgbm'):
+            model_configs[config_name] = {
+                'model_type': model_type,
+                'params': {'objective': loss_fn}
+            }
+        elif model_type.lower() in ('xgboost', 'xgb'):
+            model_configs[config_name] = {
+                'model_type': model_type,
+                'params': {'objective': loss_fn}
+            }
+        else:
+            model_configs[config_name] = {
+                'model_type': model_type,
+                'params': {}
+            }
+    
+    return compare_models(
+        X_train, y_train, X_val, y_val,
+        meta_train, meta_val, scenario,
+        model_configs, sample_weight_train
+    )
+
+
+def run_model_experiments(
+    panel_features: pd.DataFrame,
+    scenario: int,
+    run_config: dict,
+    experiment_type: str = 'compare_models',
+    custom_configs: Optional[Dict] = None
+) -> Dict[str, Any]:
+    """
+    Run comprehensive model experiments.
+    
+    Experiment types:
+    - 'compare_models': Compare all model types
+    - 'loss_functions': Compare loss functions for hero model
+    - 'learning_rates': Compare different learning rates
+    - 'ensemble_configs': Compare ensemble configurations
+    
+    Args:
+        panel_features: Feature DataFrame
+        scenario: 1 or 2
+        run_config: Run configuration
+        experiment_type: Type of experiment
+        custom_configs: Custom model configurations
+        
+    Returns:
+        Dictionary with experiment results
+    """
+    seed = run_config.get('reproducibility', {}).get('seed', 42)
+    val_fraction = run_config.get('validation', {}).get('val_fraction', 0.2)
+    
+    # Get training rows
+    from .features import select_training_rows
+    train_rows = select_training_rows(panel_features, scenario=scenario)
+    
+    # Split
+    train_df, val_df = create_validation_split(
+        train_rows,
+        val_fraction=val_fraction,
+        stratify_by=run_config.get('validation', {}).get('stratify_by'),
+        random_state=seed
+    )
+    
+    X_train, y_train, meta_train = split_features_target_meta(train_df)
+    X_val, y_val, meta_val = split_features_target_meta(val_df)
+    
+    # Compute sample weights
+    sample_weight_train = compute_sample_weights(meta_train, scenario, run_config)
+    
+    results = {'experiment_type': experiment_type, 'scenario': scenario}
+    
+    if experiment_type == 'compare_models':
+        # Default model configs for comparison
+        if custom_configs is None:
+            custom_configs = {
+                'catboost_default': {'model_type': 'catboost', 'params': {}},
+                'lightgbm_default': {'model_type': 'lightgbm', 'params': {}},
+                'xgboost_default': {'model_type': 'xgboost', 'params': {}},
+                'ridge': {'model_type': 'linear', 'params': {'model': {'type': 'ridge'}}},
+                'global_mean': {'model_type': 'global_mean', 'params': {}},
+                'flat': {'model_type': 'flat', 'params': {}},
+            }
+        
+        results['comparison'] = compare_models(
+            X_train, y_train, X_val, y_val,
+            meta_train, meta_val, scenario,
+            custom_configs, sample_weight_train
+        )
+        
+    elif experiment_type == 'loss_functions':
+        results['loss_functions'] = test_loss_functions(
+            X_train, y_train, X_val, y_val,
+            meta_train, meta_val, scenario,
+            model_type=custom_configs.get('model_type', 'catboost') if custom_configs else 'catboost',
+            sample_weight_train=sample_weight_train
+        )
+        
+    elif experiment_type == 'learning_rates':
+        learning_rates = [0.01, 0.03, 0.05, 0.1, 0.2]
+        configs = {}
+        for lr in learning_rates:
+            configs[f'catboost_lr{lr}'] = {
+                'model_type': 'catboost',
+                'params': {'learning_rate': lr}
+            }
+        
+        results['learning_rates'] = compare_models(
+            X_train, y_train, X_val, y_val,
+            meta_train, meta_val, scenario,
+            configs, sample_weight_train
+        )
+    
+    return results
+
+
+# =============================================================================
+# SECTION 8.4: POST-PROCESSING - Ensemble Weight Optimization on Validation
+# =============================================================================
+
+def optimize_ensemble_weights_on_validation(
+    models: List[Any],
+    X_val: pd.DataFrame,
+    y_val: pd.Series,
+    meta_val: pd.DataFrame,
+    scenario: int,
+    optimization_metric: str = 'official',
+    n_restarts: int = 5
+) -> Tuple[np.ndarray, float]:
+    """
+    Optimize ensemble weights on validation data using the official metric.
+    
+    Uses multiple restarts to avoid local minima.
+    
+    Args:
+        models: List of trained models
+        X_val: Validation features
+        y_val: Validation target
+        meta_val: Validation metadata (needs avg_vol_12m for inverse transform)
+        scenario: 1 or 2
+        optimization_metric: 'official', 'rmse', or 'mae'
+        n_restarts: Number of random restarts for optimization
+        
+    Returns:
+        Tuple of (optimal_weights, best_metric_value)
+    """
+    from scipy.optimize import minimize
+    
+    n_models = len(models)
+    
+    # Get predictions from all models
+    all_preds = np.array([model.predict(X_val) for model in models])  # (n_models, n_samples)
+    
+    y_val_arr = y_val.values
+    avg_vol = meta_val['avg_vol_12m'].values
+    
+    def compute_ensemble_metric(weights):
+        """Compute metric for given weights."""
+        weights = weights / weights.sum()  # Ensure sum to 1
+        ensemble_pred = np.dot(weights, all_preds)
+        
+        if optimization_metric == 'rmse':
+            return np.sqrt(np.mean((ensemble_pred - y_val_arr) ** 2))
+        elif optimization_metric == 'mae':
+            return np.mean(np.abs(ensemble_pred - y_val_arr))
+        elif optimization_metric == 'official':
+            try:
+                pred_volume = ensemble_pred * avg_vol
+                actual_volume = y_val_arr * avg_vol
+                
+                pred_df = meta_val[['country', 'brand_name', 'months_postgx']].copy()
+                pred_df['volume'] = pred_volume
+                
+                actual_df = pred_df[['country', 'brand_name', 'months_postgx']].copy()
+                actual_df['volume'] = actual_volume
+                
+                aux_df = create_aux_file(meta_val, y_val)
+                
+                if scenario == 1:
+                    return compute_metric1(actual_df, pred_df, aux_df)
+                else:
+                    return compute_metric2(actual_df, pred_df, aux_df)
+            except Exception:
+                # Fallback to RMSE
+                return np.sqrt(np.mean((ensemble_pred - y_val_arr) ** 2))
+        else:
+            return np.sqrt(np.mean((ensemble_pred - y_val_arr) ** 2))
+    
+    best_weights = None
+    best_metric = float('inf')
+    
+    for restart in range(n_restarts):
+        # Random initial weights
+        if restart == 0:
+            w0 = np.ones(n_models) / n_models  # Uniform start
+        else:
+            w0 = np.random.dirichlet(np.ones(n_models))
+        
+        # Optimize
+        result = minimize(
+            compute_ensemble_metric,
+            w0,
+            method='SLSQP',
+            bounds=[(0, 1) for _ in range(n_models)],
+            constraints={'type': 'eq', 'fun': lambda w: np.sum(w) - 1}
+        )
+        
+        if result.success and result.fun < best_metric:
+            best_metric = result.fun
+            best_weights = result.x / result.x.sum()
+    
+    if best_weights is None:
+        best_weights = np.ones(n_models) / n_models
+        best_metric = compute_ensemble_metric(best_weights)
+    
+    logger.info(f"Optimized ensemble weights: {best_weights.round(4)}")
+    logger.info(f"Best {optimization_metric} metric: {best_metric:.4f}")
+    
+    return best_weights, best_metric
+
+
 def main():
     """CLI entry point for training models.
     
