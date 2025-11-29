@@ -1,0 +1,7 @@
+d65a3eca
+Generated: 2025-11-29T04:56:05.256746
+Files:
+  run_config: configs/run_defaults.yaml
+  data_config: configs/data.yaml
+  features_config: configs/features.yaml
+  model_config: configs/model_cat_depth8.yaml

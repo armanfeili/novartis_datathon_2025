@@ -1,0 +1,30 @@
+2025-11-29 04:35:56,988 - __main__ - INFO - Starting experiment: exp_catboost_baseline_s1
+2025-11-29 04:35:57,025 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/exp_catboost_baseline_s1/configs (hash: b14cb20f)
+2025-11-29 04:35:57,025 - __main__ - INFO - Config hash: b14cb20f
+2025-11-29 04:35:57,044 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 04:35:57,044 - src.utils - INFO - [Load cached features for train S1 train] starting...
+2025-11-29 04:35:57,045 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s1_train.parquet
+2025-11-29 04:35:57,295 - src.features - INFO - Loaded X: (46872, 87), y: 46872
+2025-11-29 04:35:57,295 - src.utils - INFO - [Load cached features for train S1 train] done in 0.251s
+2025-11-29 04:35:57,343 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 04:35:57,343 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 04:35:57,360 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 04:35:57,360 - src.utils - INFO - [Load cached train panel] done in 0.017s
+2025-11-29 04:35:57,360 - src.utils - INFO - [Load features (cached)] done in 0.316s
+2025-11-29 04:35:57,360 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 04:35:57,390 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 04:35:57,501 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 04:35:57,501 - src.validation - INFO - Train rows: 37,488, Val rows: 9,384
+2025-11-29 04:35:57,503 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 04:35:57,503 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 04:35:57,503 - src.utils - INFO - [Create validation split] done in 0.143s
+2025-11-29 04:35:57,538 - __main__ - INFO - Features: 86 columns
+2025-11-29 04:35:57,538 - __main__ - INFO - Meta: 9 columns
+2025-11-29 04:35:57,545 - __main__ - INFO - Features: 86 columns
+2025-11-29 04:35:57,545 - __main__ - INFO - Meta: 9 columns

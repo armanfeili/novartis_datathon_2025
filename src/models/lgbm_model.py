@@ -75,18 +75,44 @@ class LGBMModel(BaseModel):
         # Store feature names
         self.feature_names = list(X_train.columns)
         
-        # Create datasets
+        # Convert categorical columns to numeric codes for LightGBM
+        X_train_proc = X_train.copy()
+        categorical_features = []
+        for i, col in enumerate(X_train_proc.columns):
+            if X_train_proc[col].dtype.name == 'category':
+                X_train_proc[col] = X_train_proc[col].cat.codes.astype(int)
+                categorical_features.append(col)
+            elif X_train_proc[col].dtype == 'object':
+                X_train_proc[col] = pd.Categorical(X_train_proc[col]).codes.astype(int)
+                categorical_features.append(col)
+        
+        # Convert to numpy to avoid potential pandas issues
+        X_train_np = np.nan_to_num(X_train_proc.values.astype(np.float64), nan=0.0)
+        y_train_np = y_train.values.astype(np.float64) if hasattr(y_train, 'values') else np.array(y_train, dtype=np.float64)
+        weight_np = sample_weight.values.astype(np.float64) if sample_weight is not None else None
+        
+        # Create datasets with numpy arrays
         train_set = lgb.Dataset(
-            X_train, 
-            y_train,
-            weight=sample_weight.values if sample_weight is not None else None
+            X_train_np, 
+            y_train_np,
+            weight=weight_np,
+            feature_name=list(X_train_proc.columns)
         )
         
         valid_sets = [train_set]
         valid_names = ['train']
         
         if X_val is not None and y_val is not None:
-            val_set = lgb.Dataset(X_val, y_val, reference=train_set)
+            # Convert categorical columns in validation set
+            X_val_proc = X_val.copy()
+            for col in X_val_proc.columns:
+                if X_val_proc[col].dtype.name == 'category':
+                    X_val_proc[col] = X_val_proc[col].cat.codes.astype(int)
+                elif X_val_proc[col].dtype == 'object':
+                    X_val_proc[col] = pd.Categorical(X_val_proc[col]).codes.astype(int)
+            X_val_np = np.nan_to_num(X_val_proc.values.astype(np.float64), nan=0.0)
+            y_val_np = y_val.values.astype(np.float64) if hasattr(y_val, 'values') else np.array(y_val, dtype=np.float64)
+            val_set = lgb.Dataset(X_val_np, y_val_np, feature_name=list(X_val_proc.columns))
             valid_sets.append(val_set)
             valid_names.append('valid')
         
@@ -94,9 +120,9 @@ class LGBMModel(BaseModel):
         n_estimators = self.params.pop('n_estimators', 1000)
         early_stopping_rounds = self.params.pop('early_stopping_rounds', 50)
         
-        # Callbacks
+        # Callbacks - use simpler form
         callbacks = [
-            lgb.early_stopping(stopping_rounds=early_stopping_rounds),
+            lgb.early_stopping(stopping_rounds=early_stopping_rounds, verbose=True),
             lgb.log_evaluation(period=self.training_config.get('verbose_eval', 100))
         ]
         
@@ -128,7 +154,15 @@ class LGBMModel(BaseModel):
         Returns:
             Array of predictions
         """
-        return self.model.predict(X)
+        # Convert categorical columns to numeric codes
+        X_proc = X.copy()
+        for col in X_proc.columns:
+            if X_proc[col].dtype.name == 'category':
+                X_proc[col] = X_proc[col].cat.codes.astype(int)
+            elif X_proc[col].dtype == 'object':
+                X_proc[col] = pd.Categorical(X_proc[col]).codes.astype(int)
+        X_np = np.nan_to_num(X_proc.values.astype(np.float64), nan=0.0)
+        return self.model.predict(X_np)
     
     def save(self, path: str) -> None:
         """Save model to disk."""

@@ -2865,6 +2865,7 @@ Examples:
                         help="Forecasting scenario: 1 (no actuals) or 2 (6 months actuals)")
     parser.add_argument('--model', type=str, default='catboost',
                         choices=['catboost', 'lightgbm', 'xgboost', 'linear', 
+                                'nn', 'historical_curve', 'global_mean', 'flat', 'trend',
                                 'baseline_global_mean', 'baseline_flat'],
                         help="Model type to train (default: catboost)")
     

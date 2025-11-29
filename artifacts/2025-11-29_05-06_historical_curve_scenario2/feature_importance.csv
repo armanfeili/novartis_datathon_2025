@@ -1,0 +1,8 @@
+feature,importance
+pre_entry_trend,0.14285714285714285
+pre_entry_volatility,0.14285714285714285
+hospital_rate,0.14285714285714285
+n_gxs_at_entry,0.14285714285714285
+n_gxs,0.14285714285714285
+ther_area_encoded,0.14285714285714285
+main_package_encoded,0.14285714285714285
