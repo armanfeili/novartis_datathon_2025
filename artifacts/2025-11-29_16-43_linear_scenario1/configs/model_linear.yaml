@@ -1,0 +1,194 @@
+# =============================================================================
+# Linear Model Configuration - Novartis Datathon 2025
+# =============================================================================
+# Simple linear models: Ridge, Lasso, ElasticNet, Huber
+# Useful as baselines and for interpretability
+#
+# Usage:
+#   - Single run: Set sweep.enabled=false, use params directly
+#   - Named config: Set active_config_id to use a preset from sweep_configs
+#   - Sweep mode: Set sweep.enabled=true to iterate over all sweep_configs
+#
+# CLI Examples:
+#   python -m src.train --scenario 1 --model linear
+#   python -m src.train --scenario 1 --model linear --config-id lasso
+#   python -m src.train --scenario 1 --model linear --sweep
+# =============================================================================
+
+model:
+  name: "linear"
+  type: "ridge"  # ridge, lasso, elasticnet, huber
+  task: "regression"
+  priority: 4  # Lower priority - baseline model
+
+# =============================================================================
+# ACTIVE CONFIGURATION ID
+# =============================================================================
+active_config_id: null
+
+# =============================================================================
+# SWEEP CONFIGURATION
+# =============================================================================
+sweep:
+  enabled: false
+  mode: "configs"  # "configs" or "grid"
+  selection_metric: "official_metric"
+  n_folds: 3
+  
+  # Grid mode parameters
+  grid:
+    alpha: [0.01, 0.1, 1.0, 10.0, 100.0]
+    model_type: ["ridge", "lasso", "elasticnet"]
+
+# =============================================================================
+# NAMED SWEEP CONFIGURATIONS
+# =============================================================================
+sweep_configs:
+  - id: "default"
+    description: "Default Ridge regression"
+    params:
+      model_type: "ridge"
+      alpha: 1.0
+
+  - id: "ridge_strong"
+    description: "Strong Ridge regularization"
+    params:
+      model_type: "ridge"
+      alpha: 10.0
+
+  - id: "ridge_weak"
+    description: "Weak Ridge regularization"
+    params:
+      model_type: "ridge"
+      alpha: 0.1
+
+  - id: "lasso"
+    description: "Lasso for feature selection"
+    params:
+      model_type: "lasso"
+      alpha: 1.0
+
+  - id: "lasso_strong"
+    description: "Strong Lasso (sparse solution)"
+    params:
+      model_type: "lasso"
+      alpha: 10.0
+
+  - id: "elasticnet"
+    description: "ElasticNet balance of L1 and L2"
+    params:
+      model_type: "elasticnet"
+      alpha: 1.0
+      l1_ratio: 0.5
+
+  - id: "elasticnet_l1"
+    description: "ElasticNet leaning towards L1"
+    params:
+      model_type: "elasticnet"
+      alpha: 1.0
+      l1_ratio: 0.8
+
+  - id: "elasticnet_l2"
+    description: "ElasticNet leaning towards L2"
+    params:
+      model_type: "elasticnet"
+      alpha: 1.0
+      l1_ratio: 0.2
+
+  - id: "huber"
+    description: "Huber regression (robust to outliers)"
+    params:
+      model_type: "huber"
+      epsilon: 1.35
+      alpha: 0.0001
+
+# =============================================================================
+# BASE PARAMETERS
+# =============================================================================
+params:
+  model_type: "ridge"
+  alpha: 1.0
+
+# =============================================================================
+# MODEL-SPECIFIC PARAMETERS
+# =============================================================================
+# Ridge Regression
+ridge:
+  alpha: 1.0
+  fit_intercept: true
+  solver: "auto"  # auto, svd, cholesky, lsqr, sparse_cg, sag, saga
+
+# Lasso Regression
+lasso:
+  alpha: 1.0
+  fit_intercept: true
+  max_iter: 1000
+  tol: 1e-4
+  selection: "cyclic"  # cyclic, random
+
+# ElasticNet
+elasticnet:
+  alpha: 1.0
+  l1_ratio: 0.5        # 0 = L2 only, 1 = L1 only
+  fit_intercept: true
+  max_iter: 1000
+  tol: 1e-4
+
+# Huber Regressor (robust to outliers)
+huber:
+  epsilon: 1.35
+  alpha: 0.0001
+  max_iter: 100
+  fit_intercept: true
+
+# =============================================================================
+# PREPROCESSING
+# =============================================================================
+preprocessing:
+  scale_features: true
+  scaler: "standard"   # standard, minmax, robust
+  handle_missing: "mean"  # mean, median, zero
+  polynomial_degree: null  # Set to 2 for quadratic features
+
+# =============================================================================
+# TRAINING SETTINGS
+# =============================================================================
+training:
+  cv_folds: 5
+  verbose: true
+  use_sample_weights: true
+
+# =============================================================================
+# HYPERPARAMETER TUNING (Optuna)
+# =============================================================================
+tuning:
+  enabled: false
+  n_trials: 50
+  search_space:
+    ridge:
+      alpha: [0.001, 1000.0]
+    lasso:
+      alpha: [0.001, 100.0]
+    elasticnet:
+      alpha: [0.001, 100.0]
+      l1_ratio: [0.0, 1.0]
+
+# =============================================================================
+# BEST PARAMETERS (from previous experiments)
+# =============================================================================
+best_params:
+  scenario1:
+    model_type: "ridge"
+    alpha: 1.0
+  scenario2:
+    model_type: "ridge"
+    alpha: 1.0
+
+# =============================================================================
+# ENSEMBLE INTEGRATION
+# =============================================================================
+ensemble:
+  include: false  # Linear models typically not included in ensemble
+  initial_weight: 0.05
+  min_weight: 0.0
+  max_weight: 0.2

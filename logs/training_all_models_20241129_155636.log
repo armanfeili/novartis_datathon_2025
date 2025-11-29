@@ -1,0 +1,834 @@
+
+Model 1/11: CatBoost - Scenario 2
+2025-11-29 15:57:15,457 - __main__ - INFO - Starting experiment: 2025-11-29_15-57_catboost_scenario2
+2025-11-29 15:57:15,507 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_15-57_catboost_scenario2/configs (hash: 5733d1e6)
+2025-11-29 15:57:15,508 - __main__ - INFO - Config hash: 5733d1e6
+2025-11-29 15:57:15,533 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 15:57:15,534 - src.utils - INFO - [Load cached features for train S2 train] starting...
+2025-11-29 15:57:15,534 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s2_train.parquet
+2025-11-29 15:57:15,616 - src.features - INFO - Loaded X: (35154, 99), y: 35154
+2025-11-29 15:57:15,616 - src.utils - INFO - [Load cached features for train S2 train] done in 0.083s
+2025-11-29 15:57:15,634 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 15:57:15,634 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 15:57:15,646 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 15:57:15,646 - src.utils - INFO - [Load cached train panel] done in 0.012s
+2025-11-29 15:57:15,646 - src.utils - INFO - [Load features (cached)] done in 0.113s
+2025-11-29 15:57:15,646 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 15:57:15,659 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 15:57:15,736 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 15:57:15,736 - src.validation - INFO - Train rows: 28,116, Val rows: 7,038
+2025-11-29 15:57:15,738 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 15:57:15,738 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 15:57:15,738 - src.utils - INFO - [Create validation split] done in 0.092s
+2025-11-29 15:57:15,765 - __main__ - INFO - Features: 101 columns
+2025-11-29 15:57:15,765 - __main__ - INFO - Meta: 9 columns
+2025-11-29 15:57:15,770 - __main__ - INFO - Features: 101 columns
+2025-11-29 15:57:15,770 - __main__ - INFO - Meta: 9 columns
+2025-11-29 15:57:16,614 - __main__ - INFO - Sample weights - min: 0.63, max: 3.13, mean: 1.00
+2025-11-29 15:57:16,614 - src.utils - INFO - [Train catboost for scenario 2] starting...
+2025-11-29 15:57:27,960 - src.models.cat_model - INFO - CatBoost trained for 498 iterations
+2025-11-29 15:57:27,960 - src.utils - INFO - [Train catboost for scenario 2] done in 11.346s
+2025-11-29 15:57:28,693 - __main__ - INFO - Validation metrics: Official=0.2742, RMSE=0.2055, MAE=0.1265
+2025-11-29 15:57:28,694 - __main__ - INFO - Training time: 11.35 seconds
+2025-11-29 15:57:28,697 - src.models.cat_model - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_15-57_catboost_scenario2/model_2.bin
+2025-11-29 15:57:28,697 - __main__ - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_15-57_catboost_scenario2/model_2.bin
+2025-11-29 15:57:28,707 - __main__ - INFO - Experiment 2025-11-29_15-57_catboost_scenario2 completed. Artifacts saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_15-57_catboost_scenario2
+0:	learn: 0.2875927	test: 0.2956842	best: 0.2956842 (0)	total: 87.9ms	remaining: 4m 23s
+100:	learn: 0.1684052	test: 0.2103841	best: 0.2103841 (100)	total: 2.07s	remaining: 59.5s
+200:	learn: 0.1557257	test: 0.2069368	best: 0.2069368 (200)	total: 3.92s	remaining: 54.6s
+300:	learn: 0.1476716	test: 0.2061390	best: 0.2061390 (300)	total: 5.73s	remaining: 51.4s
+400:	learn: 0.1409508	test: 0.2057255	best: 0.2056740 (397)	total: 7.56s	remaining: 49s
+500:	learn: 0.1351149	test: 0.2055507	best: 0.2055301 (498)	total: 9.4s	remaining: 46.9s
+Stopped by overfitting detector  (100 iterations wait)
+
+bestTest = 0.2055301034
+bestIteration = 498
+
+Shrink model to first 499 iterations.
+
+Model 2/11: LightGBM - Scenario 1 & 2
+2025-11-29 15:57:42,039 - __main__ - INFO - Starting experiment: 2025-11-29_15-57_lightgbm_scenario1
+2025-11-29 15:57:42,099 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_15-57_lightgbm_scenario1/configs (hash: 989554f7)
+2025-11-29 15:57:42,100 - __main__ - INFO - Config hash: 989554f7
+2025-11-29 15:57:42,128 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 15:57:42,128 - src.utils - INFO - [Load cached features for train S1 train] starting...
+2025-11-29 15:57:42,128 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s1_train.parquet
+2025-11-29 15:57:42,209 - src.features - INFO - Loaded X: (46872, 87), y: 46872
+2025-11-29 15:57:42,209 - src.utils - INFO - [Load cached features for train S1 train] done in 0.081s
+2025-11-29 15:57:42,227 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 15:57:42,227 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 15:57:42,238 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 15:57:42,238 - src.utils - INFO - [Load cached train panel] done in 0.011s
+2025-11-29 15:57:42,238 - src.utils - INFO - [Load features (cached)] done in 0.110s
+2025-11-29 15:57:42,238 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 15:57:42,250 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 15:57:42,335 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 15:57:42,335 - src.validation - INFO - Train rows: 37,488, Val rows: 9,384
+2025-11-29 15:57:42,337 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 15:57:42,337 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 15:57:42,337 - src.utils - INFO - [Create validation split] done in 0.099s
+2025-11-29 15:57:42,365 - __main__ - INFO - Features: 86 columns
+2025-11-29 15:57:42,365 - __main__ - INFO - Meta: 9 columns
+2025-11-29 15:57:42,372 - __main__ - INFO - Features: 86 columns
+2025-11-29 15:57:42,372 - __main__ - INFO - Meta: 9 columns
+2025-11-29 15:57:43,762 - __main__ - INFO - Sample weights - min: 0.58, max: 3.46, mean: 1.00
+2025-11-29 15:57:43,762 - src.utils - INFO - [Train lightgbm for scenario 1] starting...
+
+2025-11-29 15:57:47,589 - __main__ - INFO - Starting experiment: 2025-11-29_15-57_lightgbm_scenario2
+2025-11-29 15:57:47,638 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_15-57_lightgbm_scenario2/configs (hash: 989554f7)
+2025-11-29 15:57:47,638 - __main__ - INFO - Config hash: 989554f7
+2025-11-29 15:57:47,661 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 15:57:47,661 - src.utils - INFO - [Load cached features for train S2 train] starting...
+2025-11-29 15:57:47,661 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s2_train.parquet
+2025-11-29 15:57:47,734 - src.features - INFO - Loaded X: (35154, 99), y: 35154
+2025-11-29 15:57:47,734 - src.utils - INFO - [Load cached features for train S2 train] done in 0.074s
+2025-11-29 15:57:47,751 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 15:57:47,751 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 15:57:47,764 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 15:57:47,764 - src.utils - INFO - [Load cached train panel] done in 0.013s
+2025-11-29 15:57:47,764 - src.utils - INFO - [Load features (cached)] done in 0.103s
+2025-11-29 15:57:47,764 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 15:57:47,777 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 15:57:47,865 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 15:57:47,865 - src.validation - INFO - Train rows: 28,116, Val rows: 7,038
+2025-11-29 15:57:47,867 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 15:57:47,868 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 15:57:47,868 - src.utils - INFO - [Create validation split] done in 0.104s
+2025-11-29 15:57:47,900 - __main__ - INFO - Features: 101 columns
+2025-11-29 15:57:47,900 - __main__ - INFO - Meta: 9 columns
+2025-11-29 15:57:47,907 - __main__ - INFO - Features: 101 columns
+2025-11-29 15:57:47,907 - __main__ - INFO - Meta: 9 columns
+2025-11-29 15:57:49,107 - __main__ - INFO - Sample weights - min: 0.63, max: 3.13, mean: 1.00
+2025-11-29 15:57:49,108 - src.utils - INFO - [Train lightgbm for scenario 2] starting...
+
+Note: LightGBM crashed with segfault - may be a library issue
+
+Model 3/11: XGBoost - Scenario 1 & 2
+2025-11-29 15:58:05,504 - __main__ - INFO - Starting experiment: 2025-11-29_15-58_xgboost_scenario1
+2025-11-29 15:58:05,564 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_15-58_xgboost_scenario1/configs (hash: 1b905dc2)
+2025-11-29 15:58:05,564 - __main__ - INFO - Config hash: 1b905dc2
+2025-11-29 15:58:05,592 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 15:58:05,593 - src.utils - INFO - [Load cached features for train S1 train] starting...
+2025-11-29 15:58:05,593 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s1_train.parquet
+2025-11-29 15:58:05,672 - src.features - INFO - Loaded X: (46872, 87), y: 46872
+2025-11-29 15:58:05,672 - src.utils - INFO - [Load cached features for train S1 train] done in 0.079s
+2025-11-29 15:58:05,693 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 15:58:05,693 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 15:58:05,706 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 15:58:05,706 - src.utils - INFO - [Load cached train panel] done in 0.014s
+2025-11-29 15:58:05,707 - src.utils - INFO - [Load features (cached)] done in 0.114s
+2025-11-29 15:58:05,707 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 15:58:05,722 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 15:58:05,815 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 15:58:05,816 - src.validation - INFO - Train rows: 37,488, Val rows: 9,384
+2025-11-29 15:58:05,817 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 15:58:05,818 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 15:58:05,818 - src.utils - INFO - [Create validation split] done in 0.111s
+2025-11-29 15:58:05,850 - __main__ - INFO - Features: 86 columns
+2025-11-29 15:58:05,850 - __main__ - INFO - Meta: 9 columns
+2025-11-29 15:58:05,858 - __main__ - INFO - Features: 86 columns
+2025-11-29 15:58:05,859 - __main__ - INFO - Meta: 9 columns
+2025-11-29 15:58:06,163 - __main__ - INFO - Sample weights - min: 0.58, max: 3.46, mean: 1.00
+2025-11-29 15:58:06,164 - src.utils - INFO - [Train xgboost for scenario 1] starting...
+
+Note: XGBoost also crashed with segfault - library issue
+
+Model 4/11: Linear Model - Scenario 1 & 2
+2025-11-29 15:58:19,766 - __main__ - INFO - Starting experiment: 2025-11-29_15-58_linear_scenario1
+2025-11-29 15:58:19,820 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_15-58_linear_scenario1/configs (hash: 5679d2dc)
+2025-11-29 15:58:19,820 - __main__ - INFO - Config hash: 5679d2dc
+2025-11-29 15:58:19,843 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 15:58:19,844 - src.utils - INFO - [Load cached features for train S1 train] starting...
+2025-11-29 15:58:19,844 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s1_train.parquet
+2025-11-29 15:58:19,913 - src.features - INFO - Loaded X: (46872, 87), y: 46872
+2025-11-29 15:58:19,913 - src.utils - INFO - [Load cached features for train S1 train] done in 0.069s
+2025-11-29 15:58:19,933 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 15:58:19,933 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 15:58:19,947 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 15:58:19,948 - src.utils - INFO - [Load cached train panel] done in 0.015s
+2025-11-29 15:58:19,948 - src.utils - INFO - [Load features (cached)] done in 0.104s
+2025-11-29 15:58:19,948 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 15:58:19,964 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 15:58:20,061 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 15:58:20,062 - src.validation - INFO - Train rows: 37,488, Val rows: 9,384
+2025-11-29 15:58:20,063 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 15:58:20,064 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 15:58:20,064 - src.utils - INFO - [Create validation split] done in 0.116s
+2025-11-29 15:58:20,095 - __main__ - INFO - Features: 86 columns
+2025-11-29 15:58:20,095 - __main__ - INFO - Meta: 9 columns
+2025-11-29 15:58:20,102 - __main__ - INFO - Features: 86 columns
+2025-11-29 15:58:20,102 - __main__ - INFO - Meta: 9 columns
+2025-11-29 15:58:20,245 - __main__ - INFO - Sample weights - min: 0.58, max: 3.46, mean: 1.00
+2025-11-29 15:58:20,245 - src.utils - INFO - [Train linear for scenario 1] starting...
+2025-11-29 15:58:20,252 - src.utils - INFO - [Train linear for scenario 1] done in 0.006s
+Traceback (most recent call last):
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/pandas/core/arrays/categorical.py", line 592, in astype
+    new_cats = new_cats.astype(dtype=dtype, copy=copy)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: could not convert string to float: 'Anti-infectives'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 4390, in <module>
+    main()
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 4376, in main
+    run_experiment(
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 2621, in run_experiment
+    model, metrics = train_scenario_model(
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 1929, in train_scenario_model
+    model.fit(
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/models/linear.py", line 117, in fit
+    self.model.fit(X_train, y_train, model__sample_weight=sample_weight.values)
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/sklearn/base.py", line 1365, in wrapper
+    return fit_method(estimator, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/sklearn/pipeline.py", line 655, in fit
+    Xt = self._fit(X, y, routed_params, raw_params=params)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/sklearn/pipeline.py", line 589, in _fit
+    X, fitted_transformer = fit_transform_one_cached(
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/joblib/memory.py", line 326, in __call__
+    return self.func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/sklearn/pipeline.py", line 1540, in _fit_transform_one
+    res = transformer.fit_transform(X, y, **params.get("fit_transform", {}))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/sklearn/utils/_set_output.py", line 316, in wrapped
+    data_to_wrap = f(self, X, *args, **kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/sklearn/base.py", line 897, in fit_transform
+    return self.fit(X, y, **fit_params).transform(X)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/sklearn/base.py", line 1365, in wrapper
+    return fit_method(estimator, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/sklearn/impute/_base.py", line 452, in fit
+    X = self._validate_input(X, in_fit=True)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/sklearn/impute/_base.py", line 379, in _validate_input
+    raise ve
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/sklearn/impute/_base.py", line 360, in _validate_input
+    X = validate_data(
+        ^^^^^^^^^^^^^^
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/sklearn/utils/validation.py", line 2954, in validate_data
+    out = check_array(X, input_name="X", **check_params)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/sklearn/utils/validation.py", line 971, in check_array
+    array = array.astype(new_dtype)
+            ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/pandas/core/generic.py", line 6665, in astype
+    new_data = self._mgr.astype(dtype=dtype, copy=copy, errors=errors)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/pandas/core/internals/managers.py", line 449, in astype
+    return self.apply(
+           ^^^^^^^^^^^
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/pandas/core/internals/managers.py", line 363, in apply
+    applied = getattr(b, f)(**kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/pandas/core/internals/blocks.py", line 784, in astype
+    new_values = astype_array_safe(values, dtype, copy=copy, errors=errors)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/pandas/core/dtypes/astype.py", line 237, in astype_array_safe
+    new_values = astype_array(values, dtype, copy=copy)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/pandas/core/dtypes/astype.py", line 179, in astype_array
+    values = values.astype(dtype, copy=copy)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/anaconda3/lib/python3.11/site-packages/pandas/core/arrays/categorical.py", line 603, in astype
+    raise ValueError(msg)
+ValueError: Cannot cast object dtype to float64
+
+Note: Linear model failed due to categorical feature handling
+
+Model 5/11: Neural Network - Scenario 1 & 2
+2025-11-29 15:58:37,530 - __main__ - INFO - Starting experiment: 2025-11-29_15-58_nn_scenario1
+2025-11-29 15:58:37,579 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_15-58_nn_scenario1/configs (hash: e53dc939)
+2025-11-29 15:58:37,579 - __main__ - INFO - Config hash: e53dc939
+2025-11-29 15:58:37,602 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 15:58:37,604 - src.utils - INFO - [Load cached features for train S1 train] starting...
+2025-11-29 15:58:37,604 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s1_train.parquet
+2025-11-29 15:58:37,684 - src.features - INFO - Loaded X: (46872, 87), y: 46872
+2025-11-29 15:58:37,684 - src.utils - INFO - [Load cached features for train S1 train] done in 0.080s
+2025-11-29 15:58:37,704 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 15:58:37,705 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 15:58:37,718 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 15:58:37,719 - src.utils - INFO - [Load cached train panel] done in 0.014s
+2025-11-29 15:58:37,719 - src.utils - INFO - [Load features (cached)] done in 0.117s
+2025-11-29 15:58:37,720 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 15:58:37,733 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 15:58:37,830 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 15:58:37,830 - src.validation - INFO - Train rows: 37,488, Val rows: 9,384
+2025-11-29 15:58:37,832 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 15:58:37,832 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 15:58:37,832 - src.utils - INFO - [Create validation split] done in 0.112s
+2025-11-29 15:58:37,865 - __main__ - INFO - Features: 86 columns
+2025-11-29 15:58:37,865 - __main__ - INFO - Meta: 9 columns
+2025-11-29 15:58:37,873 - __main__ - INFO - Features: 86 columns
+2025-11-29 15:58:37,874 - __main__ - INFO - Meta: 9 columns
+2025-11-29 15:58:38,032 - __main__ - INFO - Sample weights - min: 0.58, max: 3.46, mean: 1.00
+2025-11-29 15:58:38,033 - src.utils - INFO - [Train nn for scenario 1] starting...
+/Users/armanfeili/anaconda3/lib/python3.11/site-packages/torch/optim/lr_scheduler.py:28: UserWarning: The verbose parameter is deprecated. Please use get_last_lr() to access the learning rate.
+  warnings.warn("The verbose parameter is deprecated. Please use get_last_lr() "
+2025-11-29 15:58:48,405 - src.models.nn - INFO - Epoch 0: Train Loss 0.1571, Val Loss 0.0970
+2025-11-29 15:59:56,681 - src.models.nn - INFO - Epoch 10: Train Loss 0.0874, Val Loss 0.0905
+2025-11-29 16:00:43,490 - src.models.nn - INFO - Early stopping at epoch 17
+2025-11-29 16:00:43,502 - src.utils - INFO - [Train nn for scenario 1] done in 125.469s
+2025-11-29 16:00:44,681 - __main__ - INFO - Validation metrics: Official=0.9648, RMSE=0.2999, MAE=0.2329
+2025-11-29 16:00:44,681 - __main__ - INFO - Training time: 125.47 seconds
+2025-11-29 16:00:44,704 - __main__ - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_15-58_nn_scenario1/model_1.bin
+2025-11-29 16:00:44,712 - __main__ - INFO - Experiment 2025-11-29_15-58_nn_scenario1 completed. Artifacts saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_15-58_nn_scenario1
+
+2025-11-29 16:00:58,575 - __main__ - INFO - Starting experiment: 2025-11-29_16-00_nn_scenario2
+2025-11-29 16:00:58,624 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-00_nn_scenario2/configs (hash: e53dc939)
+2025-11-29 16:00:58,624 - __main__ - INFO - Config hash: e53dc939
+2025-11-29 16:00:58,645 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 16:00:58,645 - src.utils - INFO - [Load cached features for train S2 train] starting...
+2025-11-29 16:00:58,645 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s2_train.parquet
+2025-11-29 16:00:58,739 - src.features - INFO - Loaded X: (35154, 99), y: 35154
+2025-11-29 16:00:58,739 - src.utils - INFO - [Load cached features for train S2 train] done in 0.094s
+2025-11-29 16:00:58,759 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 16:00:58,759 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 16:00:58,866 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 16:00:58,866 - src.utils - INFO - [Load cached train panel] done in 0.108s
+2025-11-29 16:00:58,867 - src.utils - INFO - [Load features (cached)] done in 0.222s
+2025-11-29 16:00:58,867 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 16:00:58,896 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 16:00:59,011 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 16:00:59,011 - src.validation - INFO - Train rows: 28,116, Val rows: 7,038
+2025-11-29 16:00:59,014 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 16:00:59,015 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 16:00:59,015 - src.utils - INFO - [Create validation split] done in 0.148s
+2025-11-29 16:00:59,050 - __main__ - INFO - Features: 101 columns
+2025-11-29 16:00:59,050 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:00:59,057 - __main__ - INFO - Features: 101 columns
+2025-11-29 16:00:59,058 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:00:59,274 - __main__ - INFO - Sample weights - min: 0.63, max: 3.13, mean: 1.00
+2025-11-29 16:00:59,274 - src.utils - INFO - [Train nn for scenario 2] starting...
+/Users/armanfeili/anaconda3/lib/python3.11/site-packages/torch/optim/lr_scheduler.py:28: UserWarning: The verbose parameter is deprecated. Please use get_last_lr() to access the learning rate.
+  warnings.warn("The verbose parameter is deprecated. Please use get_last_lr() "
+2025-11-29 16:01:07,754 - src.models.nn - INFO - Epoch 0: Train Loss 0.2167, Val Loss 0.0826
+2025-11-29 16:01:59,300 - src.models.nn - INFO - Epoch 10: Train Loss 0.0652, Val Loss 0.0762
+2025-11-29 16:02:47,977 - src.models.nn - INFO - Epoch 20: Train Loss 0.0609, Val Loss 0.0817
+2025-11-29 16:03:36,736 - src.models.nn - INFO - Epoch 30: Train Loss 0.0605, Val Loss 0.0719
+2025-11-29 16:04:25,823 - src.models.nn - INFO - Epoch 40: Train Loss 0.0572, Val Loss 0.0711
+2025-11-29 16:04:54,859 - src.models.nn - INFO - Early stopping at epoch 46
+2025-11-29 16:04:54,864 - src.utils - INFO - [Train nn for scenario 2] done in 235.590s
+2025-11-29 16:04:55,809 - __main__ - INFO - Validation metrics: Official=0.5815, RMSE=0.2884, MAE=0.2015
+2025-11-29 16:04:55,809 - __main__ - INFO - Training time: 235.59 seconds
+2025-11-29 16:04:55,823 - __main__ - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-00_nn_scenario2/model_2.bin
+2025-11-29 16:04:55,831 - __main__ - INFO - Experiment 2025-11-29_16-00_nn_scenario2 completed. Artifacts saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-00_nn_scenario2
+
+Model 6/11: Historical Curve Baseline - Scenario 1 & 2
+2025-11-29 16:05:11,202 - __main__ - INFO - Starting experiment: 2025-11-29_16-05_historical_curve_scenario1
+2025-11-29 16:05:11,234 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-05_historical_curve_scenario1/configs (hash: 90160453)
+2025-11-29 16:05:11,236 - __main__ - INFO - Config hash: 90160453
+2025-11-29 16:05:11,254 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 16:05:11,255 - src.utils - INFO - [Load cached features for train S1 train] starting...
+2025-11-29 16:05:11,255 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s1_train.parquet
+2025-11-29 16:05:11,350 - src.features - INFO - Loaded X: (46872, 87), y: 46872
+2025-11-29 16:05:11,350 - src.utils - INFO - [Load cached features for train S1 train] done in 0.096s
+2025-11-29 16:05:11,371 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 16:05:11,371 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 16:05:11,386 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 16:05:11,386 - src.utils - INFO - [Load cached train panel] done in 0.015s
+2025-11-29 16:05:11,386 - src.utils - INFO - [Load features (cached)] done in 0.132s
+2025-11-29 16:05:11,386 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 16:05:11,404 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 16:05:11,505 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 16:05:11,505 - src.validation - INFO - Train rows: 37,488, Val rows: 9,384
+2025-11-29 16:05:11,507 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 16:05:11,507 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 16:05:11,507 - src.utils - INFO - [Create validation split] done in 0.121s
+2025-11-29 16:05:11,543 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:05:11,543 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:05:11,553 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:05:11,554 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:05:11,719 - __main__ - INFO - Sample weights - min: 0.58, max: 3.46, mean: 1.00
+2025-11-29 16:05:11,719 - src.utils - INFO - [Train historical_curve for scenario 1] starting...
+2025-11-29 16:05:11,719 - src.models.linear - WARNING - No country/brand_name columns - treating each row as a series
+2025-11-29 16:05:11,847 - src.models.linear - INFO - HistoricalCurveBaseline: fitted with 0 historical curves, n_neighbors=5
+2025-11-29 16:05:11,847 - src.utils - INFO - [Train historical_curve for scenario 1] done in 0.128s
+2025-11-29 16:05:11,847 - src.models.linear - WARNING - No country/brand_name columns - treating each row as a series
+2025-11-29 16:05:24,567 - __main__ - INFO - Validation metrics: Official=0.9165, RMSE=0.2981, MAE=0.2375
+2025-11-29 16:05:24,569 - __main__ - INFO - Training time: 0.13 seconds
+2025-11-29 16:05:24,939 - __main__ - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-05_historical_curve_scenario1/model_1.bin
+2025-11-29 16:05:24,994 - __main__ - INFO - Experiment 2025-11-29_16-05_historical_curve_scenario1 completed. Artifacts saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-05_historical_curve_scenario1
+
+2025-11-29 16:05:29,173 - __main__ - INFO - Starting experiment: 2025-11-29_16-05_historical_curve_scenario2
+2025-11-29 16:05:29,206 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-05_historical_curve_scenario2/configs (hash: 90160453)
+2025-11-29 16:05:29,206 - __main__ - INFO - Config hash: 90160453
+2025-11-29 16:05:29,222 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 16:05:29,222 - src.utils - INFO - [Load cached features for train S2 train] starting...
+2025-11-29 16:05:29,222 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s2_train.parquet
+2025-11-29 16:05:29,303 - src.features - INFO - Loaded X: (35154, 99), y: 35154
+2025-11-29 16:05:29,303 - src.utils - INFO - [Load cached features for train S2 train] done in 0.081s
+2025-11-29 16:05:29,319 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 16:05:29,319 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 16:05:29,330 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 16:05:29,330 - src.utils - INFO - [Load cached train panel] done in 0.011s
+2025-11-29 16:05:29,330 - src.utils - INFO - [Load features (cached)] done in 0.108s
+2025-11-29 16:05:29,330 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 16:05:29,347 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 16:05:29,434 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 16:05:29,434 - src.validation - INFO - Train rows: 28,116, Val rows: 7,038
+2025-11-29 16:05:29,436 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 16:05:29,436 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 16:05:29,436 - src.utils - INFO - [Create validation split] done in 0.106s
+2025-11-29 16:05:29,466 - __main__ - INFO - Features: 101 columns
+2025-11-29 16:05:29,467 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:05:29,473 - __main__ - INFO - Features: 101 columns
+2025-11-29 16:05:29,473 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:05:29,602 - __main__ - INFO - Sample weights - min: 0.63, max: 3.13, mean: 1.00
+2025-11-29 16:05:29,603 - src.utils - INFO - [Train historical_curve for scenario 2] starting...
+2025-11-29 16:05:29,603 - src.models.linear - WARNING - No country/brand_name columns - treating each row as a series
+2025-11-29 16:05:29,726 - src.models.linear - INFO - HistoricalCurveBaseline: fitted with 0 historical curves, n_neighbors=5
+2025-11-29 16:05:29,726 - src.utils - INFO - [Train historical_curve for scenario 2] done in 0.123s
+2025-11-29 16:05:29,726 - src.models.linear - WARNING - No country/brand_name columns - treating each row as a series
+2025-11-29 16:05:35,769 - __main__ - INFO - Validation metrics: Official=1.0840, RMSE=0.2997, MAE=0.2371
+2025-11-29 16:05:35,770 - __main__ - INFO - Training time: 0.12 seconds
+2025-11-29 16:05:35,995 - __main__ - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-05_historical_curve_scenario2/model_2.bin
+2025-11-29 16:05:36,000 - __main__ - INFO - Experiment 2025-11-29_16-05_historical_curve_scenario2 completed. Artifacts saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-05_historical_curve_scenario2
+
+Model 7/11: Global Mean Baseline - Scenario 1 & 2
+2025-11-29 16:05:48,322 - __main__ - INFO - Starting experiment: 2025-11-29_16-05_global_mean_scenario1
+2025-11-29 16:05:48,360 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-05_global_mean_scenario1/configs (hash: 90160453)
+2025-11-29 16:05:48,361 - __main__ - INFO - Config hash: 90160453
+2025-11-29 16:05:48,380 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 16:05:48,380 - src.utils - INFO - [Load cached features for train S1 train] starting...
+2025-11-29 16:05:48,380 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s1_train.parquet
+2025-11-29 16:05:48,469 - src.features - INFO - Loaded X: (46872, 87), y: 46872
+2025-11-29 16:05:48,470 - src.utils - INFO - [Load cached features for train S1 train] done in 0.090s
+2025-11-29 16:05:48,488 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 16:05:48,488 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 16:05:48,504 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 16:05:48,504 - src.utils - INFO - [Load cached train panel] done in 0.016s
+2025-11-29 16:05:48,504 - src.utils - INFO - [Load features (cached)] done in 0.125s
+2025-11-29 16:05:48,505 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 16:05:48,525 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 16:05:48,622 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 16:05:48,622 - src.validation - INFO - Train rows: 37,488, Val rows: 9,384
+2025-11-29 16:05:48,624 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 16:05:48,624 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 16:05:48,624 - src.utils - INFO - [Create validation split] done in 0.120s
+2025-11-29 16:05:48,655 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:05:48,655 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:05:48,665 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:05:48,666 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:05:48,804 - __main__ - INFO - Sample weights - min: 0.58, max: 3.46, mean: 1.00
+2025-11-29 16:05:48,804 - src.utils - INFO - [Train global_mean for scenario 1] starting...
+2025-11-29 16:05:48,804 - src.utils - INFO - [Train global_mean for scenario 1] done in 0.000s
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 4390, in <module>
+    main()
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 4376, in main
+    run_experiment(
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 2621, in run_experiment
+    model, metrics = train_scenario_model(
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 1929, in train_scenario_model
+    model.fit(
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/models/linear.py", line 185, in fit
+    raise ValueError("X_train must contain 'months_postgx' column for GlobalMeanBaseline")
+ValueError: X_train must contain 'months_postgx' column for GlobalMeanBaseline
+
+2025-11-29 16:05:52,496 - __main__ - INFO - Starting experiment: 2025-11-29_16-05_global_mean_scenario2
+2025-11-29 16:05:52,534 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-05_global_mean_scenario2/configs (hash: 90160453)
+2025-11-29 16:05:52,535 - __main__ - INFO - Config hash: 90160453
+2025-11-29 16:05:52,550 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 16:05:52,551 - src.utils - INFO - [Load cached features for train S2 train] starting...
+2025-11-29 16:05:52,551 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s2_train.parquet
+2025-11-29 16:05:52,622 - src.features - INFO - Loaded X: (35154, 99), y: 35154
+2025-11-29 16:05:52,623 - src.utils - INFO - [Load cached features for train S2 train] done in 0.072s
+2025-11-29 16:05:52,639 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 16:05:52,639 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 16:05:52,654 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 16:05:52,655 - src.utils - INFO - [Load cached train panel] done in 0.015s
+2025-11-29 16:05:52,655 - src.utils - INFO - [Load features (cached)] done in 0.104s
+2025-11-29 16:05:52,655 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 16:05:52,673 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 16:05:52,764 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 16:05:52,764 - src.validation - INFO - Train rows: 28,116, Val rows: 7,038
+2025-11-29 16:05:52,766 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 16:05:52,766 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 16:05:52,767 - src.utils - INFO - [Create validation split] done in 0.112s
+2025-11-29 16:05:52,796 - __main__ - INFO - Features: 101 columns
+2025-11-29 16:05:52,796 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:05:52,804 - __main__ - INFO - Features: 101 columns
+2025-11-29 16:05:52,804 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:05:52,938 - __main__ - INFO - Sample weights - min: 0.63, max: 3.13, mean: 1.00
+2025-11-29 16:05:52,939 - src.utils - INFO - [Train global_mean for scenario 2] starting...
+2025-11-29 16:05:52,939 - src.utils - INFO - [Train global_mean for scenario 2] done in 0.000s
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 4390, in <module>
+    main()
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 4376, in main
+    run_experiment(
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 2621, in run_experiment
+    model, metrics = train_scenario_model(
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 1929, in train_scenario_model
+    model.fit(
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/models/linear.py", line 185, in fit
+    raise ValueError("X_train must contain 'months_postgx' column for GlobalMeanBaseline")
+ValueError: X_train must contain 'months_postgx' column for GlobalMeanBaseline
+
+Note: Global Mean baseline requires months_postgx in X
+
+Model 8/11: Flat Baseline - Scenario 1 & 2
+2025-11-29 16:06:06,115 - __main__ - INFO - Starting experiment: 2025-11-29_16-06_flat_scenario1
+2025-11-29 16:06:06,155 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-06_flat_scenario1/configs (hash: 90160453)
+2025-11-29 16:06:06,155 - __main__ - INFO - Config hash: 90160453
+2025-11-29 16:06:06,171 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 16:06:06,171 - src.utils - INFO - [Load cached features for train S1 train] starting...
+2025-11-29 16:06:06,172 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s1_train.parquet
+2025-11-29 16:06:06,254 - src.features - INFO - Loaded X: (46872, 87), y: 46872
+2025-11-29 16:06:06,254 - src.utils - INFO - [Load cached features for train S1 train] done in 0.083s
+2025-11-29 16:06:06,273 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 16:06:06,273 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 16:06:06,288 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 16:06:06,288 - src.utils - INFO - [Load cached train panel] done in 0.015s
+2025-11-29 16:06:06,288 - src.utils - INFO - [Load features (cached)] done in 0.117s
+2025-11-29 16:06:06,288 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 16:06:06,304 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 16:06:06,401 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 16:06:06,401 - src.validation - INFO - Train rows: 37,488, Val rows: 9,384
+2025-11-29 16:06:06,403 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 16:06:06,403 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 16:06:06,403 - src.utils - INFO - [Create validation split] done in 0.116s
+2025-11-29 16:06:06,435 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:06:06,435 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:06:06,443 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:06:06,443 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:06:06,563 - __main__ - INFO - Sample weights - min: 0.58, max: 3.46, mean: 1.00
+2025-11-29 16:06:06,563 - src.utils - INFO - [Train flat for scenario 1] starting...
+2025-11-29 16:06:06,563 - src.models.linear - INFO - FlatBaseline: no fitting needed
+2025-11-29 16:06:06,563 - src.utils - INFO - [Train flat for scenario 1] done in 0.000s
+2025-11-29 16:06:07,605 - __main__ - INFO - Validation metrics: Official=1.8007, RMSE=0.4965, MAE=0.4094
+2025-11-29 16:06:07,605 - __main__ - INFO - Training time: 0.00 seconds
+2025-11-29 16:06:07,606 - __main__ - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-06_flat_scenario1/model_1.bin
+2025-11-29 16:06:07,613 - __main__ - INFO - Experiment 2025-11-29_16-06_flat_scenario1 completed. Artifacts saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-06_flat_scenario1
+
+2025-11-29 16:06:11,163 - __main__ - INFO - Starting experiment: 2025-11-29_16-06_flat_scenario2
+2025-11-29 16:06:11,197 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-06_flat_scenario2/configs (hash: 90160453)
+2025-11-29 16:06:11,197 - __main__ - INFO - Config hash: 90160453
+2025-11-29 16:06:11,214 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 16:06:11,214 - src.utils - INFO - [Load cached features for train S2 train] starting...
+2025-11-29 16:06:11,214 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s2_train.parquet
+2025-11-29 16:06:11,288 - src.features - INFO - Loaded X: (35154, 99), y: 35154
+2025-11-29 16:06:11,289 - src.utils - INFO - [Load cached features for train S2 train] done in 0.074s
+2025-11-29 16:06:11,303 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 16:06:11,304 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 16:06:11,317 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 16:06:11,318 - src.utils - INFO - [Load cached train panel] done in 0.014s
+2025-11-29 16:06:11,318 - src.utils - INFO - [Load features (cached)] done in 0.104s
+2025-11-29 16:06:11,318 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 16:06:11,329 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 16:06:11,408 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 16:06:11,408 - src.validation - INFO - Train rows: 28,116, Val rows: 7,038
+2025-11-29 16:06:11,410 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 16:06:11,410 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 16:06:11,410 - src.utils - INFO - [Create validation split] done in 0.092s
+2025-11-29 16:06:11,435 - __main__ - INFO - Features: 101 columns
+2025-11-29 16:06:11,435 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:06:11,439 - __main__ - INFO - Features: 101 columns
+2025-11-29 16:06:11,439 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:06:11,562 - __main__ - INFO - Sample weights - min: 0.63, max: 3.13, mean: 1.00
+2025-11-29 16:06:11,563 - src.utils - INFO - [Train flat for scenario 2] starting...
+2025-11-29 16:06:11,563 - src.models.linear - INFO - FlatBaseline: no fitting needed
+2025-11-29 16:06:11,563 - src.utils - INFO - [Train flat for scenario 2] done in 0.000s
+2025-11-29 16:06:12,391 - __main__ - INFO - Validation metrics: Official=2.1748, RMSE=0.5363, MAE=0.4559
+2025-11-29 16:06:12,391 - __main__ - INFO - Training time: 0.00 seconds
+2025-11-29 16:06:12,392 - __main__ - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-06_flat_scenario2/model_2.bin
+2025-11-29 16:06:12,393 - __main__ - INFO - Experiment 2025-11-29_16-06_flat_scenario2 completed. Artifacts saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-06_flat_scenario2
+
+Model 9/11: Trend Baseline - Scenario 1 & 2
+2025-11-29 16:06:25,348 - __main__ - INFO - Starting experiment: 2025-11-29_16-06_trend_scenario1
+2025-11-29 16:06:25,389 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-06_trend_scenario1/configs (hash: 90160453)
+2025-11-29 16:06:25,389 - __main__ - INFO - Config hash: 90160453
+2025-11-29 16:06:25,407 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 16:06:25,407 - src.utils - INFO - [Load cached features for train S1 train] starting...
+2025-11-29 16:06:25,407 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s1_train.parquet
+2025-11-29 16:06:25,515 - src.features - INFO - Loaded X: (46872, 87), y: 46872
+2025-11-29 16:06:25,515 - src.utils - INFO - [Load cached features for train S1 train] done in 0.108s
+2025-11-29 16:06:25,536 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 16:06:25,537 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 16:06:25,554 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 16:06:25,554 - src.utils - INFO - [Load cached train panel] done in 0.018s
+2025-11-29 16:06:25,554 - src.utils - INFO - [Load features (cached)] done in 0.147s
+2025-11-29 16:06:25,554 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 16:06:25,574 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 16:06:25,677 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 16:06:25,677 - src.validation - INFO - Train rows: 37,488, Val rows: 9,384
+2025-11-29 16:06:25,678 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 16:06:25,679 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 16:06:25,679 - src.utils - INFO - [Create validation split] done in 0.124s
+2025-11-29 16:06:25,710 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:06:25,710 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:06:25,720 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:06:25,720 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:06:25,856 - __main__ - INFO - Sample weights - min: 0.58, max: 3.46, mean: 1.00
+2025-11-29 16:06:25,857 - src.utils - INFO - [Train trend for scenario 1] starting...
+2025-11-29 16:06:25,857 - src.models.linear - INFO - TrendBaseline: learned global trend = 0.0000
+2025-11-29 16:06:25,857 - src.utils - INFO - [Train trend for scenario 1] done in 0.000s
+2025-11-29 16:06:26,852 - __main__ - INFO - Validation metrics: Official=1.8007, RMSE=0.4965, MAE=0.4094
+2025-11-29 16:06:26,852 - __main__ - INFO - Training time: 0.00 seconds
+2025-11-29 16:06:26,853 - __main__ - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-06_trend_scenario1/model_1.bin
+2025-11-29 16:06:26,854 - __main__ - INFO - Experiment 2025-11-29_16-06_trend_scenario1 completed. Artifacts saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-06_trend_scenario1
+
+2025-11-29 16:06:30,478 - __main__ - INFO - Starting experiment: 2025-11-29_16-06_trend_scenario2
+2025-11-29 16:06:30,521 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-06_trend_scenario2/configs (hash: 90160453)
+2025-11-29 16:06:30,522 - __main__ - INFO - Config hash: 90160453
+2025-11-29 16:06:30,538 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 16:06:30,538 - src.utils - INFO - [Load cached features for train S2 train] starting...
+2025-11-29 16:06:30,538 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s2_train.parquet
+2025-11-29 16:06:30,618 - src.features - INFO - Loaded X: (35154, 99), y: 35154
+2025-11-29 16:06:30,618 - src.utils - INFO - [Load cached features for train S2 train] done in 0.080s
+2025-11-29 16:06:30,636 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 16:06:30,636 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 16:06:30,652 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 16:06:30,652 - src.utils - INFO - [Load cached train panel] done in 0.016s
+2025-11-29 16:06:30,652 - src.utils - INFO - [Load features (cached)] done in 0.114s
+2025-11-29 16:06:30,652 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 16:06:30,670 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 16:06:30,773 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 16:06:30,773 - src.validation - INFO - Train rows: 28,116, Val rows: 7,038
+2025-11-29 16:06:30,775 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 16:06:30,776 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 16:06:30,776 - src.utils - INFO - [Create validation split] done in 0.124s
+2025-11-29 16:06:30,807 - __main__ - INFO - Features: 101 columns
+2025-11-29 16:06:30,808 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:06:30,815 - __main__ - INFO - Features: 101 columns
+2025-11-29 16:06:30,815 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:06:30,951 - __main__ - INFO - Sample weights - min: 0.63, max: 3.13, mean: 1.00
+2025-11-29 16:06:30,951 - src.utils - INFO - [Train trend for scenario 2] starting...
+2025-11-29 16:06:30,952 - src.models.linear - INFO - TrendBaseline: learned global trend = 0.0000
+2025-11-29 16:06:30,952 - src.utils - INFO - [Train trend for scenario 2] done in 0.001s
+2025-11-29 16:06:31,789 - __main__ - INFO - Validation metrics: Official=2.1748, RMSE=0.5363, MAE=0.4559
+2025-11-29 16:06:31,789 - __main__ - INFO - Training time: 0.00 seconds
+2025-11-29 16:06:31,790 - __main__ - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-06_trend_scenario2/model_2.bin
+2025-11-29 16:06:31,791 - __main__ - INFO - Experiment 2025-11-29_16-06_trend_scenario2 completed. Artifacts saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-06_trend_scenario2
+
+Model 10/11: Hybrid Physics+ML - Scenario 1 & 2
+2025-11-29 16:06:43,619 - __main__ - INFO - Starting experiment: 2025-11-29_16-06_hybrid_scenario1
+2025-11-29 16:06:43,668 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-06_hybrid_scenario1/configs (hash: a3ed4b78)
+2025-11-29 16:06:43,668 - __main__ - INFO - Config hash: a3ed4b78
+2025-11-29 16:06:43,687 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 16:06:43,687 - src.utils - INFO - [Load cached features for train S1 train] starting...
+2025-11-29 16:06:43,687 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s1_train.parquet
+2025-11-29 16:06:43,768 - src.features - INFO - Loaded X: (46872, 87), y: 46872
+2025-11-29 16:06:43,768 - src.utils - INFO - [Load cached features for train S1 train] done in 0.080s
+2025-11-29 16:06:43,788 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 16:06:43,788 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 16:06:43,802 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 16:06:43,803 - src.utils - INFO - [Load cached train panel] done in 0.014s
+2025-11-29 16:06:43,803 - src.utils - INFO - [Load features (cached)] done in 0.116s
+2025-11-29 16:06:43,803 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 16:06:43,821 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 16:06:43,926 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 16:06:43,926 - src.validation - INFO - Train rows: 37,488, Val rows: 9,384
+2025-11-29 16:06:43,927 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 16:06:43,928 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 16:06:43,928 - src.utils - INFO - [Create validation split] done in 0.125s
+2025-11-29 16:06:43,960 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:06:43,961 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:06:43,970 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:06:43,970 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:06:44,113 - __main__ - INFO - Sample weights - min: 0.58, max: 3.46, mean: 1.00
+2025-11-29 16:06:44,114 - src.utils - INFO - [Train hybrid for scenario 1] starting...
+2025-11-29 16:06:44,114 - src.utils - INFO - [Train hybrid for scenario 1] done in 0.000s
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 4390, in <module>
+    main()
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 4376, in main
+    run_experiment(
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 2621, in run_experiment
+    model, metrics = train_scenario_model(
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 1929, in train_scenario_model
+    model.fit(
+TypeError: HybridPhysicsMLModel.fit() got an unexpected keyword argument 'sample_weight'
+
+Note: Hybrid model has API compatibility issue with sample_weight
+
+Model 11/11: ARIHOW (ARIMA + Holt-Winters) - Scenario 1 & 2
+2025-11-29 16:06:58,223 - __main__ - INFO - Starting experiment: 2025-11-29_16-06_arihow_scenario1
+2025-11-29 16:06:58,278 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-06_arihow_scenario1/configs (hash: 3afb31a0)
+2025-11-29 16:06:58,278 - __main__ - INFO - Config hash: 3afb31a0
+2025-11-29 16:06:58,303 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 16:06:58,303 - src.utils - INFO - [Load cached features for train S1 train] starting...
+2025-11-29 16:06:58,304 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s1_train.parquet
+2025-11-29 16:06:58,386 - src.features - INFO - Loaded X: (46872, 87), y: 46872
+2025-11-29 16:06:58,386 - src.utils - INFO - [Load cached features for train S1 train] done in 0.083s
+2025-11-29 16:06:58,405 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 16:06:58,405 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 16:06:58,420 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 16:06:58,420 - src.utils - INFO - [Load cached train panel] done in 0.015s
+2025-11-29 16:06:58,420 - src.utils - INFO - [Load features (cached)] done in 0.117s
+2025-11-29 16:06:58,420 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 16:06:58,437 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 16:06:58,550 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 16:06:58,551 - src.validation - INFO - Train rows: 37,488, Val rows: 9,384
+2025-11-29 16:06:58,552 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 16:06:58,553 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 16:06:58,553 - src.utils - INFO - [Create validation split] done in 0.133s
+2025-11-29 16:06:58,587 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:06:58,587 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:06:58,597 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:06:58,598 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:06:58,749 - __main__ - INFO - Sample weights - min: 0.58, max: 3.46, mean: 1.00
+2025-11-29 16:06:58,749 - src.utils - INFO - [Train arihow for scenario 1] starting...
+2025-11-29 16:06:58,749 - src.utils - INFO - [Train arihow for scenario 1] done in 0.000s
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 4390, in <module>
+    main()
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 4376, in main
+    run_experiment(
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 2621, in run_experiment
+    model, metrics = train_scenario_model(
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 1929, in train_scenario_model
+    model.fit(
+TypeError: ARIHOWModel.fit() got an unexpected keyword argument 'X_val'
+
+Note: ARIHOW model has API compatibility issue with X_val
+
+========================================
+TRAINING SUMMARY
+========================================
+Completed at: Sat Nov 29 16:07:19 CET 2025
+
+Models Successfully Trained:
+  1. CatBoost S1: Official=0.7692, RMSE=0.2488
+  2. CatBoost S2: Official=0.2742, RMSE=0.2055
+  3. Neural Network S1: Official=0.9648, RMSE=0.2999
+  4. Neural Network S2: Official=0.5815, RMSE=0.2884
+  5. Historical Curve S1: Official=0.9165, RMSE=0.2981
+  6. Historical Curve S2: Official=1.0840, RMSE=0.2997
+  7. Flat Baseline S1: Official=1.8007, RMSE=0.4965
+  8. Flat Baseline S2: Official=2.1748, RMSE=0.5363
+  9. Trend Baseline S1: Official=1.8007, RMSE=0.4965
+  10. Trend Baseline S2: Official=2.1748, RMSE=0.5363
+
+Models with Issues:
+  - LightGBM: Segmentation fault (library issue)
+  - XGBoost: Segmentation fault (library issue)
+  - Linear: Cannot cast categorical to float
+  - Global Mean: Requires months_postgx in features
+  - Hybrid: API issue with sample_weight parameter
+  - ARIHOW: API issue with X_val parameter
+

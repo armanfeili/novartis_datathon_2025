@@ -16,6 +16,8 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from .base import BaseModel
+
 logger = logging.getLogger(__name__)
 
 
@@ -222,7 +224,7 @@ class ARIHOWModel:
             raise ValueError(f"Missing columns: {missing}")
         
         # Group by brand
-        grouped = df.groupby(['country', 'brand_name'])
+        grouped = df.groupby(['country', 'brand_name'], observed=True)
         n_brands = len(grouped)
         
         logger.info(f"Fitting ARIHOW models for {n_brands} brands...")
@@ -471,3 +473,242 @@ class ARIHOWModel:
             'mean_beta_hw': weights_df['beta_hw'].mean(),
             'mean_series_length': weights_df['series_length'].mean()
         }
+
+
+class ARIHOWWrapper(BaseModel):
+    """
+    BaseModel-compliant wrapper for ARIHOWModel.
+    
+    This wrapper adapts the ARIHOWModel interface to match the standard
+    BaseModel interface used by the training pipeline:
+    
+        fit(X_train, y_train, X_val, y_val, sample_weight)
+        predict(X)
+    
+    The ARIHOWModel is a time-series model that fits separate ARIMA + 
+    Holt-Winters models per brand/country series. This wrapper handles
+    the data transformation needed to work with the standard interface.
+    
+    Config options:
+        arima_order: Tuple[int, int, int], ARIMA (p, d, q) order (default: (1, 1, 1))
+        seasonal_order: Tuple[int, int, int, int], seasonal ARIMA order 
+        hw_trend: str, 'add', 'mul', or None (default: 'add')
+        hw_seasonal: str, seasonal component type (default: None)
+        min_history_months: int, minimum series length (default: 6)
+        decay_rate: float, fallback decay rate (default: 0.05)
+        
+    Example:
+        config = {
+            'arima_order': [1, 1, 1],
+            'hw_trend': 'add',
+            'min_history_months': 6
+        }
+        model = ARIHOWWrapper(config)
+        model.fit(X_train, y_train, X_val, y_val, sample_weight)
+        predictions = model.predict(X_test)
+    """
+    
+    # Required columns for ARIHOW
+    REQUIRED_COLS = ['country', 'brand_name', 'months_postgx']
+    
+    def __init__(self, config: dict):
+        """
+        Initialize the wrapper.
+        
+        Args:
+            config: Configuration dict with ARIHOW parameters
+        """
+        super().__init__(config)
+        
+        # Extract parameters
+        arima_order = tuple(config.get('arima_order', [1, 1, 1]))
+        seasonal_order = tuple(config.get('seasonal_order', [0, 0, 0, 0]))
+        hw_trend = config.get('hw_trend', 'add')
+        hw_seasonal = config.get('hw_seasonal', None)
+        hw_seasonal_periods = config.get('hw_seasonal_periods', 12)
+        
+        self.min_history_months = config.get('min_history_months', 6)
+        self.decay_rate = config.get('decay_rate', 0.05)
+        
+        # Create underlying model
+        self._model = ARIHOWModel(
+            arima_order=arima_order,
+            seasonal_order=seasonal_order,
+            hw_trend=hw_trend,
+            hw_seasonal=hw_seasonal,
+            hw_seasonal_periods=hw_seasonal_periods
+        )
+        
+        self.feature_names: List[str] = []
+        self._avg_vol_col = 'avg_vol_12m'
+        self._target_col = 'y_norm'
+    
+    def _validate_data(self, X: pd.DataFrame, context: str = 'data') -> None:
+        """Validate that required columns are present."""
+        missing = [c for c in self.REQUIRED_COLS if c not in X.columns]
+        if missing:
+            raise ValueError(
+                f"ARIHOWWrapper requires columns {self.REQUIRED_COLS} in {context}. "
+                f"Missing: {missing}. Include these in the feature DataFrame."
+            )
+    
+    def _build_history_df(
+        self, 
+        X: pd.DataFrame, 
+        y: pd.Series
+    ) -> pd.DataFrame:
+        """
+        Build a history DataFrame suitable for ARIHOW fitting.
+        
+        Returns:
+            DataFrame with columns: country, brand_name, months_postgx, volume
+        """
+        self._validate_data(X, 'X')
+        
+        history = X[['country', 'brand_name', 'months_postgx']].copy()
+        history['volume'] = y.values if isinstance(y, pd.Series) else y
+        
+        # If we have avg_vol_12m, denormalize the volume
+        if self._avg_vol_col in X.columns:
+            history['volume'] = history['volume'] * X[self._avg_vol_col].values
+        
+        return history
+    
+    def fit(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: Optional[pd.DataFrame] = None,
+        y_val: Optional[pd.Series] = None,
+        sample_weight: Optional[pd.Series] = None
+    ) -> 'ARIHOWWrapper':
+        """
+        Fit the ARIHOW model.
+        
+        Args:
+            X_train: Training features (must include country, brand_name, months_postgx)
+            y_train: Training targets (y_norm values)
+            X_val: Validation features (unused for ARIHOW)
+            y_val: Validation targets (unused for ARIHOW)
+            sample_weight: Sample weights (unused for ARIHOW)
+            
+        Returns:
+            self (fitted model)
+        """
+        # Build history DataFrame
+        history = self._build_history_df(X_train, y_train)
+        
+        # Store feature names (excluding meta columns)
+        meta_cols = ['country', 'brand_name', 'months_postgx', self._avg_vol_col]
+        self.feature_names = [c for c in X_train.columns if c not in meta_cols]
+        
+        # Fit the model
+        self._model.fit(
+            df=history,
+            target_col='volume',
+            min_history_months=self.min_history_months
+        )
+        
+        return self
+    
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """
+        Generate predictions.
+        
+        Args:
+            X: Feature DataFrame (must include country, brand_name, months_postgx)
+            
+        Returns:
+            Array of y_norm predictions
+        """
+        if not self._model.is_fitted:
+            raise ValueError("Model not fitted. Call fit() first.")
+        
+        self._validate_data(X, 'X')
+        
+        # Get unique (country, brand) pairs and their months to predict
+        unique_series = X.groupby(['country', 'brand_name'], observed=True)['months_postgx'].apply(list).reset_index()
+        
+        # Generate predictions
+        results = []
+        for _, row in unique_series.iterrows():
+            country = row['country']
+            brand_name = row['brand_name']
+            months = row['months_postgx']
+            
+            # Ensure months is a list
+            if not isinstance(months, list):
+                months = [months]
+            
+            # Get prediction for this series
+            series_df = pd.DataFrame({
+                'country': [country] * len(months),
+                'brand_name': [brand_name] * len(months),
+                'months_postgx': months
+            })
+            
+            pred_df = self._model.predict(series_df, months_to_predict=sorted(set(months)))
+            
+            # Map predictions back to original months order
+            pred_dict = {}
+            for _, pred_row in pred_df.iterrows():
+                pred_dict[pred_row['months_postgx']] = pred_row['volume']
+            
+            for month in months:
+                results.append({
+                    'country': country,
+                    'brand_name': brand_name,
+                    'months_postgx': month,
+                    'volume': pred_dict.get(month, 1.0)
+                })
+        
+        # Build result DataFrame with same order as input X
+        result_df = pd.DataFrame(results)
+        
+        # Merge back to get predictions in same order as X
+        merged = X[['country', 'brand_name', 'months_postgx']].merge(
+            result_df,
+            on=['country', 'brand_name', 'months_postgx'],
+            how='left'
+        )
+        
+        predictions = merged['volume'].values
+        
+        # Normalize predictions if we have avg_vol_12m
+        if self._avg_vol_col in X.columns:
+            avg_vol = X[self._avg_vol_col].values
+            # Convert volume to y_norm
+            predictions = predictions / np.where(avg_vol > 0, avg_vol, 1.0)
+        
+        return predictions
+    
+    def save(self, path: str) -> None:
+        """Save model to disk."""
+        import joblib
+        joblib.dump({
+            'model': self._model,
+            'feature_names': self.feature_names,
+            'config': self.config,
+            '_avg_vol_col': self._avg_vol_col,
+            '_target_col': self._target_col
+        }, path)
+    
+    @classmethod
+    def load(cls, path: str) -> 'ARIHOWWrapper':
+        """Load model from disk."""
+        import joblib
+        data = joblib.load(path)
+        instance = cls(data.get('config', {}))
+        instance._model = data['model']
+        instance.feature_names = data.get('feature_names', [])
+        instance._avg_vol_col = data.get('_avg_vol_col', 'avg_vol_12m')
+        instance._target_col = data.get('_target_col', 'y_norm')
+        return instance
+    
+    def get_feature_importance(self) -> pd.DataFrame:
+        """Get feature importance (not applicable for ARIHOW)."""
+        # ARIHOW doesn't have feature importance in the traditional sense
+        return pd.DataFrame({
+            'feature': ['arima_component', 'hw_component'],
+            'importance': [0.5, 0.5]
+        })

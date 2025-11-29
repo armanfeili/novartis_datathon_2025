@@ -1,0 +1,11 @@
+{
+  "official_metric": 2.1748,
+  "rmse_norm": 0.5362576865475621,
+  "mae_norm": 0.4558851827902359,
+  "scenario": 2,
+  "model_type": "flat",
+  "train_time_seconds": 0.0008261203765869141,
+  "n_train_samples": 28116,
+  "n_val_samples": 7038,
+  "n_features": 101
+}

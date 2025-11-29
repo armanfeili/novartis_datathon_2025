@@ -1,0 +1,172 @@
+# ==============================================================================
+# ARIHOWModel Configuration (ARIMA + Holt-Winters Hybrid)
+# ==============================================================================
+# This model combines ARIMA and Holt-Winters for time-series forecasting.
+# Best suited for brands with sufficient historical data (12+ months).
+# Uses learned beta weights to blend ARIMA and HW predictions.
+# Falls back to exponential decay for brands with insufficient history.
+#
+# Usage:
+#   - Single run: Set sweep.enabled=false, use params directly
+#   - Named config: Set active_config_id to use a preset from sweep_configs
+#   - Sweep mode: Set sweep.enabled=true to iterate over all sweep_configs
+#
+# CLI Examples:
+#   python -m src.train --scenario 1 --model arihow
+#   python -m src.train --scenario 1 --model arihow --config-id arima_heavy
+# ==============================================================================
+
+# --- Model Type Identifier ---
+model:
+  type: arihow
+  name: "arihow"
+  description: "ARIMA + Holt-Winters hybrid with learned weights"
+  priority: 4  # Lower priority - specialized use case
+
+# =============================================================================
+# ACTIVE CONFIGURATION ID
+# =============================================================================
+active_config_id: null
+
+# --- ARIMA Component Configuration ---
+arima:
+  # ARIMA order (p, d, q)
+  order: [1, 1, 1]
+  # Seasonal order (P, D, Q, s) - set s=12 for monthly data
+  seasonal_order: [1, 0, 1, 12]
+  # Trend component: 'n' (none), 'c' (constant), 't' (linear), 'ct' (both)
+  trend: 'c'
+  # Enforce stationarity
+  enforce_stationarity: false
+  # Enforce invertibility
+  enforce_invertibility: false
+
+# --- Holt-Winters (Exponential Smoothing) Component ---
+holt_winters:
+  # Trend type: 'add', 'mul', or null (None)
+  trend: 'add'
+  # Seasonal type: 'add', 'mul', or null (None)
+  seasonal: null
+  # Seasonal periods (12 for monthly data)
+  seasonal_periods: 12
+  # Damped trend
+  damped_trend: true
+  # Initialization method: 'estimated', 'heuristic', 'legacy-heuristic'
+  initialization_method: 'estimated'
+
+# --- Weight Learning Configuration ---
+weights:
+  # Initial beta weight for ARIMA (1 - beta for HW)
+  initial_beta: 0.5
+  # Optimization method for beta: 'grid', 'brent', 'fixed'
+  method: 'grid'
+  # Grid search beta values (if method='grid')
+  grid_values: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+  # Validation split for weight optimization (fraction of training data)
+  val_fraction: 0.2
+
+# --- Fallback Configuration ---
+fallback:
+  # Minimum months of history required for ARIHOW
+  min_history_months: 12
+  # Decay rate for exponential fallback
+  decay_rate: 0.02
+  # Use linear decay instead of exponential for fallback
+  use_linear_decay: false
+
+# --- Training Configuration ---
+training:
+  # Number of CV folds
+  n_folds: 5
+  # Early stopping (not applicable for ARIHOW, kept for consistency)
+  early_stopping_rounds: null
+  # Verbose output during fitting
+  verbose: 0
+  # Number of parallel jobs for brand fitting (-1 = all cores)
+  n_jobs: -1
+  # Use weighted metrics
+  use_sample_weights: true
+
+# =============================================================================
+# SWEEP CONFIGURATION
+# =============================================================================
+sweep:
+  enabled: false
+  mode: "configs"  # "configs" or "grid"
+  selection_metric: "official_metric"
+  n_folds: 3
+
+  # Grid mode
+  grid:
+    arima_order:
+      - [1, 0, 0]  # AR(1)
+      - [1, 1, 0]  # ARIMA(1,1,0)
+      - [1, 1, 1]  # ARIMA(1,1,1)
+      - [2, 1, 1]  # ARIMA(2,1,1)
+    hw_trend:
+      - 'add'
+      - 'mul'
+      - null
+    damped_trend:
+      - true
+      - false
+
+# =============================================================================
+# NAMED SWEEP CONFIGURATIONS
+# =============================================================================
+sweep_configs:
+  - id: "default"
+    description: "Default balanced ARIMA+HW configuration"
+    params:
+      arima_order: [1, 1, 1]
+      seasonal_order: [1, 0, 1, 12]
+      hw_trend: 'add'
+      damped_trend: true
+
+  - id: "arima_heavy"
+    description: "Favor ARIMA component"
+    params:
+      arima_order: [2, 1, 1]
+      initial_beta: 0.7
+      hw_trend: null
+
+  - id: "hw_heavy"
+    description: "Favor Holt-Winters component"
+    params:
+      arima_order: [1, 0, 0]
+      initial_beta: 0.3
+      hw_trend: 'add'
+      damped_trend: true
+
+  - id: "simple"
+    description: "Simple models for stable series"
+    params:
+      arima_order: [1, 1, 0]
+      seasonal_order: [0, 0, 0, 0]
+      hw_trend: 'add'
+      damped_trend: true
+
+# --- Best Parameters from Grid Search ---
+best_params:
+  scenario1:
+    arima_order: [1, 1, 1]
+    seasonal_order: [1, 0, 1, 12]
+    hw_trend: 'add'
+    damped_trend: true
+    beta: 0.6  # Learned weight for ARIMA
+  scenario2:
+    arima_order: [1, 1, 0]
+    seasonal_order: [0, 0, 0, 0]
+    hw_trend: 'add'
+    damped_trend: true
+    beta: 0.4
+
+# --- Ensemble Integration ---
+ensemble:
+  # Weight for ARIHOW in final ensemble (learned via EnsembleBlender)
+  include: false  # Only include if it improves official_metric
+  initial_weight: 0.15
+  # Minimum weight constraint
+  min_weight: 0.0
+  # Maximum weight constraint
+  max_weight: 0.4

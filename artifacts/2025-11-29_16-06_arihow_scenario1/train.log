@@ -1,0 +1,33 @@
+2025-11-29 16:06:58,223 - __main__ - INFO - Starting experiment: 2025-11-29_16-06_arihow_scenario1
+2025-11-29 16:06:58,278 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-06_arihow_scenario1/configs (hash: 3afb31a0)
+2025-11-29 16:06:58,278 - __main__ - INFO - Config hash: 3afb31a0
+2025-11-29 16:06:58,303 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 16:06:58,303 - src.utils - INFO - [Load cached features for train S1 train] starting...
+2025-11-29 16:06:58,304 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s1_train.parquet
+2025-11-29 16:06:58,386 - src.features - INFO - Loaded X: (46872, 87), y: 46872
+2025-11-29 16:06:58,386 - src.utils - INFO - [Load cached features for train S1 train] done in 0.083s
+2025-11-29 16:06:58,405 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 16:06:58,405 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 16:06:58,420 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 16:06:58,420 - src.utils - INFO - [Load cached train panel] done in 0.015s
+2025-11-29 16:06:58,420 - src.utils - INFO - [Load features (cached)] done in 0.117s
+2025-11-29 16:06:58,420 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 16:06:58,437 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 16:06:58,550 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 16:06:58,551 - src.validation - INFO - Train rows: 37,488, Val rows: 9,384
+2025-11-29 16:06:58,552 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 16:06:58,553 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 16:06:58,553 - src.utils - INFO - [Create validation split] done in 0.133s
+2025-11-29 16:06:58,587 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:06:58,587 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:06:58,597 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:06:58,598 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:06:58,749 - __main__ - INFO - Sample weights - min: 0.58, max: 3.46, mean: 1.00
+2025-11-29 16:06:58,749 - src.utils - INFO - [Train arihow for scenario 1] starting...
+2025-11-29 16:06:58,749 - src.utils - INFO - [Train arihow for scenario 1] done in 0.000s

@@ -1,0 +1,7 @@
+989554f7
+Generated: 2025-11-29T16:46:06.969776
+Files:
+  run_config: configs/run_defaults.yaml
+  data_config: configs/data.yaml
+  features_config: configs/features.yaml
+  model_config: configs/model_lgbm.yaml

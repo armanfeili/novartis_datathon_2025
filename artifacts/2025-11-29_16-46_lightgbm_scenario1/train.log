@@ -1,0 +1,32 @@
+2025-11-29 16:46:06,911 - __main__ - INFO - Starting experiment: 2025-11-29_16-46_lightgbm_scenario1
+2025-11-29 16:46:06,969 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-46_lightgbm_scenario1/configs (hash: 989554f7)
+2025-11-29 16:46:06,970 - __main__ - INFO - Config hash: 989554f7
+2025-11-29 16:46:06,995 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 16:46:06,996 - src.utils - INFO - [Load cached features for train S1 train] starting...
+2025-11-29 16:46:06,996 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s1_train.parquet
+2025-11-29 16:46:07,101 - src.features - INFO - Loaded X: (46872, 87), y: 46872
+2025-11-29 16:46:07,101 - src.utils - INFO - [Load cached features for train S1 train] done in 0.105s
+2025-11-29 16:46:07,124 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 16:46:07,125 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 16:46:07,139 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 16:46:07,140 - src.utils - INFO - [Load cached train panel] done in 0.016s
+2025-11-29 16:46:07,140 - src.utils - INFO - [Load features (cached)] done in 0.145s
+2025-11-29 16:46:07,140 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 16:46:07,157 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 16:46:07,263 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 16:46:07,263 - src.validation - INFO - Train rows: 37,488, Val rows: 9,384
+2025-11-29 16:46:07,265 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 16:46:07,265 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 16:46:07,265 - src.utils - INFO - [Create validation split] done in 0.125s
+2025-11-29 16:46:07,300 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:46:07,301 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:46:07,308 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:46:07,309 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:46:08,661 - __main__ - INFO - Sample weights - min: 0.58, max: 3.46, mean: 1.00
+2025-11-29 16:46:08,662 - src.utils - INFO - [Train lightgbm for scenario 1] starting...

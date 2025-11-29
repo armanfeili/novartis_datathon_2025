@@ -1,0 +1,11 @@
+{
+  "official_metric": 1.2069,
+  "rmse_norm": 0.6722388751361669,
+  "mae_norm": 0.6025704729170983,
+  "scenario": 1,
+  "model_type": "arihow",
+  "train_time_seconds": 68.81212520599365,
+  "n_train_samples": 37488,
+  "n_val_samples": 9384,
+  "n_features": 86
+}

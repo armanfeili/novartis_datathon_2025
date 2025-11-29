@@ -1,0 +1,153 @@
+# =============================================================================
+# Hybrid Physics + ML Model Configuration - Novartis Datathon 2025
+# =============================================================================
+# Combines exponential decay physics baseline with ML residual learning.
+# The physics component captures expected erosion, ML learns deviations.
+#
+# Architecture:
+#   final_pred = physics_baseline + ML_residual
+#   physics_baseline = exp(-decay_rate * months_postgx)
+#
+# Benefits:
+# - Better interpretability than pure ML
+# - Reasonable predictions even with limited data
+# - ML focuses on systematic deviations from expected erosion
+#
+# Usage:
+#   - Single run: Set sweep.enabled=false, use params directly
+#   - Named config: Set active_config_id to use a preset from sweep_configs
+#   - Sweep mode: Set sweep.enabled=true to iterate over all sweep_configs
+#
+# CLI Examples:
+#   python -m src.train --scenario 1 --model hybrid
+#   python -m src.train --scenario 1 --model hybrid --config-id fast_decay
+# =============================================================================
+
+model:
+  name: "hybrid_physics_ml"
+  task: "regression"
+  priority: 2  # Secondary priority after pure XGBoost
+
+# =============================================================================
+# ACTIVE CONFIGURATION ID
+# =============================================================================
+active_config_id: null
+
+# =============================================================================
+# PHYSICS BASELINE CONFIGURATION
+# =============================================================================
+physics:
+  # Exponential decay rate
+  # Higher values = faster erosion
+  # Typical range: 0.03-0.10
+  decay_rate: 0.05
+  
+  # Scenario-specific decay rates (optional override)
+  scenario_decay_rates:
+    scenario1: 0.05  # Pre-LOE only - use conservative decay
+    scenario2: 0.05  # Has early months - can use same rate
+
+# =============================================================================
+# ML RESIDUAL MODEL CONFIGURATION
+# =============================================================================
+# Choose between LightGBM or XGBoost for residual learning
+ml_model:
+  type: "lightgbm"  # 'lightgbm' or 'xgboost'
+  
+  # LightGBM parameters (used when type='lightgbm')
+  lightgbm:
+    boosting_type: "gbdt"
+    objective: "regression"
+    metric: "rmse"
+    num_leaves: 31
+    learning_rate: 0.05
+    n_estimators: 500
+    min_data_in_leaf: 20
+    feature_fraction: 0.8
+    bagging_fraction: 0.8
+    bagging_freq: 5
+    early_stopping_rounds: 50
+    verbose: -1
+    n_jobs: -1
+    seed: 42
+  
+  # XGBoost parameters (used when type='xgboost')
+  xgboost:
+    booster: "gbtree"
+    objective: "reg:squarederror"
+    eval_metric: "rmse"
+    max_depth: 5
+    learning_rate: 0.05
+    n_estimators: 500
+    min_child_weight: 1
+    subsample: 0.8
+    colsample_bytree: 0.8
+    reg_lambda: 1
+    early_stopping_rounds: 50
+    verbosity: 0
+    n_jobs: -1
+    seed: 42
+
+# =============================================================================
+# PREDICTION SETTINGS
+# =============================================================================
+prediction:
+  clip_predictions: true
+  clip_min: 0.0
+  clip_max: 2.0
+
+# =============================================================================
+# TRAINING SETTINGS
+# =============================================================================
+training:
+  use_early_stopping: true
+  early_stopping_rounds: 50
+  use_sample_weights: true
+
+# =============================================================================
+# SWEEP CONFIGURATION
+# =============================================================================
+sweep:
+  enabled: false
+  mode: "configs"  # "configs" or "grid"
+  selection_metric: "official_metric"
+  n_folds: 3
+  
+  # Grid mode
+  grid:
+    decay_rate: [0.03, 0.05, 0.07, 0.10]
+    learning_rate: [0.03, 0.05, 0.07]
+    num_leaves: [31, 63]  # LightGBM only
+
+# =============================================================================
+# NAMED SWEEP CONFIGURATIONS
+# =============================================================================
+sweep_configs:
+  - id: "default"
+    description: "Default balanced configuration"
+    params:
+      decay_rate: 0.05
+      learning_rate: 0.05
+      num_leaves: 31
+
+  - id: "slow_decay"
+    description: "Slower physics decay, more ML learning"
+    params:
+      decay_rate: 0.03
+      learning_rate: 0.05
+      num_leaves: 63
+
+  - id: "fast_decay"
+    description: "Faster physics decay, less ML correction"
+    params:
+      decay_rate: 0.10
+      learning_rate: 0.03
+      num_leaves: 31
+
+  - id: "ml_heavy"
+    description: "More ML model capacity"
+    params:
+      decay_rate: 0.05
+      learning_rate: 0.07
+      num_leaves: 63
+      n_estimators: 1000

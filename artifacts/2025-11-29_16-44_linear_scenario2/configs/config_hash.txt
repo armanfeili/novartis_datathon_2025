@@ -1,0 +1,7 @@
+5679d2dc
+Generated: 2025-11-29T16:44:09.679368
+Files:
+  run_config: configs/run_defaults.yaml
+  data_config: configs/data.yaml
+  features_config: configs/features.yaml
+  model_config: configs/model_linear.yaml

@@ -1,0 +1,46 @@
+2025-11-29 17:16:05,367 - src.utils - INFO - [Load test data] starting...
+2025-11-29 17:16:05,367 - src.utils - INFO - [Load cached test panel] starting...
+2025-11-29 17:16:05,367 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_test.parquet
+2025-11-29 17:16:05,415 - src.data - INFO - Loaded 8,832 rows, 16 columns
+2025-11-29 17:16:05,415 - src.utils - INFO - [Load cached test panel] done in 0.047s
+2025-11-29 17:16:05,415 - src.utils - INFO - [Load test data] done in 0.048s
+2025-11-29 17:16:05,989 - src.utils - INFO - [Generate submission] starting...
+2025-11-29 17:16:06,009 - __main__ - INFO - Detected 228 Scenario 1 series
+2025-11-29 17:16:06,009 - __main__ - INFO - Detected 112 Scenario 2 series
+/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/inference.py:326: FutureWarning: The behavior of DataFrame concatenation with empty or all-NA entries is deprecated. In a future version, this will no longer exclude empty or all-NA columns when determining the result dtypes. To retain the old behavior, exclude the relevant entries before the concat operation.
+  expanded = pd.concat([panel, future_df], ignore_index=True)
+2025-11-29 17:16:06,264 - __main__ - INFO - Expanded panel: 5472 -> 10944 rows (added months 0-23)
+2025-11-29 17:16:06,265 - src.utils - INFO - [Feature engineering - Scenario 1] starting...
+2025-11-29 17:16:07,340 - src.features - INFO - Total features created: 88
+2025-11-29 17:16:07,340 - src.utils - INFO - [Feature engineering - Scenario 1] done in 1.075s
+2025-11-29 17:16:07,375 - __main__ - INFO - Scenario 1: 5472 predictions generated
+/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/inference.py:326: FutureWarning: The behavior of DataFrame concatenation with empty or all-NA entries is deprecated. In a future version, this will no longer exclude empty or all-NA columns when determining the result dtypes. To retain the old behavior, exclude the relevant entries before the concat operation.
+  expanded = pd.concat([panel, future_df], ignore_index=True)
+2025-11-29 17:16:07,602 - __main__ - INFO - Expanded panel: 3360 -> 5376 rows (added months 6-23)
+2025-11-29 17:16:07,603 - src.utils - INFO - [Feature engineering - Scenario 2] starting...
+2025-11-29 17:16:08,232 - src.features - INFO - Total features created: 102
+2025-11-29 17:16:08,232 - src.utils - INFO - [Feature engineering - Scenario 2] done in 0.629s
+2025-11-29 17:16:08,251 - __main__ - INFO - Scenario 2: 2016 predictions generated
+2025-11-29 17:16:08,260 - src.utils - INFO - [Generate submission] done in 2.271s
+2025-11-29 17:16:08,267 - __main__ - INFO - No zero-volume series found
+2025-11-29 17:16:08,373 - __main__ - INFO - Submission validation passed!
+2025-11-29 17:16:08,378 - __main__ - INFO - ==================================================
+2025-11-29 17:16:08,378 - __main__ - INFO - Submission Statistics:
+2025-11-29 17:16:08,378 - __main__ - INFO -   Total rows: 7488
+2025-11-29 17:16:08,378 - __main__ - INFO -   Total series: 340 (S1: 228, S2: 112)
+2025-11-29 17:16:08,378 - __main__ - INFO -   Volume - mean: 1951065.07, std: 7558608.74
+2025-11-29 17:16:08,378 - __main__ - INFO -   Volume - min: 45.41, max: 112145338.72
+2025-11-29 17:16:08,378 - __main__ - INFO -   Zero volume predictions: 0
+2025-11-29 17:16:08,378 - __main__ - INFO - ==================================================
+2025-11-29 17:16:08,407 - __main__ - INFO - Submission saved to submissions/20251129_171608_catboost_5733d1e6_02a601/submission.csv
+2025-11-29 17:16:08,417 - __main__ - INFO - Submission log: 20251129_171608_catboost_5733d1e6_02a601
+2025-11-29 17:16:08,418 - __main__ - INFO - Log entry appended to submissions/submission_log.json
+2025-11-29 17:16:08,423 - __main__ - INFO - ==================================================
+2025-11-29 17:16:08,423 - __main__ - INFO - Submission Statistics:
+2025-11-29 17:16:08,423 - __main__ - INFO -   Total rows: 7488
+2025-11-29 17:16:08,423 - __main__ - INFO -   Total series: 340 (S1: 228, S2: 112)
+2025-11-29 17:16:08,424 - __main__ - INFO -   Volume - mean: 1951065.07, std: 7558608.74
+2025-11-29 17:16:08,424 - __main__ - INFO -   Volume - min: 45.41, max: 112145338.72
+2025-11-29 17:16:08,424 - __main__ - INFO -   Zero volume predictions: 0
+2025-11-29 17:16:08,424 - __main__ - INFO - ==================================================
+2025-11-29 17:16:08,425 - __main__ - INFO - Versioned submission saved to submissions/20251129_171608_catboost_5733d1e6_02a601/submission.csv

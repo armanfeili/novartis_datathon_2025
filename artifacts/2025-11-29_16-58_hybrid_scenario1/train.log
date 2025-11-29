@@ -1,0 +1,75 @@
+2025-11-29 16:58:00,253 - __main__ - INFO - Starting experiment: 2025-11-29_16-58_hybrid_scenario1
+2025-11-29 16:58:00,302 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-58_hybrid_scenario1/configs (hash: 6d1695ba)
+2025-11-29 16:58:00,303 - __main__ - INFO - Config hash: 6d1695ba
+2025-11-29 16:58:00,322 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 16:58:00,322 - src.utils - INFO - [Load cached features for train S1 train] starting...
+2025-11-29 16:58:00,322 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s1_train.parquet
+2025-11-29 16:58:00,425 - src.features - INFO - Loaded X: (46872, 87), y: 46872
+2025-11-29 16:58:00,426 - src.utils - INFO - [Load cached features for train S1 train] done in 0.103s
+2025-11-29 16:58:00,446 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 16:58:00,447 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 16:58:00,458 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 16:58:00,458 - src.utils - INFO - [Load cached train panel] done in 0.012s
+2025-11-29 16:58:00,459 - src.utils - INFO - [Load features (cached)] done in 0.137s
+2025-11-29 16:58:00,459 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 16:58:00,474 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 16:58:00,580 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 16:58:00,580 - src.validation - INFO - Train rows: 37,488, Val rows: 9,384
+2025-11-29 16:58:00,581 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 16:58:00,582 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 16:58:00,582 - src.utils - INFO - [Create validation split] done in 0.123s
+2025-11-29 16:58:00,615 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:58:00,615 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:58:00,623 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:58:00,623 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:58:00,767 - __main__ - INFO - Sample weights - min: 0.58, max: 3.46, mean: 1.00
+2025-11-29 16:58:00,788 - src.utils - INFO - [Train hybrid for scenario 1] starting...
+2025-11-29 16:58:00,917 - src.models.hybrid_physics_ml - INFO - Physics baseline RMSE: 0.2861
+2025-11-29 16:58:00,917 - src.models.hybrid_physics_ml - INFO - Residual mean: -0.0021, std: 0.2861
+2025-11-29 16:58:01,398 - src.utils - INFO - [Train hybrid for scenario 1] done in 0.611s
+2025-11-29 16:58:25,369 - __main__ - INFO - Starting experiment: 2025-11-29_16-58_hybrid_scenario1
+2025-11-29 16:58:25,424 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-58_hybrid_scenario1/configs (hash: 6d1695ba)
+2025-11-29 16:58:25,424 - __main__ - INFO - Config hash: 6d1695ba
+2025-11-29 16:58:25,451 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 16:58:25,451 - src.utils - INFO - [Load cached features for train S1 train] starting...
+2025-11-29 16:58:25,452 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s1_train.parquet
+2025-11-29 16:58:25,540 - src.features - INFO - Loaded X: (46872, 87), y: 46872
+2025-11-29 16:58:25,540 - src.utils - INFO - [Load cached features for train S1 train] done in 0.088s
+2025-11-29 16:58:25,563 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 16:58:25,563 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 16:58:25,577 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 16:58:25,577 - src.utils - INFO - [Load cached train panel] done in 0.014s
+2025-11-29 16:58:25,577 - src.utils - INFO - [Load features (cached)] done in 0.126s
+2025-11-29 16:58:25,577 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 16:58:25,597 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 16:58:25,705 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 16:58:25,705 - src.validation - INFO - Train rows: 37,488, Val rows: 9,384
+2025-11-29 16:58:25,707 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 16:58:25,707 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 16:58:25,707 - src.utils - INFO - [Create validation split] done in 0.130s
+2025-11-29 16:58:25,741 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:58:25,741 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:58:25,751 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:58:25,751 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:58:25,899 - __main__ - INFO - Sample weights - min: 0.58, max: 3.46, mean: 1.00
+2025-11-29 16:58:25,921 - src.utils - INFO - [Train hybrid for scenario 1] starting...
+2025-11-29 16:58:26,052 - src.models.hybrid_physics_ml - INFO - Physics baseline RMSE: 0.2861
+2025-11-29 16:58:26,052 - src.models.hybrid_physics_ml - INFO - Residual mean: -0.0021, std: 0.2861
+2025-11-29 16:58:31,962 - src.models.hybrid_physics_ml - INFO - Hybrid model validation RMSE: 0.2509
+2025-11-29 16:58:31,964 - src.utils - INFO - [Train hybrid for scenario 1] done in 6.043s
+2025-11-29 16:58:32,952 - __main__ - INFO - Validation metrics: Official=0.7885, RMSE=0.2509, MAE=0.1815
+2025-11-29 16:58:32,952 - __main__ - INFO - Training time: 6.06 seconds
+2025-11-29 16:58:32,984 - __main__ - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-58_hybrid_scenario1/model_1.bin
+2025-11-29 16:58:32,997 - __main__ - INFO - Experiment 2025-11-29_16-58_hybrid_scenario1 completed. Artifacts saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-58_hybrid_scenario1

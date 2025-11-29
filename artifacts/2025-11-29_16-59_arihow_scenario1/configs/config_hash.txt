@@ -1,0 +1,7 @@
+3afb31a0
+Generated: 2025-11-29T16:59:04.701080
+Files:
+  run_config: configs/run_defaults.yaml
+  data_config: configs/data.yaml
+  features_config: configs/features.yaml
+  model_config: configs/model_arihow.yaml

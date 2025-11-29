@@ -1,0 +1,38 @@
+2025-11-29 16:41:52,188 - __main__ - INFO - Starting experiment: 2025-11-29_16-41_trend_scenario2
+2025-11-29 16:41:52,227 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-41_trend_scenario2/configs (hash: 90160453)
+2025-11-29 16:41:52,227 - __main__ - INFO - Config hash: 90160453
+2025-11-29 16:41:52,247 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 16:41:52,247 - src.utils - INFO - [Load cached features for train S2 train] starting...
+2025-11-29 16:41:52,247 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s2_train.parquet
+2025-11-29 16:41:52,332 - src.features - INFO - Loaded X: (35154, 99), y: 35154
+2025-11-29 16:41:52,332 - src.utils - INFO - [Load cached features for train S2 train] done in 0.085s
+2025-11-29 16:41:52,355 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 16:41:52,355 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 16:41:52,370 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 16:41:52,370 - src.utils - INFO - [Load cached train panel] done in 0.015s
+2025-11-29 16:41:52,370 - src.utils - INFO - [Load features (cached)] done in 0.123s
+2025-11-29 16:41:52,370 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 16:41:52,386 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 16:41:52,486 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 16:41:52,486 - src.validation - INFO - Train rows: 28,116, Val rows: 7,038
+2025-11-29 16:41:52,488 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 16:41:52,488 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 16:41:52,488 - src.utils - INFO - [Create validation split] done in 0.118s
+2025-11-29 16:41:52,519 - __main__ - INFO - Features: 101 columns
+2025-11-29 16:41:52,519 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:41:52,526 - __main__ - INFO - Features: 101 columns
+2025-11-29 16:41:52,526 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:41:52,654 - __main__ - INFO - Sample weights - min: 0.63, max: 3.13, mean: 1.00
+2025-11-29 16:41:52,655 - src.utils - INFO - [Train trend for scenario 2] starting...
+2025-11-29 16:41:52,655 - src.models.linear - INFO - TrendBaseline: learned global trend = 0.0000
+2025-11-29 16:41:52,655 - src.utils - INFO - [Train trend for scenario 2] done in 0.000s
+2025-11-29 16:41:53,488 - __main__ - INFO - Validation metrics: Official=2.1748, RMSE=0.5363, MAE=0.4559
+2025-11-29 16:41:53,488 - __main__ - INFO - Training time: 0.00 seconds
+2025-11-29 16:41:53,489 - __main__ - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-41_trend_scenario2/model_2.bin
+2025-11-29 16:41:53,490 - __main__ - INFO - Experiment 2025-11-29_16-41_trend_scenario2 completed. Artifacts saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-41_trend_scenario2

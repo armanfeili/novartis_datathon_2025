@@ -1,0 +1,33 @@
+2025-11-29 16:06:43,619 - __main__ - INFO - Starting experiment: 2025-11-29_16-06_hybrid_scenario1
+2025-11-29 16:06:43,668 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-06_hybrid_scenario1/configs (hash: a3ed4b78)
+2025-11-29 16:06:43,668 - __main__ - INFO - Config hash: a3ed4b78
+2025-11-29 16:06:43,687 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 16:06:43,687 - src.utils - INFO - [Load cached features for train S1 train] starting...
+2025-11-29 16:06:43,687 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s1_train.parquet
+2025-11-29 16:06:43,768 - src.features - INFO - Loaded X: (46872, 87), y: 46872
+2025-11-29 16:06:43,768 - src.utils - INFO - [Load cached features for train S1 train] done in 0.080s
+2025-11-29 16:06:43,788 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 16:06:43,788 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 16:06:43,802 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 16:06:43,803 - src.utils - INFO - [Load cached train panel] done in 0.014s
+2025-11-29 16:06:43,803 - src.utils - INFO - [Load features (cached)] done in 0.116s
+2025-11-29 16:06:43,803 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 16:06:43,821 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 16:06:43,926 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 16:06:43,926 - src.validation - INFO - Train rows: 37,488, Val rows: 9,384
+2025-11-29 16:06:43,927 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 16:06:43,928 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 16:06:43,928 - src.utils - INFO - [Create validation split] done in 0.125s
+2025-11-29 16:06:43,960 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:06:43,961 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:06:43,970 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:06:43,970 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:06:44,113 - __main__ - INFO - Sample weights - min: 0.58, max: 3.46, mean: 1.00
+2025-11-29 16:06:44,114 - src.utils - INFO - [Train hybrid for scenario 1] starting...
+2025-11-29 16:06:44,114 - src.utils - INFO - [Train hybrid for scenario 1] done in 0.000s

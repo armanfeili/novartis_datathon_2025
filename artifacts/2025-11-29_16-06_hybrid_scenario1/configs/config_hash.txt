@@ -1,0 +1,7 @@
+a3ed4b78
+Generated: 2025-11-29T16:06:43.668496
+Files:
+  run_config: configs/run_defaults.yaml
+  data_config: configs/data.yaml
+  features_config: configs/features.yaml
+  model_config: configs/model_hybrid.yaml

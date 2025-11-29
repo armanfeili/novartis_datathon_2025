@@ -30,12 +30,15 @@ class LinearModel(BaseModel):
     """Linear regression with preprocessing pipeline.
     
     Supports polynomial features for capturing non-linear relationships.
+    Automatically handles categorical columns by either dropping them or
+    one-hot encoding them (depending on config).
     
     Config options:
         model.type: 'ridge', 'lasso', 'elasticnet', 'huber'
         preprocessing.handle_missing: 'mean', 'median', etc.
         preprocessing.scale_features: True/False
         preprocessing.polynomial_degree: int (2 for quadratic features)
+        preprocessing.handle_categoricals: 'drop', 'onehot', 'label' (default: 'drop')
         
     Example config:
         config = {
@@ -43,10 +46,14 @@ class LinearModel(BaseModel):
             'ridge': {'alpha': 1.0},
             'preprocessing': {
                 'scale_features': True,
-                'polynomial_degree': 2  # Add quadratic features
+                'polynomial_degree': 2,  # Add quadratic features
+                'handle_categoricals': 'drop'  # Drop categorical columns
             }
         }
     """
+    
+    # Columns that are known to be categorical
+    CATEGORICAL_COLS = ['ther_area', 'main_package', 'time_bucket', 'country']
     
     def __init__(self, config: dict):
         """
@@ -61,6 +68,12 @@ class LinearModel(BaseModel):
         self.params = config.get(self.model_type, {})
         self.preprocessing = config.get('preprocessing', {})
         self.polynomial_degree = self.preprocessing.get('polynomial_degree', None)
+        self.handle_categoricals = self.preprocessing.get('handle_categoricals', 'drop')
+        
+        # Track columns to drop (set during fit)
+        self._categorical_cols_to_drop: List[str] = []
+        self._onehot_encoder = None
+        self._label_encoders: Dict[str, Any] = {}
         
         # Define regressor
         if self.model_type == 'ridge':
@@ -95,6 +108,91 @@ class LinearModel(BaseModel):
         steps.append(('model', regressor))
         self.model = Pipeline(steps)
     
+    def _preprocess_categoricals(self, X: pd.DataFrame, is_training: bool = False) -> pd.DataFrame:
+        """
+        Handle categorical columns in the feature DataFrame.
+        
+        Args:
+            X: Feature DataFrame
+            is_training: Whether this is training (to fit encoders)
+            
+        Returns:
+            DataFrame with categorical columns handled
+        """
+        X = X.copy()
+        
+        # Detect categorical columns
+        categorical_cols = []
+        for col in X.columns:
+            if X[col].dtype == 'object' or X[col].dtype.name == 'category':
+                categorical_cols.append(col)
+            elif col in self.CATEGORICAL_COLS and col in X.columns:
+                categorical_cols.append(col)
+        
+        # Remove duplicates
+        categorical_cols = list(set(categorical_cols))
+        
+        if not categorical_cols:
+            return X
+        
+        if self.handle_categoricals == 'drop':
+            # Simply drop categorical columns
+            if is_training:
+                self._categorical_cols_to_drop = categorical_cols
+                logger.info(f"LinearModel: Dropping categorical columns: {categorical_cols}")
+            X = X.drop(columns=[c for c in self._categorical_cols_to_drop if c in X.columns])
+            
+        elif self.handle_categoricals == 'label':
+            # Label encode categorical columns
+            from sklearn.preprocessing import LabelEncoder
+            for col in categorical_cols:
+                if col not in X.columns:
+                    continue
+                if is_training:
+                    le = LabelEncoder()
+                    # Handle unknown categories by treating them as a special category
+                    X[col] = X[col].fillna('__MISSING__').astype(str)
+                    le.fit(X[col])
+                    self._label_encoders[col] = le
+                else:
+                    X[col] = X[col].fillna('__MISSING__').astype(str)
+                
+                if col in self._label_encoders:
+                    le = self._label_encoders[col]
+                    # Handle unknown categories
+                    known_classes = set(le.classes_)
+                    X[col] = X[col].apply(lambda x: x if x in known_classes else '__UNKNOWN__')
+                    if '__UNKNOWN__' not in known_classes:
+                        # Add unknown to encoder
+                        le.classes_ = np.append(le.classes_, '__UNKNOWN__')
+                    X[col] = le.transform(X[col])
+            
+        elif self.handle_categoricals == 'onehot':
+            # One-hot encode categorical columns
+            from sklearn.preprocessing import OneHotEncoder
+            if is_training:
+                self._onehot_encoder = OneHotEncoder(
+                    sparse_output=False,
+                    handle_unknown='ignore'
+                )
+                cat_data = X[categorical_cols].fillna('__MISSING__').astype(str)
+                encoded = self._onehot_encoder.fit_transform(cat_data)
+                feature_names = self._onehot_encoder.get_feature_names_out(categorical_cols)
+            else:
+                if self._onehot_encoder is not None:
+                    cat_data = X[categorical_cols].fillna('__MISSING__').astype(str)
+                    encoded = self._onehot_encoder.transform(cat_data)
+                    feature_names = self._onehot_encoder.get_feature_names_out(categorical_cols)
+                else:
+                    return X
+            
+            # Drop original categorical columns and add encoded ones
+            X = X.drop(columns=categorical_cols)
+            encoded_df = pd.DataFrame(encoded, columns=feature_names, index=X.index)
+            X = pd.concat([X, encoded_df], axis=1)
+        
+        return X
+    
     def fit(
         self,
         X_train: pd.DataFrame,
@@ -108,7 +206,11 @@ class LinearModel(BaseModel):
         
         Note: Linear models in sklearn don't use validation for early stopping.
         sample_weight is passed to the regressor if supported.
+        Categorical columns are handled according to handle_categoricals config.
         """
+        # Handle categorical columns
+        X_train = self._preprocess_categoricals(X_train, is_training=True)
+        
         self.feature_names = list(X_train.columns)
         
         # Fit with sample weights if supported and provided
@@ -122,6 +224,8 @@ class LinearModel(BaseModel):
     
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """Generate predictions."""
+        # Handle categorical columns the same way as during training
+        X = self._preprocess_categoricals(X, is_training=False)
         return self.model.predict(X)
     
     def save(self, path: str) -> None:
@@ -129,7 +233,11 @@ class LinearModel(BaseModel):
         joblib.dump({
             'model': self.model,
             'feature_names': self.feature_names,
-            'model_type': self.model_type
+            'model_type': self.model_type,
+            'handle_categoricals': self.handle_categoricals,
+            '_categorical_cols_to_drop': self._categorical_cols_to_drop,
+            '_onehot_encoder': self._onehot_encoder,
+            '_label_encoders': self._label_encoders,
         }, path)
     
     @classmethod
@@ -139,6 +247,10 @@ class LinearModel(BaseModel):
         instance = cls({'model': {'type': data.get('model_type', 'ridge')}})
         instance.model = data['model']
         instance.feature_names = data.get('feature_names', [])
+        instance.handle_categoricals = data.get('handle_categoricals', 'drop')
+        instance._categorical_cols_to_drop = data.get('_categorical_cols_to_drop', [])
+        instance._onehot_encoder = data.get('_onehot_encoder')
+        instance._label_encoders = data.get('_label_encoders', {})
         return instance
     
     def get_feature_importance(self) -> pd.DataFrame:
@@ -148,6 +260,25 @@ class LinearModel(BaseModel):
         
         # Get coefficients from the model step in pipeline
         coefs = self.model.named_steps['model'].coef_
+        
+        # Handle polynomial features - coefs may be longer than feature_names
+        # In this case, we report that we have polynomial features and return
+        # the original feature names with their aggregated importance
+        if len(coefs) != len(self.feature_names):
+            # If polynomial features are used, we can't easily map back
+            # Return generic feature names based on coef length
+            if len(coefs) > len(self.feature_names):
+                # Polynomial features expanded the feature space
+                feature_names = [f'feature_{i}' for i in range(len(coefs))]
+                logger.info(f"Polynomial features expanded {len(self.feature_names)} -> {len(coefs)} features")
+            else:
+                # Features were reduced (shouldn't happen, but handle it)
+                feature_names = self.feature_names[:len(coefs)]
+            
+            return pd.DataFrame({
+                'feature': feature_names,
+                'importance': np.abs(coefs)
+            }).sort_values('importance', ascending=False)
         
         return pd.DataFrame({
             'feature': self.feature_names,
@@ -161,12 +292,21 @@ class GlobalMeanBaseline(BaseModel):
     
     This baseline learns the average y_norm (erosion) for each months_postgx
     from training data and predicts this average for all series.
+    
+    Note: This model requires 'months_postgx' column in X_train. If using
+    the standard training pipeline, ensure months_postgx is included in 
+    the feature DataFrame or passed via the train function's special handling.
+    
+    When 'months_postgx' is not available in X, the model will:
+    1. Try to get it from config (if provided as 'months_postgx_values')
+    2. Fall back to using the global mean for all predictions
     """
     
     def __init__(self, config: dict):
         super().__init__(config)
         self.erosion_curve: Dict[int, float] = {}
         self.global_mean: float = 0.5
+        self._use_global_fallback: bool = False
     
     def fit(
         self,
@@ -174,45 +314,93 @@ class GlobalMeanBaseline(BaseModel):
         y_train: pd.Series,
         X_val: Optional[pd.DataFrame] = None,
         y_val: Optional[pd.Series] = None,
-        sample_weight: Optional[pd.Series] = None
+        sample_weight: Optional[pd.Series] = None,
+        months_postgx: Optional[np.ndarray] = None  # Accept months separately
     ) -> 'GlobalMeanBaseline':
         """
         Compute mean y_norm per months_postgx.
         
-        Note: X_train must contain 'months_postgx' column.
+        Args:
+            X_train: Feature DataFrame, optionally containing 'months_postgx'
+            y_train: Target values
+            X_val: Validation features (unused)
+            y_val: Validation targets (unused)
+            sample_weight: Sample weights (unused for this baseline)
+            months_postgx: Optional array of months_postgx values if not in X_train
+        
+        Returns:
+            self (fitted model)
         """
-        if 'months_postgx' not in X_train.columns:
-            raise ValueError("X_train must contain 'months_postgx' column for GlobalMeanBaseline")
+        # Get months_postgx from X_train or from explicit parameter
+        if 'months_postgx' in X_train.columns:
+            months = X_train['months_postgx'].values
+        elif months_postgx is not None:
+            months = months_postgx
+        else:
+            # Fall back to global mean only
+            logger.warning(
+                "GlobalMeanBaseline: 'months_postgx' not in X_train and not provided separately. "
+                "Will predict global mean for all samples. To fix: include 'months_postgx' in "
+                "features or pass months_postgx array to fit()."
+            )
+            self.global_mean = float(y_train.mean())
+            self._use_global_fallback = True
+            self.erosion_curve = {}
+            return self
         
         # Compute mean erosion by month
         df = pd.DataFrame({
-            'months_postgx': X_train['months_postgx'],
-            'y_norm': y_train
+            'months_postgx': months,
+            'y_norm': y_train.values if isinstance(y_train, pd.Series) else y_train
         })
         
         self.erosion_curve = df.groupby('months_postgx')['y_norm'].mean().to_dict()
-        self.global_mean = y_train.mean()
+        self.global_mean = float(y_train.mean())
+        self._use_global_fallback = False
         
         logger.info(f"GlobalMeanBaseline: learned erosion curve for {len(self.erosion_curve)} months")
         
         return self
     
-    def predict(self, X: pd.DataFrame) -> np.ndarray:
+    def predict(
+        self, 
+        X: pd.DataFrame,
+        months_postgx: Optional[np.ndarray] = None  # Accept months separately
+    ) -> np.ndarray:
         """
         Apply learned erosion curve.
         
-        X must have 'months_postgx' column.
-        """
-        if 'months_postgx' not in X.columns:
-            raise ValueError("X must contain 'months_postgx' column for prediction")
+        Args:
+            X: Feature DataFrame, optionally containing 'months_postgx'
+            months_postgx: Optional array of months_postgx values if not in X
         
-        return X['months_postgx'].map(self.erosion_curve).fillna(self.global_mean).values
+        Returns:
+            Array of predictions
+        """
+        # If using global fallback, return global mean for all
+        if self._use_global_fallback:
+            return np.full(len(X), self.global_mean)
+        
+        # Get months_postgx from X or from explicit parameter
+        if 'months_postgx' in X.columns:
+            months = X['months_postgx']
+        elif months_postgx is not None:
+            months = pd.Series(months_postgx, index=X.index)
+        else:
+            logger.warning(
+                "GlobalMeanBaseline: 'months_postgx' not in X and not provided. "
+                "Returning global mean for all predictions."
+            )
+            return np.full(len(X), self.global_mean)
+        
+        return months.map(self.erosion_curve).fillna(self.global_mean).values
     
     def save(self, path: str) -> None:
         """Save model to disk."""
         joblib.dump({
             'erosion_curve': self.erosion_curve,
-            'global_mean': self.global_mean
+            'global_mean': self.global_mean,
+            '_use_global_fallback': self._use_global_fallback
         }, path)
     
     @classmethod
@@ -222,6 +410,7 @@ class GlobalMeanBaseline(BaseModel):
         instance = cls({})
         instance.erosion_curve = data['erosion_curve']
         instance.global_mean = data['global_mean']
+        instance._use_global_fallback = data.get('_use_global_fallback', False)
         return instance
 
 

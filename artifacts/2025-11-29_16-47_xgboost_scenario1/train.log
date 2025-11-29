@@ -1,0 +1,32 @@
+2025-11-29 16:47:19,749 - __main__ - INFO - Starting experiment: 2025-11-29_16-47_xgboost_scenario1
+2025-11-29 16:47:19,816 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/2025-11-29_16-47_xgboost_scenario1/configs (hash: 1b905dc2)
+2025-11-29 16:47:19,816 - __main__ - INFO - Config hash: 1b905dc2
+2025-11-29 16:47:19,841 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-29 16:47:19,842 - src.utils - INFO - [Load cached features for train S1 train] starting...
+2025-11-29 16:47:19,842 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s1_train.parquet
+2025-11-29 16:47:19,936 - src.features - INFO - Loaded X: (46872, 87), y: 46872
+2025-11-29 16:47:19,936 - src.utils - INFO - [Load cached features for train S1 train] done in 0.094s
+2025-11-29 16:47:19,957 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-29 16:47:19,957 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-29 16:47:19,971 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-29 16:47:19,971 - src.utils - INFO - [Load cached train panel] done in 0.014s
+2025-11-29 16:47:19,971 - src.utils - INFO - [Load features (cached)] done in 0.130s
+2025-11-29 16:47:19,971 - src.utils - INFO - [Create validation split] starting...
+2025-11-29 16:47:19,986 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series) into 'OTHER'
+2025-11-29 16:47:20,084 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-29 16:47:20,084 - src.validation - INFO - Train rows: 37,488, Val rows: 9,384
+2025-11-29 16:47:20,086 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-29 16:47:20,086 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-29 16:47:20,086 - src.utils - INFO - [Create validation split] done in 0.115s
+2025-11-29 16:47:20,122 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:47:20,122 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:47:20,133 - __main__ - INFO - Features: 86 columns
+2025-11-29 16:47:20,133 - __main__ - INFO - Meta: 9 columns
+2025-11-29 16:47:20,471 - __main__ - INFO - Sample weights - min: 0.58, max: 3.46, mean: 1.00
+2025-11-29 16:47:20,472 - src.utils - INFO - [Train xgboost for scenario 1] starting...

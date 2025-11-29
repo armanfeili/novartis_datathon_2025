@@ -49,10 +49,11 @@ from .linear import (
 
 # Specialized models (no native deps)
 from .baselines import BaselineModels
-from .hybrid_physics_ml import HybridPhysicsMLModel
+from .hybrid_physics_ml import HybridPhysicsMLModel, HybridPhysicsMLWrapper
 
 # ARIHOW model (requires statsmodels, imported lazily)
 _ARIHOWModel = None
+_ARIHOWWrapper = None
 
 def _import_arihow():
     global _ARIHOWModel
@@ -60,6 +61,13 @@ def _import_arihow():
         from .arihow import ARIHOWModel
         _ARIHOWModel = ARIHOWModel
     return _ARIHOWModel
+
+def _import_arihow_wrapper():
+    global _ARIHOWWrapper
+    if _ARIHOWWrapper is None:
+        from .arihow import ARIHOWWrapper
+        _ARIHOWWrapper = ARIHOWWrapper
+    return _ARIHOWWrapper
 
 # Ensemble models (pure Python, no native dependencies)
 from .ensemble import (
@@ -151,7 +159,9 @@ __all__ = [
     # Specialized models
     'BaselineModels',
     'HybridPhysicsMLModel',
+    'HybridPhysicsMLWrapper',  # BaseModel-compliant wrapper
     'ARIHOWModel',  # Lazy import - requires statsmodels
+    'ARIHOWWrapper',  # BaseModel-compliant wrapper
     # Deep learning models (lazy import - require PyTorch)
     'KGGCNLSTMModel',  # KG-GCN-LSTM paper
     'CNNLSTMModel',  # Li et al. 2024
@@ -173,6 +183,8 @@ def __getattr__(name: str):
     """Lazy import for models with heavy dependencies."""
     if name == 'ARIHOWModel':
         return _import_arihow()
+    elif name == 'ARIHOWWrapper':
+        return _import_arihow_wrapper()
     elif name == 'CatBoostModel':
         return _import_catboost()
     elif name == 'LGBMModel':
@@ -248,11 +260,16 @@ def get_model_class(name: str):
         'baseline_exp': lambda: BaselineModels,
         'baseline': lambda: BaselineModels,
         # Specialized models
-        'hybrid_lgbm': lambda: HybridPhysicsMLModel,
-        'hybrid_xgb': lambda: HybridPhysicsMLModel,
-        'hybrid': lambda: HybridPhysicsMLModel,
-        'arihow': _import_arihow,
-        'ts_hybrid': _import_arihow,
+        'hybrid_lgbm': lambda: HybridPhysicsMLWrapper,
+        'hybrid_xgb': lambda: HybridPhysicsMLWrapper,
+        'hybrid': lambda: HybridPhysicsMLWrapper,
+        'hybrid_wrapper': lambda: HybridPhysicsMLWrapper,
+        'hybrid_physics_ml': lambda: HybridPhysicsMLWrapper,  # Use wrapper by default
+        'hybrid_raw': lambda: HybridPhysicsMLModel,  # Original model (for direct use)
+        'arihow': _import_arihow_wrapper,  # Use wrapper by default
+        'arihow_wrapper': _import_arihow_wrapper,
+        'arihow_raw': _import_arihow,  # Original model (for direct use)
+        'ts_hybrid': _import_arihow_wrapper,
         # Ensembles (eager import)
         'averaging': lambda: AveragingEnsemble,
         'averaging_ensemble': lambda: AveragingEnsemble,

@@ -1925,17 +1925,40 @@ def train_scenario_model(
     # Track training time
     train_start = time.time()
     
+    # Prepare feature matrices - add meta columns for hybrid models
+    X_train_for_model = X_train.copy()
+    X_val_for_model = X_val.copy()
+    
+    if model_type.lower().startswith('hybrid'):
+        # Hybrid models need months_postgx and avg_vol_12m in features
+        if 'months_postgx' not in X_train_for_model.columns:
+            X_train_for_model['months_postgx'] = meta_train['months_postgx'].values
+        if 'avg_vol_12m' not in X_train_for_model.columns:
+            X_train_for_model['avg_vol_12m'] = meta_train['avg_vol_12m'].values
+        if 'months_postgx' not in X_val_for_model.columns:
+            X_val_for_model['months_postgx'] = meta_val['months_postgx'].values
+        if 'avg_vol_12m' not in X_val_for_model.columns:
+            X_val_for_model['avg_vol_12m'] = meta_val['avg_vol_12m'].values
+    
+    if model_type.lower() in ('arihow', 'arima_hw', 'arima_holtwinters'):
+        # ARIHOW models need country, brand_name, months_postgx, avg_vol_12m in features
+        for col in ['country', 'brand_name', 'months_postgx', 'avg_vol_12m']:
+            if col not in X_train_for_model.columns:
+                X_train_for_model[col] = meta_train[col].values
+            if col not in X_val_for_model.columns:
+                X_val_for_model[col] = meta_val[col].values
+    
     with timer(f"Train {model_type} for scenario {scenario}"):
         model.fit(
-            X_train, y_train,
-            X_val=X_val, y_val=y_val,
+            X_train_for_model, y_train,
+            X_val=X_val_for_model, y_val=y_val,
             sample_weight=sample_weights
         )
     
     train_time = time.time() - train_start
     
     # Compute validation metrics
-    val_preds_norm = model.predict(X_val)
+    val_preds_norm = model.predict(X_val_for_model)
     
     # Denormalize predictions for metric calculation
     avg_vol_val = meta_val['avg_vol_12m'].values
@@ -2103,55 +2126,75 @@ def _get_model(model_type: str, config: Optional[dict] = None):
         from .models.ensemble import BlendingEnsemble
         return BlendingEnsemble(config)
     
-    # Hybrid Physics + ML model
+    # Hybrid Physics + ML model (all variants use wrapper)
     elif model_type_lower in ('hybrid_lgbm', 'hybrid_lightgbm'):
-        from .models.hybrid_physics_ml import HybridPhysicsMLModel
-        decay_rate = config.get('physics', {}).get('decay_rate', 0.05)
+        from .models.hybrid_physics_ml import HybridPhysicsMLWrapper
+        wrapper_config = {
+            'decay_rate': config.get('physics', {}).get('decay_rate', 0.05),
+            'ml_model_type': 'lightgbm',
+            'clip_min': config.get('physics', {}).get('clip_min', 0.0),
+            'clip_max': config.get('physics', {}).get('clip_max', 2.0),
+            'early_stopping_rounds': config.get('ml_model', {}).get('early_stopping_rounds', 50),
+        }
         ml_params = config.get('ml_model', {}).get('lightgbm', {})
-        return HybridPhysicsMLModel(
-            ml_model_type='lightgbm',
-            decay_rate=decay_rate,
-            params=ml_params if ml_params else None
-        )
+        if ml_params:
+            wrapper_config['ml_params'] = ml_params
+        return HybridPhysicsMLWrapper(wrapper_config)
     elif model_type_lower in ('hybrid_xgb', 'hybrid_xgboost'):
-        from .models.hybrid_physics_ml import HybridPhysicsMLModel
-        decay_rate = config.get('physics', {}).get('decay_rate', 0.05)
+        from .models.hybrid_physics_ml import HybridPhysicsMLWrapper
+        wrapper_config = {
+            'decay_rate': config.get('physics', {}).get('decay_rate', 0.05),
+            'ml_model_type': 'xgboost',
+            'clip_min': config.get('physics', {}).get('clip_min', 0.0),
+            'clip_max': config.get('physics', {}).get('clip_max', 2.0),
+            'early_stopping_rounds': config.get('ml_model', {}).get('early_stopping_rounds', 50),
+        }
         ml_params = config.get('ml_model', {}).get('xgboost', {})
-        return HybridPhysicsMLModel(
-            ml_model_type='xgboost',
-            decay_rate=decay_rate,
-            params=ml_params if ml_params else None
-        )
+        if ml_params:
+            wrapper_config['ml_params'] = ml_params
+        return HybridPhysicsMLWrapper(wrapper_config)
+    elif model_type_lower in ('hybrid_cat', 'hybrid_catboost'):
+        from .models.hybrid_physics_ml import HybridPhysicsMLWrapper
+        wrapper_config = {
+            'decay_rate': config.get('physics', {}).get('decay_rate', 0.05),
+            'ml_model_type': 'catboost',
+            'clip_min': config.get('physics', {}).get('clip_min', 0.0),
+            'clip_max': config.get('physics', {}).get('clip_max', 2.0),
+            'early_stopping_rounds': config.get('ml_model', {}).get('early_stopping_rounds', 50),
+        }
+        ml_params = config.get('ml_model', {}).get('catboost', {})
+        if ml_params:
+            wrapper_config['ml_params'] = ml_params
+        return HybridPhysicsMLWrapper(wrapper_config)
     elif model_type_lower == 'hybrid':
-        from .models.hybrid_physics_ml import HybridPhysicsMLModel
-        decay_rate = config.get('physics', {}).get('decay_rate', 0.05)
-        ml_type = config.get('ml_model', {}).get('type', 'lightgbm')
+        from .models.hybrid_physics_ml import HybridPhysicsMLWrapper
+        # Build config for wrapper
+        wrapper_config = {
+            'decay_rate': config.get('physics', {}).get('decay_rate', 0.05),
+            'ml_model_type': config.get('ml_model', {}).get('type', 'catboost'),  # Default to catboost (works on Apple Silicon)
+            'clip_min': config.get('physics', {}).get('clip_min', 0.0),
+            'clip_max': config.get('physics', {}).get('clip_max', 2.0),
+            'early_stopping_rounds': config.get('ml_model', {}).get('early_stopping_rounds', 50),
+        }
+        ml_type = wrapper_config['ml_model_type']
         ml_params = config.get('ml_model', {}).get(ml_type, {})
-        return HybridPhysicsMLModel(
-            ml_model_type=ml_type,
-            decay_rate=decay_rate,
-            params=ml_params if ml_params else None
-        )
+        if ml_params:
+            wrapper_config['ml_params'] = ml_params
+        return HybridPhysicsMLWrapper(wrapper_config)
     
-    # ARIMA + Holt-Winters hybrid model
+    # ARIMA + Holt-Winters hybrid model (using wrapper for standard interface)
     elif model_type_lower in ('arihow', 'arima_hw', 'arima_holtwinters'):
-        from .models.arihow import ARIHOWModel
-        arima_params = config.get('arima', {})
-        hw_params = config.get('holt_winters', {})
-        
-        # Map config to model parameters
-        arima_order = tuple(arima_params.get('order', [1, 1, 1]))
-        seasonal_order = tuple(arima_params.get('seasonal_order', [0, 0, 0, 0])) if arima_params.get('seasonal', False) else (0, 0, 0, 0)
-        
-        return ARIHOWModel(
-            arima_order=arima_order,
-            seasonal_order=seasonal_order,
-            hw_trend=hw_params.get('trend', 'add'),
-            hw_seasonal=hw_params.get('seasonal', None),
-            hw_seasonal_periods=hw_params.get('seasonal_periods', 12),
-            weight_window=config.get('weight_window', 12),
-            suppress_warnings=config.get('suppress_warnings', True)
-        )
+        from .models.arihow import ARIHOWWrapper
+        # Build config for wrapper
+        wrapper_config = {
+            'arima': config.get('arima', {}),
+            'holt_winters': config.get('holt_winters', {}),
+            'blend_weight': config.get('blend_weight', 0.5),
+            'min_history_months': config.get('min_history_months', 3),
+            'weight_window': config.get('weight_window', 12),
+            'suppress_warnings': config.get('suppress_warnings', True)
+        }
+        return ARIHOWWrapper(wrapper_config)
     
     # KG-GCN-LSTM model (from KG-GCN-LSTM paper)
     elif model_type_lower in ('kg_gcn_lstm', 'kggcnlstm', 'gcn_lstm'):
