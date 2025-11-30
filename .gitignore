@@ -1,0 +1,86 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# CatBoost
+catboost_info/
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Data (keep structure but not data files)
+data/raw/**/*.csv
+data/interim/**/*.parquet
+data/interim/**/*.pkl
+data/processed/**/*.parquet
+data/processed/**/*.pkl
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+
+# Logs
+logs/*.log
+logs/**/*.log
+
+# Model artifacts (too large for git)
+artifacts/**/*.cbm
+artifacts/**/*.bin
+artifacts/**/*.joblib
+artifacts/**/*.pkl
+artifacts/**/*.model
+!artifacts/.gitkeep
+
+# Submissions (keep example, not actual submissions)
+submissions/**/*.csv
+!submissions/submission_example.csv
+!submissions/.gitkeep
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Environment files with secrets
+.env
+.env.local

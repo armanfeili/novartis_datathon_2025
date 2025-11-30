@@ -109,7 +109,8 @@ novartis_datathon_2025/
 │   │   ├── TRAIN/              # Training data files
 │   │   └── TEST/               # Test data files
 │   ├── interim/                # Intermediate processed data
-│   └── processed/              # Final processed datasets
+│   ├── processed/              # Final processed datasets
+│   └── external/               # External data sources
 │
 ├── src/                        # Source code
 │   ├── __init__.py
@@ -129,20 +130,37 @@ novartis_datathon_2025/
 │       ├── nn.py               # Neural network (PyTorch)
 │       └── ensemble.py         # Ensemble methods
 │
+├── scripts/                    # Utility scripts
+│   ├── reproduce.sh            # Full reproduction script
+│   ├── train_and_submit_bonus.sh   # Training with bonus features
+│   ├── train_and_submit_complete.py
+│   ├── train_catboost_bonus_complete.py
+│   ├── run_full_training_bonus.py
+│   └── generate_submission_from_trained.py
+│
 ├── notebooks/                  # Jupyter notebooks
 │   ├── 00_eda.ipynb            # Exploratory data analysis
 │   ├── 01_feature_prototype.ipynb  # Feature prototyping
 │   ├── 01_train.ipynb          # Interactive training
 │   ├── 02_model_sanity.ipynb   # Model sanity checks
 │   └── colab/                  # Google Colab notebook
-│       └── main.ipynb
+│       ├── main.ipynb
+│       └── colab_requirements.txt
 │
 ├── docs/                       # Documentation
+│   ├── CODEBASE_DOCUMENTATION.md
+│   ├── MODEL_COMPARISON.md
 │   ├── guide/                  # Competition guide files
 │   │   ├── metric_calculation.py   # Official metric script
 │   │   ├── submission_template.csv
 │   │   └── auxiliar_metric_computation_example.csv
-│   └── planning/               # Planning documents
+│   ├── planning/               # Planning & TODO documents
+│   │   ├── TODO.md
+│   │   ├── TODO_2.md
+│   │   ├── TODO_BONUS.md
+│   │   ├── approach.md
+│   │   └── functionality.md
+│   └── results/                # Experiment results
 │
 ├── tests/                      # Test suite
 │   ├── conftest.py             # Pytest fixtures
@@ -150,12 +168,12 @@ novartis_datathon_2025/
 │
 ├── submissions/                # Generated submissions
 ├── artifacts/                  # Trained models, logs, metrics
-├── env/                        # Environment files
-│   ├── requirements.txt        # Pip requirements
-│   └── environment.yml         # Conda environment
+├── logs/                       # Training logs
 │
-├── requirements.txt            # Root requirements
-├── TODO.md                     # Development checklist
+├── requirements.txt            # Pip requirements
+├── environment.yml             # Conda environment
+├── pytest.ini                  # Pytest configuration
+├── .gitignore                  # Git ignore rules
 ├── CONTRIBUTING.md             # Contribution guidelines
 └── LICENSE                     # MIT License
 ```
