@@ -1,0 +1,172 @@
+# =============================================================================
+# Bayesian Stacking Configuration - Novartis Datathon 2025
+# =============================================================================
+# Configuration for Bayesian model averaging / stacking on top of base models.
+#
+# This combines predictions from multiple models using learned weights
+# that respect the official metric structure (time and bucket weights).
+#
+# Usage:
+#   python tools/run_oof_for_stacking.py --scenario 1
+#   python tools/train_bayesian_stacker.py --scenario 1
+#   python tools/generate_ensemble_submission.py --scenario 1
+# =============================================================================
+
+# =============================================================================
+# BASE MODELS TO STACK
+# =============================================================================
+# List of model names for each scenario. Each name should correspond to:
+# 1. A trained model in artifacts/
+# 2. OOF predictions in artifacts/oof/
+# 3. Test predictions in artifacts/test_preds/
+
+stacking:
+  # Scenario 1 models (months 0-23)
+  scenario1_models:
+    - catboost_s1
+    - lgbm_s1
+    - xgb_s1
+    - hybrid_s1
+    # - arihow_s1  # Uncomment if available
+  
+  # Scenario 2 models (months 6-23)
+  scenario2_models:
+    - catboost_s2
+    - lgbm_s2
+    - xgb_s2
+    - hybrid_s2
+    # - arihow_s2  # Uncomment if available
+
+# =============================================================================
+# OOF PREDICTION SETTINGS
+# =============================================================================
+oof:
+  # Cross-validation settings
+  n_folds: 5
+  group_col: brand_name
+  stratify_col: bucket
+  random_state: 42
+  
+  # Output directory
+  output_dir: artifacts/oof
+
+# =============================================================================
+# META-DATASET SETTINGS
+# =============================================================================
+meta_dataset:
+  # Output directory
+  output_dir: artifacts/stacking/meta
+
+# =============================================================================
+# BAYESIAN STACKER SETTINGS
+# =============================================================================
+bayesian_stacker:
+  # Dirichlet prior concentration
+  # Higher values = stronger prior toward uniform weights
+  # Lower values = more data-driven weights
+  alpha: 1.0
+  
+  # Regularization strength (multiplier on prior)
+  regularization_strength: 1.0
+  
+  # Prediction clipping
+  clip_predictions: true
+  clip_min: 0.0
+  clip_max: 2.0
+  
+  # Output directory
+  output_dir: artifacts/stacking
+
+# =============================================================================
+# SAMPLE WEIGHT SETTINGS
+# =============================================================================
+# Weights to align with official metric structure
+sample_weights:
+  # Time window weights
+  time:
+    # Scenario 1
+    s1_early: 3.0      # Months 0-5
+    s1_mid: 4.0        # Months 6-11
+    s1_late: 2.0       # Months 12-23
+    
+    # Scenario 2
+    s2_mid: 4.0        # Months 6-11
+    s2_late: 2.0       # Months 12-23
+  
+  # Bucket weights
+  bucket:
+    bucket_1: 2.0      # Fast decay - weighted higher
+    bucket_2: 1.0      # Slow decay
+
+# =============================================================================
+# SUBMISSION DIVERSIFICATION (Section 6)
+# =============================================================================
+diversification:
+  # Enable diversification
+  enabled: true
+  
+  # Method: 'multi_init', 'mcmc', or 'noise'
+  method: multi_init
+  
+  # Number of submission variants to generate
+  n_variants: 5
+  
+  # For 'noise' method: std in log-weight space for perturbation
+  noise_std: 0.1
+  
+  # For 'mcmc' method
+  mcmc:
+    step_size: 0.05
+    burn_in: 50
+    thin: 5
+  
+  # Create a final blend of all variants
+  create_blend: true
+  
+  # Output directory
+  output_dir: submissions/ensemble
+
+# =============================================================================
+# HIERARCHICAL BAYESIAN DECAY MODEL (Section 7 - Optional)
+# =============================================================================
+# Extra base model using physics-informed decay with hierarchical priors
+# This encodes domain knowledge (erosion curves) that GBMs may miss
+hierarchical_decay:
+  # Enable as additional base model in stacking
+  enabled: true
+  
+  # Use Empirical Bayes to learn hierarchical priors by bucket
+  use_hierarchical_priors: true
+  
+  # Shrinkage toward group mean (0 = no shrinkage, 1 = full shrinkage)
+  shrinkage_strength: 0.3
+  
+  # Prior parameters for exponential decay: y = a * exp(-b * t) + c
+  prior:
+    # Amplitude (starting normalized volume)
+    a_mean: 1.0
+    a_std: 0.5
+    
+    # Decay rate (higher = faster erosion)
+    b_mean: 0.05
+    b_std: 0.02
+    
+    # Asymptote (final normalized volume)
+    c_mean: 0.3
+    c_std: 0.2
+  
+  # Model name for stacking
+  model_name: bayes_decay
+
+# =============================================================================
+# TESTING & SANITY CHECKS
+# =============================================================================
+testing:
+  # Run validation checks
+  validate_oof_alignment: true
+  
+  # Compare ensemble vs best single model
+  compare_with_best_single: true
+  
+  # Minimum weight threshold for any model
+  min_model_weight: 0.01

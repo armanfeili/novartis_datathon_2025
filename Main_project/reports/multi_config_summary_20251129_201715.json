@@ -1,0 +1,90 @@
+{
+  "run_info": {
+    "timestamp": "20251129_201715",
+    "date": "20251129",
+    "time": "201715",
+    "saved_at": "2025-11-29T20:17:15.782670",
+    "total_time_seconds": 217.0160596370697,
+    "num_configs": 6
+  },
+  "best_result": {
+    "config_id": null,
+    "best_score": null
+  },
+  "all_configs": [
+    {
+      "config_id": "default",
+      "description": "Default parameters",
+      "best_score": null,
+      "best_model": null,
+      "total_time": 39.87791109085083
+    },
+    {
+      "config_id": "low_lr",
+      "description": "Low learning rate with more trees",
+      "best_score": null,
+      "best_model": null,
+      "total_time": 37.18132972717285
+    },
+    {
+      "config_id": "high_complexity",
+      "description": "More complex trees",
+      "best_score": null,
+      "best_model": null,
+      "total_time": 37.47299313545227
+    },
+    {
+      "config_id": "regularized",
+      "description": "Strong regularization to prevent overfitting",
+      "best_score": null,
+      "best_model": null,
+      "total_time": 33.67960333824158
+    },
+    {
+      "config_id": "slow_decay",
+      "description": "Slower baseline decay rate",
+      "best_score": null,
+      "best_model": null,
+      "total_time": 34.379921674728394
+    },
+    {
+      "config_id": "fast_decay",
+      "description": "Faster baseline decay rate",
+      "best_score": null,
+      "best_model": null,
+      "total_time": 34.38799786567688
+    }
+  ],
+  "comparison_table": [
+    {
+      "config_id": "default",
+      "description": "Default parameters",
+      "total_time": 39.87791109085083
+    },
+    {
+      "config_id": "low_lr",
+      "description": "Low learning rate with more trees",
+      "total_time": 37.18132972717285
+    },
+    {
+      "config_id": "high_complexity",
+      "description": "More complex trees",
+      "total_time": 37.47299313545227
+    },
+    {
+      "config_id": "regularized",
+      "description": "Strong regularization to prevent overfitting",
+      "total_time": 33.67960333824158
+    },
+    {
+      "config_id": "slow_decay",
+      "description": "Slower baseline decay rate",
+      "total_time": 34.379921674728394
+    },
+    {
+      "config_id": "fast_decay",
+      "description": "Faster baseline decay rate",
+      "total_time": 34.38799786567688
+    }
+  ]
+}

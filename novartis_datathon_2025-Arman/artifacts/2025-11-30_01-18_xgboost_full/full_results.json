@@ -1,0 +1,40 @@
+{
+  "run_name": "2025-11-30_01-18_xgboost_full",
+  "timestamp": "2025-11-30_01-18",
+  "scenarios": {
+    "1": {
+      "scenario": 1,
+      "metrics": {
+        "official_metric": 0.7671,
+        "rmse_norm": 0.24776055646425382,
+        "mae_norm": 0.1766030877022768,
+        "scenario": 1,
+        "model_type": "xgboost",
+        "train_time_seconds": 4.295281171798706,
+        "n_train_samples": 37488,
+        "n_val_samples": 9384,
+        "n_features": 86
+      },
+      "status": "success"
+    },
+    "2": {
+      "scenario": 2,
+      "metrics": {
+        "official_metric": 0.2976,
+        "rmse_norm": 0.20722946333877826,
+        "mae_norm": 0.12811161985034292,
+        "scenario": 2,
+        "model_type": "xgboost",
+        "train_time_seconds": 4.33872127532959,
+        "n_train_samples": 28116,
+        "n_val_samples": 7038,
+        "n_features": 101
+      },
+      "status": "success"
+    }
+  },
+  "hpo_results": null,
+  "memory_report": {
+    "enabled": false
+  }
+}

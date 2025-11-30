@@ -1,0 +1,69 @@
+# =============================================================================
+# XGBoost Best Configuration - Scenario 2
+# =============================================================================
+# This file contains the optimized hyperparameters for Scenario 2.
+#
+# Source: Hyperparameter sweep using official_metric as objective
+# Best official_metric achieved: 0.2659
+#
+# Usage:
+#   python -m src.train --scenario 2 --model xgboost --model-config configs/model_xgb_s2_best.yaml
+# =============================================================================
+
+model:
+  name: "xgboost"
+  task: "regression"
+  scenario: 2
+
+# =============================================================================
+# HPO-OPTIMIZED PARAMETERS FOR SCENARIO 2
+# =============================================================================
+# These parameters were found via sweep over the following search space:
+#   max_depth: [3, 4, 5, 6, 7, 8]
+#   learning_rate: [0.01, 0.02, 0.03, 0.05, 0.07, 0.1]
+#   reg_lambda: [1, 3, 5, 10]
+#
+# Selection criterion: official_metric (PE) - lower is better
+# Validation: 3-fold CV at series level, stratified by bucket
+# =============================================================================
+params:
+  # HPO-optimized parameters
+  max_depth: 4                    # From HPO sweep (shallower for S2)
+  learning_rate: 0.05             # From HPO sweep (higher LR for S2)
+  reg_lambda: 1                   # From HPO sweep
+  
+  # Fixed parameters (not tuned)
+  booster: "gbtree"
+  objective: "reg:squarederror"
+  eval_metric: "rmse"
+  min_child_weight: 1
+  max_leaves: 0
+  n_estimators: 3000
+  gamma: 0
+  reg_alpha: 0
+  subsample: 0.8
+  colsample_bytree: 0.8
+  colsample_bylevel: 1.0
+  colsample_bynode: 1.0
+  early_stopping_rounds: 50
+  verbosity: 0
+  n_jobs: -1
+  seed: 42
+
+# =============================================================================
+# TRAINING SETTINGS
+# =============================================================================
+training:
+  use_early_stopping: true
+  eval_metric: "rmse"
+  verbose_eval: 100
+  use_sample_weights: true
+
+# =============================================================================
+# BASELINE COMPARISON (Original defaults before HPO)
+# =============================================================================
+# baseline_params:
+#   max_depth: 6
+#   learning_rate: 0.1
+#   reg_lambda: 1
+#   # baseline official_metric: ~0.30+

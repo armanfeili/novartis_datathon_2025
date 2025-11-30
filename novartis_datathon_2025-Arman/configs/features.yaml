@@ -1,0 +1,176 @@
+# Feature engineering configuration for Novartis Datathon 2025
+# Scenario-aware feature construction with strict leakage prevention
+
+# Pre-entry statistics (both scenarios)
+# Features derived from months_postgx < 0 only
+pre_entry:
+  windows: [3, 6, 12]           # Months for rolling averages: avg_vol_3m, avg_vol_6m, avg_vol_12m
+  compute_trend: true           # Linear slope over pre-entry period
+  compute_volatility: true      # std(volume_pre) / avg_vol_12m
+  compute_max: true             # Maximum volume in pre-entry period
+  compute_min: true             # Minimum volume in pre-entry period
+  log_transform: true           # log1p(avg_vol_12m) for scale normalization
+  compute_seasonal: true        # Seasonal pattern detection (NEW Section 3.1)
+
+# Time features
+time:
+  include_months_postgx: true         # Direct time index
+  include_squared: true               # months_postgx^2 for non-linear decay
+  include_is_post_entry: true         # Binary (months_postgx >= 0)
+  include_time_bucket: true           # Categorical (pre, 0-5, 6-11, 12-23)
+  include_month_of_year: true         # Seasonality from calendar month
+  include_quarters: true              # Q1-Q4 for seasonality
+  include_decay: true                 # Time decay features
+  decay_alpha: 0.1                    # Decay rate for exp(-alpha * months)
+  
+  # Time bucket definitions
+  time_buckets:
+    pre: [-999, -1]
+    early: [0, 5]
+    mid: [6, 11]
+    late: [12, 23]
+
+# Generics competition features
+generics:
+  include_n_gxs: true                 # Current number of generics
+  include_has_generic: true           # Binary (n_gxs > 0)
+  include_multiple_generics: true     # Binary (n_gxs >= 2)
+  include_cummax: true                # Maximum n_gxs up to current month
+  include_first_month: true           # Month when n_gxs first > 0
+  include_entry_speed: true           # Rate of generic entry
+  include_future_n_gxs: true          # Expected future n_gxs (exogenous, NEW Section 3.3)
+  
+  # Cutoff behavior: features derived from n_gxs must respect scenario cutoff
+  # Scenario 1: only use n_gxs for months_postgx < 0
+  # Scenario 2: can use n_gxs for months_postgx < 6
+  # NOTE: Future n_gxs is EXOGENOUS (provided in test data) and NOT leakage
+
+# Drug characteristics (static features from medicine_info)
+drug:
+  categoricals:
+    - "ther_area"                     # Therapeutic area
+    - "main_package"                  # Dosage form
+  
+  numerical:
+    - "hospital_rate"                 # Percentage (0-100)
+  
+  boolean:
+    - "biological"
+    - "small_molecule"
+  
+  # Derived features
+  hospital_rate_bins: [30, 70]        # Create Low/Medium/High bins
+  derive_is_injection: true           # Binary from main_package
+  
+  # Encoding method for categoricals
+  encoding: "label"                   # label, onehot, target
+
+# Scenario 2 specific features (early post-entry signal)
+# Only computed when scenario="scenario2"
+scenario2_early:
+  compute_avg_0_5: true               # Mean volume over months [0, 5]
+  compute_erosion_0_5: true           # avg_vol_0_5 / avg_vol_12m
+  compute_trend_0_5: true             # Linear slope over months 0-5
+  compute_drop_month_0: true          # volume[0] / avg_vol_12m (initial drop)
+
+# Interaction features (optional, can increase model complexity)
+interactions:
+  enabled: false                      # Set to true to include interactions
+  pairs:
+    - ["n_gxs", "biological"]         # n_gxs_x_biological
+    - ["hospital_rate", "months_postgx"]  # hospital_rate_x_time
+    - ["ther_area_encoded", "n_gxs"]  # ther_area_x_n_gxs
+
+# Target encoding features (Section 3.4)
+# Uses K-fold cross-validation to prevent leakage
+target_encoding:
+  enabled: false                      # Set to true to enable (requires mode="train")
+  features:                           # Columns to target encode
+    - "ther_area"                     # ther_area_erosion_prior
+    - "country"                       # country_erosion_prior
+  n_folds: 5                          # Number of folds for cross-fitting
+  smoothing: 10                       # Smoothing factor for regularization
+
+# Feature selection / filtering (Section 3.8)
+selection:
+  drop_low_variance: false            # Not recommended for this problem
+  variance_threshold: 0.01
+  drop_high_correlation: false        # Not recommended - let models handle
+  correlation_threshold: 0.95
+
+# Leakage prevention rules (enforced in code)
+leakage_prevention:
+  # These columns are NEVER included in model features
+  forbidden_features:
+    - "bucket"                        # Target-derived
+    - "y_norm"                        # Target
+    - "volume"                        # Raw target
+    - "mean_erosion"                  # Target-derived
+    - "country"                       # Meta key
+    - "brand_name"                    # Meta key
+  
+  # Cutoff rules per scenario
+  scenario1:
+    feature_cutoff: 0                 # Only months_postgx < 0 for feature derivation
+    target_range: [0, 23]             # Forecast months 0-23
+  
+  scenario2:
+    feature_cutoff: 6                 # months_postgx < 6 allowed
+    target_range: [6, 23]             # Forecast months 6-23
+
+# ==============================================================================
+# DATA AUGMENTATION (Section 2)
+# Training-only augmentation to expand small dataset
+# ==============================================================================
+augmentation:
+  enabled: false                      # Set to true to enable augmentation
+  
+  # Noise perturbation (Section 2.1)
+  noise:
+    enabled: true
+    scale: 0.02                       # Noise = sigma * original_value
+    target_cols: ['y_norm', 'avg_vol_12m']  # Columns to perturb
+    n_copies: 3                       # Number of noisy copies per sample
+  
+  # Bucket 1 oversampling (Section 2.2)
+  bucket1_oversample:
+    enabled: true
+    oversample_ratio: 2.0             # How much to oversample Bucket 1
+    noise_scale: 0.01                 # Lighter noise for oversampled
+  
+  # Residual transfer augmentation (Section 2.3)
+  residual_transfer:
+    enabled: true
+    within_ther_area: true            # Only transfer within same therapeutic area
+    within_bucket: true               # Only transfer within same bucket
+    n_augmented: 2                    # Augmented samples per original
+  
+  # Bootstrap residuals (Section 2.4)
+  bootstrap:
+    enabled: false
+    n_bootstrap: 100                  # Number of bootstrap samples
+    block_size: 3                     # Block size for time series bootstrap
+
+# ==============================================================================
+# DISTILLATION (Section 3.3)
+# Knowledge transfer from larger models to smaller ones
+# ==============================================================================
+distillation:
+  enabled: false                      # Set to true to enable distillation
+  
+  # Teacher model settings
+  teacher:
+    model_type: 'lgbm'                # lgbm, xgb, ensemble
+    n_estimators: 500                 # Large teacher model
+    use_cv_ensemble: true             # Ensemble CV folds as teacher
+  
+  # Student model settings
+  student:
+    model_type: 'lgbm'
+    n_estimators: 100                 # Smaller student model
+    max_depth: 4                      # Constrained depth
+  
+  # Distillation parameters
+  alpha: 0.5                          # Weight: alpha*teacher_pred + (1-alpha)*true_target
+  temperature: 1.0                    # Temperature for soft targets (not used for regression)
+

@@ -1,0 +1,73 @@
+{
+  "cv_official_mean": 0.0047,
+  "cv_official_std": 0.0013130118049735884,
+  "cv_rmse_mean": 0.02335884526925882,
+  "cv_rmse_std": 0.01574084688437872,
+  "cv_mae_mean": 0.002832994875791285,
+  "cv_mae_std": 0.0008929856553158827,
+  "n_folds": 5,
+  "fold_metrics": [
+    {
+      "official_metric": 0.0038,
+      "rmse_norm": 0.014445071040281894,
+      "mae_norm": 0.0023791083585431925,
+      "scenario": 1,
+      "model_type": "catboost",
+      "train_time_seconds": 212.0105094909668,
+      "n_train_samples": 37488,
+      "n_val_samples": 9384,
+      "n_features": 108,
+      "fold": 1
+    },
+    {
+      "official_metric": 0.0043,
+      "rmse_norm": 0.02997987720063718,
+      "mae_norm": 0.0025658417725263386,
+      "scenario": 1,
+      "model_type": "catboost",
+      "train_time_seconds": 228.99796843528748,
+      "n_train_samples": 37488,
+      "n_val_samples": 9384,
+      "n_features": 108,
+      "fold": 2
+    },
+    {
+      "official_metric": 0.0039,
+      "rmse_norm": 0.007214216064208767,
+      "mae_norm": 0.002150875172540212,
+      "scenario": 1,
+      "model_type": "catboost",
+      "train_time_seconds": 239.36115407943726,
+      "n_train_samples": 37488,
+      "n_val_samples": 9384,
+      "n_features": 108,
+      "fold": 3
+    },
+    {
+      "official_metric": 0.0073,
+      "rmse_norm": 0.05108375270700357,
+      "mae_norm": 0.004597593309468923,
+      "scenario": 1,
+      "model_type": "catboost",
+      "train_time_seconds": 186.61406898498535,
+      "n_train_samples": 37512,
+      "n_val_samples": 9360,
+      "n_features": 108,
+      "fold": 4
+    },
+    {
+      "official_metric": 0.0042,
+      "rmse_norm": 0.014071309334162705,
+      "mae_norm": 0.002471555765877758,
+      "scenario": 1,
+      "model_type": "catboost",
+      "train_time_seconds": 233.86893033981323,
+      "n_train_samples": 37512,
+      "n_val_samples": 9360,
+      "n_features": 108,
+      "fold": 5
+    }
+  ],
+  "scenario": 1,
+  "model_type": "catboost"
+}

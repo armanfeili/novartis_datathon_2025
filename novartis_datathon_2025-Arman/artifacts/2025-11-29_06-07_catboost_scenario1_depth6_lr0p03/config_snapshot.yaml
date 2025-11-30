@@ -1,0 +1,42 @@
+model_config:
+  categorical_features:
+  - ther_area
+  - main_package
+  - time_bucket
+  - hospital_rate_bin
+  - n_gxs_bin
+  model:
+    name: catboost
+    task: regression
+  params:
+    bagging_temperature: 1.0
+    depth: 6
+    early_stopping_rounds: 50
+    eval_metric: RMSE
+    iterations: 500
+    l2_leaf_reg: 3.0
+    learning_rate: 0.03
+    loss_function: RMSE
+    min_data_in_leaf: 20
+    random_seed: 42
+    random_strength: 1.0
+    thread_count: -1
+    verbose: 100
+  sweep:
+    axes:
+    - params.depth
+    - params.learning_rate
+    enabled: true
+  training:
+    eval_metric: RMSE
+    use_early_stopping: true
+    use_sample_weights: true
+model_type: catboost
+scenario: 1
+sweep_metadata:
+  axes:
+    params.depth: 6
+    params.learning_rate: 0.03
+  index: 3
+  is_sweep: true
+  total: 6

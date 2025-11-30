@@ -1,0 +1,117 @@
+{
+  "submission_info": {
+    "model_type": "hybrid",
+    "timestamp": "2025-11-29 20:16:28",
+    "file": "submission_slow_decay_hybrid_20251129_201628.csv"
+  },
+  "data_stats": {
+    "total_rows": 7488,
+    "unique_brands": 340,
+    "s1_brands": 228,
+    "s2_brands": 112
+  },
+  "volume_stats": {
+    "min": 64.82809955138646,
+    "max": 126466937.99228804,
+    "mean": 2830227.3516841982,
+    "median": 170958.17132218851,
+    "std": 9957066.74588221
+  },
+  "model_config": {
+    "decay_rate": 0.02
+  },
+  "full_config": {
+    "config_id": "slow_decay",
+    "multi_config_mode": true,
+    "train_mode": "separate",
+    "test_mode": false,
+    "test_mode_brands": 50,
+    "run_scenario": [
+      1,
+      2
+    ],
+    "models_enabled": {
+      "baseline_no_erosion": true,
+      "baseline_exp_decay": true,
+      "lightgbm": true,
+      "xgboost": true,
+      "catboost": true,
+      "linear": true,
+      "nn": true,
+      "hybrid_lightgbm": true,
+      "hybrid_xgboost": true,
+      "arihow": true
+    },
+    "submissions_enabled": {
+      "baseline": true,
+      "hybrid": true,
+      "hybrid_xgboost": true,
+      "lightgbm": true,
+      "xgboost": true,
+      "catboost": true,
+      "linear": true,
+      "nn": true,
+      "arihow": true
+    },
+    "competition_constants": {
+      "pre_entry_months": 12,
+      "post_entry_months": 24,
+      "bucket_1_threshold": 0.25,
+      "bucket_1_weight": 2,
+      "bucket_2_weight": 1
+    },
+    "baseline_params": {
+      "default_decay_rate": 0.01,
+      "decay_rate_range": [
+        0.005,
+        0.1
+      ],
+      "decay_rate_steps": 20
+    },
+    "lgbm_params": {
+      "objective": "regression",
+      "metric": "rmse",
+      "boosting_type": "gbdt",
+      "num_leaves": 31,
+      "learning_rate": 0.03,
+      "n_estimators": 500,
+      "feature_fraction": 0.8,
+      "bagging_fraction": 0.8,
+      "bagging_freq": 5,
+      "verbose": -1,
+      "random_state": 42
+    },
+    "xgb_params": {
+      "objective": "reg:squarederror",
+      "eval_metric": "rmse",
+      "max_depth": 6,
+      "learning_rate": 0.03,
+      "n_estimators": 500,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "random_state": 42
+    },
+    "hybrid_params": {},
+    "feature_params": {
+      "lag_windows": [
+        1,
+        3,
+        6,
+        12
+      ],
+      "rolling_windows": [
+        3,
+        6,
+        12
+      ],
+      "pct_change_windows": [
+        1,
+        3,
+        6
+      ]
+    },
+    "random_state": 42,
+    "test_size": 0.2,
+    "n_splits_cv": 5
+  }
+}

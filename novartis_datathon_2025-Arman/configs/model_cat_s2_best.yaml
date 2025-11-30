@@ -1,0 +1,70 @@
+# =============================================================================
+# CatBoost Best Configuration - Scenario 2
+# =============================================================================
+# This file contains the optimized hyperparameters for Scenario 2.
+#
+# Source: Hyperparameter sweep using official_metric as objective
+#
+# Usage:
+#   python -m src.train --scenario 2 --model catboost --model-config configs/model_cat_s2_best.yaml
+# =============================================================================
+
+model:
+  name: "catboost"
+  task: "regression"
+  scenario: 2
+
+# =============================================================================
+# HPO-OPTIMIZED PARAMETERS FOR SCENARIO 2
+# =============================================================================
+# These parameters were found via sweep over the following search space:
+#   depth: [4, 5, 6, 7, 8]
+#   learning_rate: [0.01, 0.02, 0.03, 0.05]
+#   l2_leaf_reg: [1.0, 3.0, 5.0, 10.0]
+#
+# Selection criterion: official_metric (PE) - lower is better
+# Validation: 3-fold CV at series level, stratified by bucket
+# =============================================================================
+params:
+  # HPO-optimized parameters
+  depth: 6                        # From HPO sweep
+  learning_rate: 0.03             # From HPO sweep
+  l2_leaf_reg: 3.0                # From HPO sweep
+  
+  # Fixed parameters (not tuned)
+  loss_function: "RMSE"
+  eval_metric: "RMSE"
+  min_data_in_leaf: 20
+  iterations: 3000
+  random_strength: 1.0
+  bagging_temperature: 1.0
+  early_stopping_rounds: 100
+  random_seed: 42
+  verbose: 100
+  thread_count: -1
+
+# =============================================================================
+# TRAINING SETTINGS
+# =============================================================================
+training:
+  use_early_stopping: true
+  eval_metric: "RMSE"
+  use_sample_weights: true
+
+# =============================================================================
+# CATEGORICAL FEATURES
+# =============================================================================
+categorical_features:
+  - "ther_area"
+  - "main_package"
+  - "time_bucket"
+  - "hospital_rate_bin"
+  - "n_gxs_bin"
+
+# =============================================================================
+# BASELINE COMPARISON (Original defaults before HPO)
+# =============================================================================
+# baseline_params:
+#   depth: 6
+#   learning_rate: 0.1
+#   l2_leaf_reg: 3.0

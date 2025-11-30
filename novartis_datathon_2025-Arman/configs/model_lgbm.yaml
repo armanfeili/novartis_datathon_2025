@@ -1,0 +1,234 @@
+# =============================================================================
+# LightGBM Model Configuration - Novartis Datathon 2025
+# =============================================================================
+# SECONDARY MODEL - Fast training, good for ensemble with XGBoost
+#
+# Best configurations from sweeps:
+#   Scenario 1: num_leaves=63, learning_rate=0.05 → close to XGBoost
+#   Scenario 2: num_leaves=31, learning_rate=0.05 → close to XGBoost
+#
+# Usage:
+#   - Single run: Set sweep.enabled=false, use params directly
+#   - Named config: Set active_config_id to use a preset from sweep_configs
+#   - Sweep mode: Set sweep.enabled=true to iterate over all sweep_configs
+#   - Grid mode: Set sweep.mode='grid' to expand sweep.grid into combinations
+#   - GPU mode: Set gpu.enabled=true (auto-configured in notebook)
+#
+# CLI Examples:
+#   python -m src.train --scenario 1 --model lightgbm
+#   python -m src.train --scenario 1 --model lightgbm --config-id high_leaves
+#   python -m src.train --scenario 1 --model lightgbm --sweep
+# =============================================================================
+
+model:
+  name: "lightgbm"
+  task: "regression"
+  priority: 2  # Secondary model - for ensemble with XGBoost
+
+# =============================================================================
+# ACTIVE CONFIGURATION ID
+# =============================================================================
+# Set this to use a specific named configuration from sweep_configs.
+# Set to null or "default" to use the base params below.
+active_config_id: null
+
+# =============================================================================
+# GPU CONFIGURATION
+# =============================================================================
+gpu:
+  enabled: false  # Set true for GPU training (auto-set by notebook)
+  platform_id: 0
+  device_id: 0
+
+# =============================================================================
+# SWEEP CONFIGURATION
+# =============================================================================
+# Selection criterion: official_metric (PE), NOT RMSE
+# K-fold CV: Use n_folds for robust hyperparameter selection
+#
+# Modes:
+#   - "configs": Iterate over sweep_configs list (explicit configs)
+#   - "grid": Expand sweep.grid into Cartesian product of all combinations
+sweep:
+  enabled: false
+  mode: "configs"  # "configs" or "grid"
+  selection_metric: "official_metric"  # PRIMARY: Use official PE metric
+  n_folds: 3  # K-fold CV for robustness
+  
+  # Grid mode: Expand all combinations of these values
+  grid:
+    num_leaves: [31, 63, 127]
+    learning_rate: [0.02, 0.03, 0.05]
+    min_data_in_leaf: [20, 40, 80]
+
+# =============================================================================
+# NAMED SWEEP CONFIGURATIONS (explicit config list)
+# =============================================================================
+# Each config has: id, description (optional), and param overrides.
+# Use with --config-id <id> or --sweep to iterate all.
+sweep_configs:
+  - id: "default"
+    description: "Default balanced configuration"
+    params:
+      num_leaves: 63
+      learning_rate: 0.05
+      min_data_in_leaf: 20
+
+  - id: "low_lr"
+    description: "Lower learning rate for better generalization"
+    params:
+      num_leaves: 63
+      learning_rate: 0.02
+      n_estimators: 5000
+      min_data_in_leaf: 20
+
+  - id: "high_leaves"
+    description: "More leaves for complex patterns"
+    params:
+      num_leaves: 127
+      learning_rate: 0.03
+      min_data_in_leaf: 10
+
+  - id: "conservative"
+    description: "Conservative settings to reduce overfitting"
+    params:
+      num_leaves: 31
+      learning_rate: 0.03
+      min_data_in_leaf: 40
+      feature_fraction: 0.7
+      bagging_fraction: 0.7
+
+  - id: "regularized"
+    description: "With L1/L2 regularization"
+    params:
+      num_leaves: 63
+      learning_rate: 0.05
+      lambda_l1: 0.1
+      lambda_l2: 0.1
+      min_data_in_leaf: 30
+
+  - id: "s1_best"
+    description: "Best configuration for Scenario 1"
+    params:
+      num_leaves: 63
+      learning_rate: 0.05
+      min_data_in_leaf: 20
+
+  - id: "s2_best"
+    description: "Best configuration for Scenario 2"
+    params:
+      num_leaves: 31
+      learning_rate: 0.05
+      min_data_in_leaf: 20
+
+# =============================================================================
+# MODEL HYPERPARAMETERS (Base Configuration)
+# =============================================================================
+# These are the default parameters used when active_config_id is null.
+# Named configs in sweep_configs override specific values.
+params:
+  # Core
+  boosting_type: "gbdt"
+  objective: "regression"
+  metric: "rmse"  # Early stopping metric (fast/stable)
+  
+  # Tree structure
+  num_leaves: 63
+  max_depth: -1  # -1 = no limit
+  
+  # Min samples
+  min_data_in_leaf: 20
+  min_sum_hessian_in_leaf: 0.001
+  
+  # Learning
+  learning_rate: 0.05
+  n_estimators: 3000  # High value, rely on early stopping
+  
+  # Regularization
+  lambda_l1: 0.0
+  lambda_l2: 0.0
+  
+  # Subsampling
+  feature_fraction: 0.8
+  bagging_fraction: 0.8
+  bagging_freq: 5
+  
+  # Categorical
+  cat_smooth: 10
+  
+  # Early stopping
+  early_stopping_rounds: 50
+  
+  # System
+  verbose: -1
+  n_jobs: -1
+  seed: 42
+
+# =============================================================================
+# TRAINING SETTINGS
+# =============================================================================
+training:
+  use_early_stopping: true
+  eval_metric: "rmse"       # Early stopping on RMSE (fast)
+  verbose_eval: 100
+  use_sample_weights: true  # Align with official metric
+
+# =============================================================================
+# MONOTONIC CONSTRAINTS (Section 3.4)
+# =============================================================================
+# Enforce domain knowledge: erosion should increase with time and competition
+# monotonic_constraints can be:
+#   - null/false: No constraints
+#   - 'auto': Use default monotonic feature mappings from code
+#   - dict: Custom {feature_name: direction} where direction is -1, 0, or 1
+#
+# Domain knowledge:
+#   - months_postgx -> y_norm: MORE time = MORE erosion = LOWER y_norm (monotone -1)
+#   - n_gxs -> y_norm: MORE generics = MORE erosion = LOWER y_norm (monotone -1)
+#   - n_gxs_cummax -> y_norm: Similar to n_gxs (monotone -1)
+monotonic_constraints:
+  enabled: false              # Set to true to enable
+  mode: 'auto'                # 'auto' or 'custom'
+  custom_constraints: {}      # Used when mode='custom', e.g. {months_postgx: -1}
+
+# =============================================================================
+# SCENARIO-SPECIFIC BEST PARAMS (for quick reference)
+# =============================================================================
+# Mapped to sweep_configs: s1_best, s2_best
+best_params:
+  scenario1:
+    num_leaves: 63
+    learning_rate: 0.05
+    min_data_in_leaf: 20
+  scenario2:
+    num_leaves: 31
+    learning_rate: 0.05
+    min_data_in_leaf: 20
+
+# =============================================================================
+# SWEEP PRESETS (Quick/Full/Focused)
+# =============================================================================
+sweep_presets:
+  # Fast sweep: 9 combinations (3 x 3)
+  fast:
+    num_leaves: [31, 63, 127]
+    learning_rate: [0.02, 0.03, 0.05]
+  
+  # Full sweep: 27 combinations (3 x 3 x 3)
+  full:
+    num_leaves: [31, 63, 127]
+    learning_rate: [0.02, 0.03, 0.05]
+    min_data_in_leaf: [20, 40, 80]
+  
+  # Focused sweep: 9 combinations around best
+  focused:
+    num_leaves: [47, 63, 95]
+    learning_rate: [0.03, 0.05, 0.07]
+
+# =============================================================================
+# ENSEMBLE SETTINGS
+# =============================================================================
+ensemble:
+  include: true           # Include in XGB+LGBM ensemble
+  weight_optimization: true
+  default_weight: 0.5     # Starting weight for ensemble

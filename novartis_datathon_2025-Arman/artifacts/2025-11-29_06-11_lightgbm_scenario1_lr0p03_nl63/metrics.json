@@ -1,0 +1,21 @@
+{
+  "official_metric": 0.7611,
+  "rmse_norm": 0.24593779819977388,
+  "mae_norm": 0.17532093511907992,
+  "scenario": 1,
+  "model_type": "lightgbm",
+  "train_time_seconds": 6.720146894454956,
+  "n_train_samples": 37488,
+  "n_val_samples": 9384,
+  "n_features": 86,
+  "run_id": "2025-11-29_06-11_lightgbm_scenario1_lr0p03_nl63",
+  "sweep_params": {
+    "axes": {
+      "params.num_leaves": 63,
+      "params.learning_rate": 0.03
+    },
+    "index": 2,
+    "total": 4,
+    "is_sweep": true
+  }
+}

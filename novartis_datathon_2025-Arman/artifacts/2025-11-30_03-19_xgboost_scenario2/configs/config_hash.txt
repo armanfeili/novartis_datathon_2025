@@ -1,0 +1,7 @@
+ba430fdf
+Generated: 2025-11-30T03:19:29.791695
+Files:
+  run_config: configs/run_defaults.yaml
+  data_config: configs/data.yaml
+  features_config: configs/features.yaml
+  model_config: configs/model_xgb_s2_best.yaml

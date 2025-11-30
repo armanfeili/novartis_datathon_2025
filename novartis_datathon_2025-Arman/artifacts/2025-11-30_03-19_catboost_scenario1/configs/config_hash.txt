@@ -1,0 +1,7 @@
+cd2399fc
+Generated: 2025-11-30T03:19:44.995383
+Files:
+  run_config: configs/run_defaults.yaml
+  data_config: configs/data.yaml
+  features_config: configs/features.yaml
+  model_config: configs/model_cat_s1_best.yaml

@@ -1,0 +1,49 @@
+{
+  "cv_official_mean": 0.7667333333333334,
+  "cv_official_std": 0.029609045164536395,
+  "cv_rmse_mean": 0.24179374355920727,
+  "cv_rmse_std": 0.008557531486527672,
+  "cv_mae_mean": 0.18324690729894702,
+  "cv_mae_std": 0.0032153217084530186,
+  "n_folds": 3,
+  "fold_metrics": [
+    {
+      "official_metric": 0.7265,
+      "rmse_norm": 0.23370129982499635,
+      "mae_norm": 0.17882965568032563,
+      "scenario": 1,
+      "model_type": "lightgbm",
+      "train_time_seconds": 1.4934451580047607,
+      "n_train_samples": 31248,
+      "n_val_samples": 15624,
+      "n_features": 94,
+      "fold": 1
+    },
+    {
+      "official_metric": 0.7969,
+      "rmse_norm": 0.238046937547443,
+      "mae_norm": 0.18452099758907506,
+      "scenario": 1,
+      "model_type": "lightgbm",
+      "train_time_seconds": 1.1983742713928223,
+      "n_train_samples": 31248,
+      "n_val_samples": 15624,
+      "n_features": 94,
+      "fold": 2
+    },
+    {
+      "official_metric": 0.7768,
+      "rmse_norm": 0.2536329933051825,
+      "mae_norm": 0.18639006862744034,
+      "scenario": 1,
+      "model_type": "lightgbm",
+      "train_time_seconds": 1.5011277198791504,
+      "n_train_samples": 31248,
+      "n_val_samples": 15624,
+      "n_features": 94,
+      "fold": 3
+    }
+  ],
+  "scenario": 1,
+  "model_type": "lightgbm"
+}

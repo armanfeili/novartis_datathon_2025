@@ -1,0 +1,11 @@
+{
+  "official_metric": 0.7671,
+  "rmse_norm": 0.24776055646425382,
+  "mae_norm": 0.1766030877022768,
+  "scenario": 1,
+  "model_type": "xgboost",
+  "train_time_seconds": 4.295281171798706,
+  "n_train_samples": 37488,
+  "n_val_samples": 9384,
+  "n_features": 86
+}

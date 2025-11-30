@@ -1,0 +1,73 @@
+{
+  "cv_official_mean": 0.006920000000000001,
+  "cv_official_std": 0.002874299914761854,
+  "cv_rmse_mean": 0.028159458622588097,
+  "cv_rmse_std": 0.01792330756555652,
+  "cv_mae_mean": 0.004205070020114791,
+  "cv_mae_std": 0.0014947533106716524,
+  "n_folds": 5,
+  "fold_metrics": [
+    {
+      "official_metric": 0.012,
+      "rmse_norm": 0.023452844293540713,
+      "mae_norm": 0.006428362434267669,
+      "scenario": 2,
+      "model_type": "catboost",
+      "train_time_seconds": 19.750138521194458,
+      "n_train_samples": 28116,
+      "n_val_samples": 7038,
+      "n_features": 123,
+      "fold": 1
+    },
+    {
+      "official_metric": 0.0075,
+      "rmse_norm": 0.03682746793393829,
+      "mae_norm": 0.004555051990657577,
+      "scenario": 2,
+      "model_type": "catboost",
+      "train_time_seconds": 64.48499464988708,
+      "n_train_samples": 28116,
+      "n_val_samples": 7038,
+      "n_features": 123,
+      "fold": 2
+    },
+    {
+      "official_metric": 0.0038,
+      "rmse_norm": 0.007473643300648763,
+      "mae_norm": 0.002361099872227444,
+      "scenario": 2,
+      "model_type": "catboost",
+      "train_time_seconds": 212.94564962387085,
+      "n_train_samples": 28116,
+      "n_val_samples": 7038,
+      "n_features": 123,
+      "fold": 3
+    },
+    {
+      "official_metric": 0.0067,
+      "rmse_norm": 0.05821477937159516,
+      "mae_norm": 0.004944897987332735,
+      "scenario": 2,
+      "model_type": "catboost",
+      "train_time_seconds": 211.14520835876465,
+      "n_train_samples": 28134,
+      "n_val_samples": 7020,
+      "n_features": 123,
+      "fold": 4
+    },
+    {
+      "official_metric": 0.0046,
+      "rmse_norm": 0.014828558213217543,
+      "mae_norm": 0.0027359378160885283,
+      "scenario": 2,
+      "model_type": "catboost",
+      "train_time_seconds": 209.85773992538452,
+      "n_train_samples": 28134,
+      "n_val_samples": 7020,
+      "n_features": 123,
+      "fold": 5
+    }
+  ],
+  "scenario": 2,
+  "model_type": "catboost"
+}

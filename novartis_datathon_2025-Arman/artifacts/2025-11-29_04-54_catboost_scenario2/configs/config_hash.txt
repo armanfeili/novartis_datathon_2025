@@ -1,0 +1,7 @@
+01d19a7c
+Generated: 2025-11-29T04:54:58.895193
+Files:
+  run_config: configs/run_defaults.yaml
+  data_config: configs/data.yaml
+  features_config: configs/features.yaml
+  model_config: configs/model_cat_depth4.yaml

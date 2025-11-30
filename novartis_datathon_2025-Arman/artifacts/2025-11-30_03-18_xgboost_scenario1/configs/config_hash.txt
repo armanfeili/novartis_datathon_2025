@@ -1,0 +1,7 @@
+3d3a57ea
+Generated: 2025-11-30T03:18:50.379641
+Files:
+  run_config: configs/run_defaults.yaml
+  data_config: configs/data.yaml
+  features_config: configs/features.yaml
+  model_config: configs/model_xgb_s1_best.yaml

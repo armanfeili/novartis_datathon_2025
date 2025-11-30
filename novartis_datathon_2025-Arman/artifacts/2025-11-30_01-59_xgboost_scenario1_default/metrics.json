@@ -1,0 +1,38 @@
+{
+  "official_metric": 0.7671,
+  "rmse_norm": 0.24776055646425382,
+  "mae_norm": 0.1766030877022768,
+  "scenario": 1,
+  "model_type": "xgboost",
+  "train_time_seconds": 4.615431070327759,
+  "n_train_samples": 37488,
+  "n_val_samples": 9384,
+  "n_features": 86,
+  "run_id": "2025-11-30_01-59_xgboost_scenario1_default",
+  "config_id": "default",
+  "sweep_params": {
+    "config_id": "default",
+    "axes": {
+      "booster": "gbtree",
+      "objective": "reg:squarederror",
+      "eval_metric": "rmse",
+      "max_depth": 6,
+      "min_child_weight": 1,
+      "max_leaves": 0,
+      "learning_rate": 0.03,
+      "n_estimators": 3000,
+      "gamma": 0,
+      "reg_alpha": 0,
+      "reg_lambda": 1,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "colsample_bylevel": 1.0,
+      "colsample_bynode": 1.0,
+      "early_stopping_rounds": 50,
+      "verbosity": 0,
+      "n_jobs": -1,
+      "seed": 42
+    },
+    "source": "sweep_config"
+  }
+}

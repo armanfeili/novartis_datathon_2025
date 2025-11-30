@@ -1,0 +1,67 @@
+# =============================================================================
+# LightGBM Best Configuration - Scenario 1
+# =============================================================================
+# This file contains the optimized hyperparameters for Scenario 1.
+#
+# Source: Hyperparameter sweep using official_metric as objective
+#
+# Usage:
+#   python -m src.train --scenario 1 --model lightgbm --model-config configs/model_lgbm_s1_best.yaml
+# =============================================================================
+
+model:
+  name: "lightgbm"
+  task: "regression"
+  scenario: 1
+
+# =============================================================================
+# HPO-OPTIMIZED PARAMETERS FOR SCENARIO 1
+# =============================================================================
+# These parameters were found via sweep over the following search space:
+#   num_leaves: [31, 63, 127]
+#   learning_rate: [0.02, 0.03, 0.05, 0.07]
+#   min_data_in_leaf: [20, 40, 80]
+#
+# Selection criterion: official_metric (PE) - lower is better
+# Validation: 3-fold CV at series level, stratified by bucket
+# =============================================================================
+params:
+  # HPO-optimized parameters
+  num_leaves: 63                  # From HPO sweep
+  learning_rate: 0.05             # From HPO sweep
+  min_data_in_leaf: 20            # From HPO sweep
+  
+  # Fixed parameters (not tuned)
+  boosting_type: "gbdt"
+  objective: "regression"
+  metric: "rmse"
+  max_depth: -1
+  min_sum_hessian_in_leaf: 0.001
+  n_estimators: 3000
+  lambda_l1: 0.0
+  lambda_l2: 0.0
+  feature_fraction: 0.8
+  bagging_fraction: 0.8
+  bagging_freq: 5
+  cat_smooth: 10
+  early_stopping_rounds: 50
+  verbose: -1
+  n_jobs: -1
+  seed: 42
+
+# =============================================================================
+# TRAINING SETTINGS
+# =============================================================================
+training:
+  use_early_stopping: true
+  eval_metric: "rmse"
+  verbose_eval: 100
+  use_sample_weights: true
+
+# =============================================================================
+# BASELINE COMPARISON (Original defaults before HPO)
+# =============================================================================
+# baseline_params:
+#   num_leaves: 31
+#   learning_rate: 0.1
+#   min_data_in_leaf: 20

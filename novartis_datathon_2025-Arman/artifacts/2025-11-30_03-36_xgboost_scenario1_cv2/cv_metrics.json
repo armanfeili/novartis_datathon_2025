@@ -1,0 +1,37 @@
+{
+  "cv_official_mean": 0.00445,
+  "cv_official_std": 0.0009500000000000001,
+  "cv_rmse_mean": 0.028455884209653476,
+  "cv_rmse_std": 0.009271727575163318,
+  "cv_mae_mean": 0.0027053474006318865,
+  "cv_mae_std": 0.0006486325127178876,
+  "n_folds": 2,
+  "fold_metrics": [
+    {
+      "official_metric": 0.0035,
+      "rmse_norm": 0.01918415663449016,
+      "mae_norm": 0.0020567148879139987,
+      "scenario": 1,
+      "model_type": "xgboost",
+      "train_time_seconds": 29.38387370109558,
+      "n_train_samples": 23424,
+      "n_val_samples": 23448,
+      "n_features": 108,
+      "fold": 1
+    },
+    {
+      "official_metric": 0.0054,
+      "rmse_norm": 0.037727611784816796,
+      "mae_norm": 0.003353979913349774,
+      "scenario": 1,
+      "model_type": "xgboost",
+      "train_time_seconds": 10.112199306488037,
+      "n_train_samples": 23448,
+      "n_val_samples": 23424,
+      "n_features": 108,
+      "fold": 2
+    }
+  ],
+  "scenario": 1,
+  "model_type": "xgboost"
+}

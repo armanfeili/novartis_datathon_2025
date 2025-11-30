@@ -1004,6 +1004,72 @@ def create_time_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # =============================================================================
+# VISIBILITY FEATURES (lightweight, optional)
+# =============================================================================
+
+def create_visibility_features(df: pd.DataFrame,
+                               target_col: str = 'volume') -> pd.DataFrame:
+    """
+    Create visibility-inspired features (drops/spikes/gaps).
+    Safe defaults: no external data required.
+    """
+    data = df.sort_values(['country', 'brand_name', 'months_postgx']).copy()
+
+    # Zero-volume flags and sharp movements
+    data['vis_zero_volume_flag'] = (data[target_col] <= 0).astype(int)
+    data['vis_prev_volume'] = data.groupby(['country', 'brand_name'])[target_col].shift(1)
+    ratio = data[target_col] / data['vis_prev_volume'].replace(0, np.nan)
+    data['vis_big_drop_flag'] = (ratio < 0.5).astype(int)
+    data['vis_spike_flag'] = (ratio > 1.5).astype(int)
+
+    # Data gap flag (missing months in sequence)
+    data['vis_prev_month'] = data.groupby(['country', 'brand_name'])['months_postgx'].shift(1)
+    gap = data['months_postgx'] - data['vis_prev_month']
+    data['vis_data_gap_flag'] = (gap > 1).fillna(0).astype(int)
+
+    # Reporting variance per brand
+    data['vis_reporting_variance'] = data.groupby(['country', 'brand_name'])[target_col].transform('std').fillna(0)
+
+    # Cleanup helper columns
+    data.drop(columns=['vis_prev_volume', 'vis_prev_month'], inplace=True)
+    return data
+
+
+# =============================================================================
+# COLLABORATION / PEER FEATURES (optional)
+# =============================================================================
+
+def create_collaboration_features(df: pd.DataFrame,
+                                  target_col: str = 'volume') -> pd.DataFrame:
+    """
+    Peer aggregates across countries for the same brand_name.
+    Provides simple cross-country collaboration proxies.
+    """
+    data = df.copy()
+    # Mean volume per brand_name/month across all countries
+    brand_month_stats = data.groupby(['brand_name', 'months_postgx'])[target_col].agg(['mean', 'count']).reset_index()
+    brand_month_stats.rename(columns={'mean': 'collab_brand_month_mean', 'count': 'collab_brand_month_count'}, inplace=True)
+    data = data.merge(brand_month_stats, on=['brand_name', 'months_postgx'], how='left')
+
+    # Peer average excluding own country when possible
+    data['collab_peer_avg_vol_t'] = data['collab_brand_month_mean']
+    mask_multi = data['collab_brand_month_count'] > 1
+    data.loc[mask_multi, 'collab_peer_avg_vol_t'] = (
+        (data.loc[mask_multi, 'collab_brand_month_mean'] * data.loc[mask_multi, 'collab_brand_month_count'] - data.loc[mask_multi, target_col])
+        / (data.loc[mask_multi, 'collab_brand_month_count'] - 1)
+    )
+    data['collab_peer_avg_vol_t'] = data['collab_peer_avg_vol_t'].fillna(data['collab_brand_month_mean'])
+
+    # Gap and share vs peers
+    data['collab_peer_gap'] = data[target_col] - data['collab_peer_avg_vol_t']
+    data['collab_peer_share'] = data[target_col] / (data['collab_peer_avg_vol_t'].replace(0, np.nan))
+    data['collab_peer_share'] = data['collab_peer_share'].replace([np.inf, -np.inf], np.nan).fillna(1.0)
+
+    data.drop(columns=['collab_brand_month_mean', 'collab_brand_month_count'], inplace=True)
+    return data
+
+
+# =============================================================================
 # CATEGORICAL ENCODING
 # =============================================================================
 
@@ -1381,6 +1447,38 @@ def create_all_features(df: pd.DataFrame,
     
     # 4. Therapeutic area features (erosion ranking, target encoding)
     df = create_therapeutic_area_features(df)
+    
+    # 4b. Optional visibility/external context and collaboration features
+    use_vis = VISIBILITY_FEATURES.get('use_visibility_features', False)
+    use_collab = VISIBILITY_FEATURES.get('use_collaboration_features', False)
+    sources_cfg = VISIBILITY_FEATURES.get('sources', {}) if isinstance(VISIBILITY_FEATURES, dict) else {}
+    if use_vis or use_collab:
+        # External context (holidays/epidemics/macro/promo) if configured
+        load_any_external = any(sources_cfg.get(k, False) for k in ['holidays', 'epidemics', 'macro', 'promotions'])
+        if load_any_external:
+            try:
+                from external_data import (
+                    load_holiday_calendar, load_epidemic_events,
+                    load_macro_indicators, load_promo_or_policy_events,
+                    join_external_context
+                )
+                external_tables = {}
+                if sources_cfg.get('holidays', False):
+                    external_tables['holidays'] = load_holiday_calendar()
+                if sources_cfg.get('epidemics', False):
+                    external_tables['epidemics'] = load_epidemic_events()
+                if sources_cfg.get('macro', False):
+                    external_tables['macro'] = load_macro_indicators()
+                if sources_cfg.get('promotions', False):
+                    external_tables['promotions'] = load_promo_or_policy_events()
+                df = join_external_context(df, external_tables, max_event_lag=VISIBILITY_FEATURES.get('max_event_lag', 24))
+            except Exception as exc:
+                print(f"⚠️ Skipping external context join: {exc}")
+
+        if use_vis:
+            df = create_visibility_features(df)
+        if use_collab:
+            df = create_collaboration_features(df)
     
     # 5. Lag features (volume trajectory)
     if include_lags:

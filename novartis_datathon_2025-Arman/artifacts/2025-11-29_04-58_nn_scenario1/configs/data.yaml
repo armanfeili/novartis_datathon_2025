@@ -1,0 +1,109 @@
+# Data configuration for Novartis Datathon 2025
+# Paths, columns, keys, data schema
+
+# Paths configuration
+paths:
+  raw_dir: "data/raw"
+  interim_dir: "data/interim"
+  processed_dir: "data/processed"
+  artifacts_dir: "artifacts"
+
+# Data files per split
+files:
+  train:
+    volume: "TRAIN/df_volume_train.csv"
+    generics: "TRAIN/df_generics_train.csv"
+    medicine_info: "TRAIN/df_medicine_info_train.csv"
+  test:
+    volume: "TEST/df_volume_test.csv"
+    generics: "TEST/df_generics_test.csv"
+    medicine_info: "TEST/df_medicine_info_test.csv"
+  
+  # Guide files
+  aux_metric: "docs/guide/auxiliar_metric_computation_example.csv"
+  submission_template: "docs/guide/submission_template.csv"
+  submission_example: "docs/guide/submission_example.csv"
+
+# Column definitions
+columns:
+  # Identification keys
+  id_keys:
+    - "country"
+    - "brand_name"
+  time_key: "months_postgx"
+  calendar_month: "month"
+  
+  # Target columns
+  raw_target: "volume"
+  model_target: "y_norm"
+  
+  # Meta columns to exclude from features (NEVER use as model features)
+  # Must stay in sync with META_COLS in src/data.py and src/train.py
+  meta_cols:
+    - "country"
+    - "brand_name"
+    - "months_postgx"
+    - "bucket"
+    - "avg_vol_12m"
+    - "y_norm"
+    - "volume"
+    - "mean_erosion"
+    - "month"
+  
+  # Generics data columns
+  generics_cols:
+    - "n_gxs"
+  
+  # Medicine info columns
+  medicine_info_categorical:
+    - "ther_area"
+    - "main_package"
+  medicine_info_numerical:
+    - "hospital_rate"
+  medicine_info_boolean:
+    - "biological"
+    - "small_molecule"
+
+# Data schema reference
+schema:
+  volume:
+    primary_key: ["country", "brand_name", "months_postgx"]
+    columns: ["country", "brand_name", "month", "months_postgx", "volume"]
+  generics:
+    primary_key: ["country", "brand_name", "months_postgx"]
+    columns: ["country", "brand_name", "months_postgx", "n_gxs"]
+  medicine_info:
+    primary_key: ["country", "brand_name"]
+    columns: ["country", "brand_name", "ther_area", "hospital_rate", "main_package", "biological", "small_molecule"]
+
+# Missing value handling strategy
+missing_values:
+  volume: "keep"                    # Rare NaN, keep as-is
+  n_gxs: 
+    strategy: "ffill_then_zero"     # Forward-fill per series, then 0
+  hospital_rate:
+    strategy: "median_by_group"     # Median by ther_area + flag
+    group_by: "ther_area"
+    add_missing_flag: true
+  ther_area: "Unknown"              # Category for missing
+  main_package: "Unknown"           # Category for missing
+  biological: 
+    default: false
+    add_missing_flag: true
+  small_molecule:
+    default: false
+    add_missing_flag: true
+
+# Google Drive paths (used in Colab)
+drive:
+  base_path: "/content/drive/MyDrive/novartis-datathon-2025"
+  raw_dir: "/content/drive/MyDrive/novartis-datathon-2025/data/raw"
+  interim_dir: "/content/drive/MyDrive/novartis-datathon-2025/data/interim"
+  processed_dir: "/content/drive/MyDrive/novartis-datathon-2025/data/processed"
+
+# Data validation settings
+validation:
+  expected_train_series: 1953       # Expected number of (country, brand_name) combinations in train
+  expected_test_series_s1: 228      # Scenario 1 test series count
+  expected_test_series_s2: 112      # Scenario 2 test series count
+  forecast_horizon: 24              # Months 0-23

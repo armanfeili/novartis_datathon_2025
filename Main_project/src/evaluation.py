@@ -10,6 +10,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent))
 from config import *
+from metric_calculation import compute_metric1 as official_metric1, compute_metric2 as official_metric2
 
 
 def compute_pe_scenario1(actual_df: pd.DataFrame,
@@ -203,11 +204,10 @@ def evaluate_model(actual_df: pd.DataFrame,
     # Compute PE per brand
     if scenario == 1:
         pe_df = compute_pe_scenario1(actual_df, pred_df, aux_df)
+        official_score = official_metric1(actual_df, pred_df, aux_df)
     else:
         pe_df = compute_pe_scenario2(actual_df, pred_df, aux_df)
-    
-    # Compute final metric
-    final_score = compute_final_metric(pe_df)
+        official_score = official_metric2(actual_df, pred_df, aux_df)
     
     # Bucket breakdown
     bucket1 = pe_df[pe_df['bucket'] == 1]
@@ -218,7 +218,8 @@ def evaluate_model(actual_df: pd.DataFrame,
     
     results = {
         'scenario': scenario,
-        'final_score': final_score,
+        'final_score': official_score,   # Use official metric_calculation
+        'official_score': official_score,
         'bucket1_avg_pe': bucket1_avg_pe,
         'bucket2_avg_pe': bucket2_avg_pe,
         'n_bucket1': len(bucket1),
@@ -229,7 +230,7 @@ def evaluate_model(actual_df: pd.DataFrame,
     
     # Print summary
     print(f"\n📊 EVALUATION RESULTS - Scenario {scenario}")
-    print(f"   Final Score: {final_score:.4f}")
+    print(f"   Final Score (official metric_calculation): {official_score:.4f}")
     print(f"   Bucket 1 Avg PE: {bucket1_avg_pe:.4f} (n={len(bucket1)}, weight=2x)")
     print(f"   Bucket 2 Avg PE: {bucket2_avg_pe:.4f} (n={len(bucket2)}, weight=1x)")
     

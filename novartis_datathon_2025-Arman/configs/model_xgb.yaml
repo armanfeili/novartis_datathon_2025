@@ -1,0 +1,232 @@
+# =============================================================================
+# XGBoost Model Configuration - Novartis Datathon 2025
+# =============================================================================
+# PRIMARY MODEL - Best performance on official metric
+#
+# Best configurations from sweeps:
+#   Scenario 1: max_depth=6, learning_rate=0.03 → official_metric: 0.7499
+#   Scenario 2: max_depth=4, learning_rate=0.05 → official_metric: 0.2659
+#
+# Usage:
+#   - Single run: Set sweep.enabled=false, use params directly
+#   - Named config: Set active_config_id to use a preset from sweep_configs
+#   - Sweep mode: Set sweep.enabled=true to iterate over all sweep_configs
+#   - Grid mode: Set sweep.mode='grid' to expand sweep.grid into combinations
+#   - GPU mode: Set gpu.enabled=true (auto-configured in notebook)
+#
+# CLI Examples:
+#   python -m src.train --scenario 1 --model xgboost
+#   python -m src.train --scenario 1 --model xgboost --config-id low_lr
+#   python -m src.train --scenario 1 --model xgboost --sweep
+#   python -m src.train --all-models --sweep
+# =============================================================================
+
+model:
+  name: "xgboost"
+  task: "regression"
+  priority: 1  # Primary model - highest priority
+
+# =============================================================================
+# ACTIVE CONFIGURATION ID
+# =============================================================================
+# Set this to use a specific named configuration from sweep_configs.
+# Set to null or "default" to use the base params below.
+# This value is embedded in model filenames and logs.
+active_config_id: null
+
+# =============================================================================
+# GPU CONFIGURATION
+# =============================================================================
+gpu:
+  enabled: false  # Set true for GPU training (auto-set by notebook)
+  device_id: 0
+
+# =============================================================================
+# SWEEP CONFIGURATION
+# =============================================================================
+# Selection criterion: official_metric (PE), NOT RMSE
+# K-fold CV: Use n_folds for robust hyperparameter selection
+#
+# Modes:
+#   - "configs": Iterate over sweep_configs list (explicit configs)
+#   - "grid": Expand sweep.grid into Cartesian product of all combinations
+sweep:
+  enabled: false
+  mode: "configs"  # "configs" or "grid"
+  selection_metric: "official_metric"  # PRIMARY: Use official PE metric
+  n_folds: 3  # K-fold CV for robustness
+  
+  # Grid mode: Expand all combinations of these values
+  grid:
+    max_depth: [3, 4, 5, 6]
+    learning_rate: [0.02, 0.03, 0.05, 0.07]
+    reg_lambda: [1, 3, 5]
+
+# =============================================================================
+# NAMED SWEEP CONFIGURATIONS (explicit config list)
+# =============================================================================
+# Each config has: id, description (optional), and param overrides.
+# Use with --config-id <id> or --sweep to iterate all.
+sweep_configs:
+  - id: "default"
+    description: "Default balanced configuration"
+    params:
+      max_depth: 6
+      learning_rate: 0.03
+      reg_lambda: 1
+
+  - id: "low_lr"
+    description: "Lower learning rate for more trees, better generalization"
+    params:
+      max_depth: 6
+      learning_rate: 0.02
+      n_estimators: 5000
+      reg_lambda: 1
+
+  - id: "shallow"
+    description: "Shallow trees to reduce overfitting"
+    params:
+      max_depth: 4
+      learning_rate: 0.05
+      reg_lambda: 3
+
+  - id: "deep"
+    description: "Deeper trees for complex patterns"
+    params:
+      max_depth: 8
+      learning_rate: 0.02
+      reg_lambda: 5
+      min_child_weight: 3
+
+  - id: "regularized"
+    description: "Strong regularization"
+    params:
+      max_depth: 5
+      learning_rate: 0.03
+      reg_lambda: 10
+      reg_alpha: 1
+      subsample: 0.7
+      colsample_bytree: 0.7
+
+  - id: "s1_best"
+    description: "Best configuration for Scenario 1"
+    params:
+      max_depth: 6
+      learning_rate: 0.03
+      reg_lambda: 1
+
+  - id: "s2_best"
+    description: "Best configuration for Scenario 2"
+    params:
+      max_depth: 4
+      learning_rate: 0.05
+      reg_lambda: 1
+
+# =============================================================================
+# MODEL HYPERPARAMETERS (Base Configuration)
+# =============================================================================
+# These are the default parameters used when active_config_id is null.
+# Named configs in sweep_configs override specific values.
+params:
+  # Core
+  booster: "gbtree"
+  objective: "reg:squarederror"
+  eval_metric: "rmse"  # Early stopping metric (fast/stable)
+  
+  # Tree structure
+  max_depth: 6
+  min_child_weight: 1
+  max_leaves: 0  # 0 = no limit
+  
+  # Learning
+  learning_rate: 0.03
+  n_estimators: 3000  # High value, rely on early stopping
+  
+  # Regularization
+  gamma: 0
+  reg_alpha: 0
+  reg_lambda: 1
+  
+  # Subsampling
+  subsample: 0.8
+  colsample_bytree: 0.8
+  colsample_bylevel: 1.0
+  colsample_bynode: 1.0
+  
+  # Early stopping
+  early_stopping_rounds: 50
+  
+  # System
+  verbosity: 0
+  n_jobs: -1
+  seed: 42
+
+# =============================================================================
+# TRAINING SETTINGS
+# =============================================================================
+training:
+  use_early_stopping: true
+  eval_metric: "rmse"       # Early stopping on RMSE (fast)
+  verbose_eval: 100
+  use_sample_weights: true  # Align with official metric
+
+# =============================================================================
+# MONOTONIC CONSTRAINTS (Section 3.4)
+# =============================================================================
+# Enforce domain knowledge: erosion should increase with time and competition
+# monotonic_constraints can be:
+#   - null/false: No constraints
+#   - 'auto': Use default monotonic feature mappings from code
+#   - dict: Custom {feature_name: direction} where direction is -1, 0, or 1
+#
+# Domain knowledge:
+#   - months_postgx -> y_norm: MORE time = MORE erosion = LOWER y_norm (monotone -1)
+#   - n_gxs -> y_norm: MORE generics = MORE erosion = LOWER y_norm (monotone -1)
+#   - n_gxs_cummax -> y_norm: Similar to n_gxs (monotone -1)
+monotonic_constraints:
+  enabled: false              # Set to true to enable
+  mode: 'auto'                # 'auto' or 'custom'
+  custom_constraints: {}      # Used when mode='custom', e.g. {months_postgx: -1}
+
+# =============================================================================
+# SCENARIO-SPECIFIC BEST PARAMS (for quick reference)
+# =============================================================================
+# Mapped to sweep_configs: s1_best, s2_best
+best_params:
+  scenario1:
+    max_depth: 6
+    learning_rate: 0.03
+    reg_lambda: 1
+  scenario2:
+    max_depth: 4
+    learning_rate: 0.05
+    reg_lambda: 1
+
+# =============================================================================
+# SWEEP PRESETS (Quick/Full/Focused)
+# =============================================================================
+# Use these presets to quickly configure sweep.grid
+sweep_presets:
+  # Fast sweep: 16 combinations (4 x 4)
+  fast:
+    max_depth: [4, 5, 6, 7]
+    learning_rate: [0.02, 0.03, 0.05, 0.07]
+  
+  # Full sweep: 48 combinations (4 x 4 x 3)
+  full:
+    max_depth: [3, 4, 5, 6]
+    learning_rate: [0.02, 0.03, 0.05, 0.07]
+    reg_lambda: [1, 3, 5]
+  
+  # Focused sweep: 9 combinations around best params
+  focused:
+    max_depth: [5, 6, 7]
+    learning_rate: [0.02, 0.03, 0.04]
+
+# =============================================================================
+# ENSEMBLE SETTINGS
+# =============================================================================
+ensemble:
+  include: true           # Include in XGB+LGBM ensemble
+  weight_optimization: true
+  default_weight: 0.5     # Starting weight for ensemble

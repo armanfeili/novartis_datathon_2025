@@ -1,0 +1,7 @@
+f95a47ee
+Generated: 2025-11-30T03:22:25.611977
+Files:
+  run_config: configs/run_defaults.yaml
+  data_config: configs/data.yaml
+  features_config: configs/features.yaml
+  model_config: configs/model_lgbm_s2_best.yaml

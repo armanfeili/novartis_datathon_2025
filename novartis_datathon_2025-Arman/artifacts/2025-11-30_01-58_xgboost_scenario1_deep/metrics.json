@@ -1,0 +1,38 @@
+{
+  "official_metric": 0.7644,
+  "rmse_norm": 0.246534289829263,
+  "mae_norm": 0.17536244441002163,
+  "scenario": 1,
+  "model_type": "xgboost",
+  "train_time_seconds": 15.8549325466156,
+  "n_train_samples": 37488,
+  "n_val_samples": 9384,
+  "n_features": 86,
+  "run_id": "2025-11-30_01-58_xgboost_scenario1_deep",
+  "config_id": "deep",
+  "sweep_params": {
+    "config_id": "deep",
+    "axes": {
+      "booster": "gbtree",
+      "objective": "reg:squarederror",
+      "eval_metric": "rmse",
+      "max_depth": 8,
+      "min_child_weight": 3,
+      "max_leaves": 0,
+      "learning_rate": 0.02,
+      "n_estimators": 3000,
+      "gamma": 0,
+      "reg_alpha": 0,
+      "reg_lambda": 5,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "colsample_bylevel": 1.0,
+      "colsample_bynode": 1.0,
+      "early_stopping_rounds": 50,
+      "verbosity": 0,
+      "n_jobs": -1,
+      "seed": 42
+    },
+    "source": "sweep_config"
+  }
+}

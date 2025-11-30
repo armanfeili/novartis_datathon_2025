@@ -1,0 +1,20 @@
+[
+  {
+    "version": "20251130_023918_submission_026f65",
+    "timestamp": "2025-11-30T02:39:18.159837",
+    "n_rows": 7488,
+    "n_series": 340,
+    "volume_mean": 2001517.3082949887,
+    "volume_std": 7925826.56908678,
+    "volume_min": 45.286915317034506,
+    "volume_max": 113509674.88096017,
+    "validation_score": null,
+    "model_info": {
+      "model_s1_path": "artifacts/2025-11-30_01-59_xgboost_scenario1_low_lr/model_s1_xgboost_low_lr.bin",
+      "model_s2_path": "artifacts/2025-11-30_01-19_catboost_full_s2/model_2.bin",
+      "model_s1_type": "XGBBoosterWrapper",
+      "model_s2_type": "CatBoostRegressor"
+    },
+    "notes": ""
+  }
+]

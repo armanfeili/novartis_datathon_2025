@@ -1,0 +1,40 @@
+{
+  "run_name": "2025-11-30_01-17_lightgbm_full",
+  "timestamp": "2025-11-30_01-17",
+  "scenarios": {
+    "1": {
+      "scenario": 1,
+      "metrics": {
+        "official_metric": 0.7698,
+        "rmse_norm": 0.24800461519848813,
+        "mae_norm": 0.1770704974916497,
+        "scenario": 1,
+        "model_type": "lightgbm",
+        "train_time_seconds": 2.1678225994110107,
+        "n_train_samples": 37488,
+        "n_val_samples": 9384,
+        "n_features": 86
+      },
+      "status": "success"
+    },
+    "2": {
+      "scenario": 2,
+      "metrics": {
+        "official_metric": 0.3019,
+        "rmse_norm": 0.21112600590000025,
+        "mae_norm": 0.12861815213333155,
+        "scenario": 2,
+        "model_type": "lightgbm",
+        "train_time_seconds": 2.3798775672912598,
+        "n_train_samples": 28116,
+        "n_val_samples": 7038,
+        "n_features": 101
+      },
+      "status": "success"
+    }
+  },
+  "hpo_results": null,
+  "memory_report": {
+    "enabled": false
+  }
+}

@@ -29,7 +29,14 @@ from config import *
 from data_loader import load_all_data, merge_datasets
 from bucket_calculator import compute_avg_j, create_auxiliary_file
 from feature_engineering import create_all_features, get_feature_columns
-from models import BaselineModels, GradientBoostingModel, HybridPhysicsMLModel
+from models import (
+    BaselineModels,
+    GradientBoostingModel,
+    HybridPhysicsMLModel,
+    CatBoostModel,
+    LinearModel,
+    SimpleNNModel,
+)
 
 
 # =============================================================================
@@ -127,7 +134,7 @@ def generate_ml_predictions(test_data: pd.DataFrame,
         test_data: Merged test data with features
         test_avg_j: DataFrame with avg_vol per brand
         brand_scenarios: dict mapping (country, brand) -> scenario
-        model_type: 'lightgbm', 'xgboost', or 'hybrid'
+        model_type: 'lightgbm', 'xgboost', 'catboost', 'linear', 'nn', or 'hybrid'
         
     Returns:
         DataFrame with predictions matching template structure
@@ -143,12 +150,20 @@ def generate_ml_predictions(test_data: pd.DataFrame,
     # Check training mode
     if TRAIN_MODE == "unified":
         # Load single unified model
-        model_name = f"unified_{model_type}"
+        model_name = f"unified_{model_type if model_type != 'hybrid_xgboost' else 'hybrid_xgboost'}"
         print(f"   Using UNIFIED model: {model_name}")
         
         try:
             if model_type == 'hybrid':
                 model = HybridPhysicsMLModel(ml_model_type='lightgbm')
+            elif model_type == 'hybrid_xgboost':
+                model = HybridPhysicsMLModel(ml_model_type='xgboost')
+            elif model_type == 'catboost':
+                model = CatBoostModel()
+            elif model_type == 'linear':
+                model = LinearModel(model_type='ridge')
+            elif model_type == 'nn':
+                model = SimpleNNModel()
             else:
                 model = GradientBoostingModel(model_type=model_type)
             model.load(model_name)
@@ -200,7 +215,7 @@ def generate_ml_predictions(test_data: pd.DataFrame,
                 available_cols = [c for c in unified_feature_cols if c in pred_data.columns]
                 X = pred_data[available_cols].fillna(0)
                 
-                if model_type == 'hybrid':
+                if model_type in ['hybrid', 'hybrid_xgboost']:
                     pred_data = pred_data.merge(test_avg_j, on=['country', 'brand_name'], how='left', suffixes=('', '_y'))
                     avg_vol = pred_data['avg_vol'].fillna(pred_data['avg_vol'].median()).values
                     months = pred_data['months_postgx'].values
@@ -250,6 +265,8 @@ def generate_ml_predictions(test_data: pd.DataFrame,
             model_name = f"scenario{scenario}_{model_type}"
             if model_type == 'hybrid':
                 model_name = f"scenario{scenario}_hybrid"
+            if model_type == 'hybrid_xgboost':
+                model_name = f"scenario{scenario}_hybrid_xgboost"
             
             try:
                 if model_type == 'hybrid':
@@ -262,6 +279,31 @@ def generate_ml_predictions(test_data: pd.DataFrame,
                     months = pred_data['months_postgx'].values
                     
                     pred_data['volume'] = model.predict(X, avg_vol, months)
+                elif model_type == 'hybrid_xgboost':
+                    model = HybridPhysicsMLModel(ml_model_type='xgboost')
+                    model.load(model_name)
+                    
+                    pred_data = pred_data.merge(test_avg_j, on=['country', 'brand_name'], how='left')
+                    X = pred_data[feature_cols].fillna(0)
+                    avg_vol = pred_data['avg_vol'].fillna(pred_data['avg_vol'].median()).values
+                    months = pred_data['months_postgx'].values
+                    
+                    pred_data['volume'] = model.predict(X, avg_vol, months)
+                elif model_type == 'catboost':
+                    model = CatBoostModel()
+                    model.load(model_name)
+                    X = pred_data[feature_cols].fillna(0)
+                    pred_data['volume'] = model.predict(X)
+                elif model_type == 'linear':
+                    model = LinearModel(model_type='ridge')
+                    model.load(model_name)
+                    X = pred_data[feature_cols].fillna(0)
+                    pred_data['volume'] = model.predict(X)
+                elif model_type == 'nn':
+                    model = SimpleNNModel()
+                    model.load(model_name)
+                    X = pred_data[feature_cols].fillna(0)
+                    pred_data['volume'] = model.predict(X)
                 else:
                     model = GradientBoostingModel(model_type=model_type)
                     model.load(model_name)
@@ -390,7 +432,7 @@ def generate_submission(model_type: str = 'baseline',
     - "unified": Uses unified_{model} with scenario_flag
     
     Args:
-        model_type: 'baseline', 'lightgbm', 'xgboost', or 'hybrid'
+        model_type: 'baseline', 'lightgbm', 'xgboost', 'catboost', 'linear', 'nn', 'hybrid', or 'hybrid_xgboost'
         decay_rate: Decay rate for baseline (uses config default if None)
         save: Whether to save to file
         

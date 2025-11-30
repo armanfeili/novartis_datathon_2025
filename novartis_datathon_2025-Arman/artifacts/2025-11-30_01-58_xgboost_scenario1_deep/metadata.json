@@ -1,0 +1,34 @@
+{
+  "timestamp": "2025-11-30T01:58:34.976743",
+  "git_commit": "d406708a",
+  "scenario": 1,
+  "model_type": "xgboost",
+  "config_id": "deep",
+  "sweep_metadata": {
+    "config_id": "deep",
+    "axes": {
+      "booster": "gbtree",
+      "objective": "reg:squarederror",
+      "eval_metric": "rmse",
+      "max_depth": 8,
+      "min_child_weight": 3,
+      "max_leaves": 0,
+      "learning_rate": 0.02,
+      "n_estimators": 3000,
+      "gamma": 0,
+      "reg_alpha": 0,
+      "reg_lambda": 5,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "colsample_bylevel": 1.0,
+      "colsample_bynode": 1.0,
+      "early_stopping_rounds": 50,
+      "verbosity": 0,
+      "n_jobs": -1,
+      "seed": 42
+    },
+    "source": "sweep_config"
+  },
+  "n_train_samples": 37488,
+  "n_val_samples": 9384
+}

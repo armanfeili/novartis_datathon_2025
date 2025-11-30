@@ -51,7 +51,7 @@ RUN_SCENARIO = [1, 2]                          # Set to 1, 2, or [1, 2]
 #   "separate" - Train S1 and S2 pipelines separately (current behavior)
 #   "unified"  - Train a single global model that handles both scenarios
 #                Uses scenario_flag feature and months_postgx to differentiate
-TRAIN_MODE = "unified"                 # "separate" or "unified"
+TRAIN_MODE = "separate"                 # "separate" or "unified"
 
 # Test mode - use only 50 brands for quick testing
 # Set to False for full training before final submission
@@ -67,11 +67,15 @@ TEST_MODE_BRANDS = 50                 # Number of brands for testing
 # ⚠️ NOTE: Model must be trained first (via train_models.py)
 #    before generating its submission
 SUBMISSIONS_ENABLED = {
-    'baseline': False,              # Exponential decay (best) 🏆
-    'hybrid': False,                # Physics + LightGBM hybrid
-    'lightgbm': False,              # Pure LightGBM
+    'baseline': True,              # Exponential decay (best) 🏆
+    'hybrid': True,                # Physics + LightGBM hybrid
+    'hybrid_xgboost': True,        # Physics + XGBoost hybrid
+    'lightgbm': True,              # Pure LightGBM
     'xgboost': True,               # Pure XGBoost
-    'arihow': False,                # SARIMAX + Holt-Winters
+    'catboost': True,              # CatBoost
+    'linear': True,                # Linear models (ridge/lasso/elasticnet)
+    'nn': True,                    # Simple MLP
+    'arihow': True,                # SARIMAX + Holt-Winters
 }
 
 # Quick preset: Generate only best model submission
@@ -102,19 +106,22 @@ RUN_VALIDATION = True                # Validate submission files
 
 MODELS_ENABLED = {
     # Baseline models (fast, simple)
-    'baseline_no_erosion': False,      # Predicts avg_vol (no decline)
-    'baseline_exp_decay': False,       # Exponential decay
+    'baseline_no_erosion': True,      # Predicts avg_vol (no decline)
+    'baseline_exp_decay': True,       # Exponential decay
     
     # Gradient boosting models (ML-based)
-    'lightgbm': False,                 # LightGBM gradient boosting
+    'lightgbm': True,                 # LightGBM gradient boosting
     'xgboost': True,                  # XGBoost gradient boosting
+    'catboost': True,                # CatBoost gradient boosting
+    'linear': True,                  # Linear models (ridge/lasso/elasticnet)
+    'nn': True,                      # Simple neural network (MLP)
     
     # Hybrid models (Physics + ML)
-    'hybrid_lightgbm': False,          # Decay baseline + LightGBM residual
-    'hybrid_xgboost': False,           # Decay baseline + XGBoost residual
+    'hybrid_lightgbm': True,          # Decay baseline + LightGBM residual
+    'hybrid_xgboost': True,           # Decay baseline + XGBoost residual
     
     # Time-series models
-    'arihow': False,                   # SARIMAX + Holt-Winters ensemble
+    'arihow': True,                   # SARIMAX + Holt-Winters ensemble
 }
 
 # Quick presets - uncomment one to use
@@ -386,10 +393,11 @@ SUBMISSIONS_DIR = PROJECT_ROOT / "submissions"     # Final submission CSVs
 REPORTS_DIR = PROJECT_ROOT / "reports"             # Comparison reports, summaries
 FIGURES_DIR = REPORTS_DIR / "figures"              # Visualization images
 EDA_DATA_DIR = REPORTS_DIR / "eda_data"            # EDA JSON/CSV exports
+EXTERNAL_DATA_DIR = DATA_RAW / "external"          # Optional external/context data
 
 # Create directories if they don't exist
 for dir_path in [DATA_RAW, DATA_PROCESSED, MODELS_DIR, SUBMISSIONS_DIR, 
-                 REPORTS_DIR, FIGURES_DIR, EDA_DATA_DIR]:
+                 REPORTS_DIR, FIGURES_DIR, EDA_DATA_DIR, EXTERNAL_DATA_DIR]:
     dir_path.mkdir(parents=True, exist_ok=True)
 
 # =============================================================================
@@ -736,6 +744,20 @@ FEATURE_ENGINEERING_SETTINGS = {
     # Outlier handling
     'cap_n_gxs': True,                      # Cap n_gxs at N_GXS_CAP
     'clip_vol_norm': True,                  # Clip vol_norm to [0, 1.5]
+}
+
+# Optional visibility/collaboration/context feature toggles (default off)
+VISIBILITY_FEATURES = {
+    'use_visibility_features': False,        # Visibility-style flags (drops/spikes, data gaps)
+    'use_collaboration_features': False,     # Peer/cross-country aggregates
+    'max_event_lag': 24,                     # Max months to look back for events
+    'sources': {
+        'holidays': False,
+        'epidemics': False,
+        'macro': False,
+        'promotions': False,
+        'stockout_flags': False,
+    }
 }
 
 # =============================================================================

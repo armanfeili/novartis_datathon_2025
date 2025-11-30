@@ -1,0 +1,17 @@
+{
+  "timestamp": "2025-11-29T06:12:56.932081",
+  "git_commit": "8a6521d0",
+  "scenario": 1,
+  "model_type": "xgboost",
+  "sweep_metadata": {
+    "axes": {
+      "params.max_depth": 6,
+      "params.learning_rate": 0.05
+    },
+    "index": 3,
+    "total": 4,
+    "is_sweep": true
+  },
+  "n_train_samples": 37488,
+  "n_val_samples": 9384
+}

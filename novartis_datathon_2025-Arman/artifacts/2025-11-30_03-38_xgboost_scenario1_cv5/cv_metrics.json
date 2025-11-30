@@ -1,0 +1,73 @@
+{
+  "cv_official_mean": 0.0041800000000000006,
+  "cv_official_std": 0.0014386104406683554,
+  "cv_rmse_mean": 0.02240683223304734,
+  "cv_rmse_std": 0.014852528896901529,
+  "cv_mae_mean": 0.002606661227032783,
+  "cv_mae_std": 0.0008529603828233163,
+  "n_folds": 5,
+  "fold_metrics": [
+    {
+      "official_metric": 0.0035,
+      "rmse_norm": 0.013565366805412388,
+      "mae_norm": 0.0022759088461068258,
+      "scenario": 1,
+      "model_type": "xgboost",
+      "train_time_seconds": 6.781845331192017,
+      "n_train_samples": 37488,
+      "n_val_samples": 9384,
+      "n_features": 108,
+      "fold": 1
+    },
+    {
+      "official_metric": 0.0035,
+      "rmse_norm": 0.02524188821382938,
+      "mae_norm": 0.002204972568831742,
+      "scenario": 1,
+      "model_type": "xgboost",
+      "train_time_seconds": 12.982326984405518,
+      "n_train_samples": 37488,
+      "n_val_samples": 9384,
+      "n_features": 108,
+      "fold": 2
+    },
+    {
+      "official_metric": 0.003,
+      "rmse_norm": 0.005112159681119214,
+      "mae_norm": 0.0016781025472134001,
+      "scenario": 1,
+      "model_type": "xgboost",
+      "train_time_seconds": 33.71267008781433,
+      "n_train_samples": 37488,
+      "n_val_samples": 9384,
+      "n_features": 108,
+      "fold": 3
+    },
+    {
+      "official_metric": 0.007,
+      "rmse_norm": 0.048993957681515696,
+      "mae_norm": 0.004187252715134455,
+      "scenario": 1,
+      "model_type": "xgboost",
+      "train_time_seconds": 11.57345199584961,
+      "n_train_samples": 37512,
+      "n_val_samples": 9360,
+      "n_features": 108,
+      "fold": 4
+    },
+    {
+      "official_metric": 0.0039,
+      "rmse_norm": 0.019120788783360036,
+      "mae_norm": 0.002687069457877492,
+      "scenario": 1,
+      "model_type": "xgboost",
+      "train_time_seconds": 5.287793397903442,
+      "n_train_samples": 37512,
+      "n_val_samples": 9360,
+      "n_features": 108,
+      "fold": 5
+    }
+  ],
+  "scenario": 1,
+  "model_type": "xgboost"
+}

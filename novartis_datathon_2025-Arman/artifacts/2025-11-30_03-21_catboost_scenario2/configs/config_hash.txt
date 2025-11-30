@@ -1,0 +1,7 @@
+dc1172a9
+Generated: 2025-11-30T03:21:21.393737
+Files:
+  run_config: configs/run_defaults.yaml
+  data_config: configs/data.yaml
+  features_config: configs/features.yaml
+  model_config: configs/model_cat_s2_best.yaml

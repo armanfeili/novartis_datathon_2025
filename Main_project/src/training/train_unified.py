@@ -34,7 +34,8 @@ from config import *
 from data_loader import load_all_data, merge_datasets, split_train_validation
 from bucket_calculator import compute_avg_j, create_auxiliary_file
 from feature_engineering import create_all_features, get_feature_columns
-from models import GradientBoostingModel, BaselineModels, HybridPhysicsMLModel, prepare_training_data
+from models import (GradientBoostingModel, BaselineModels, HybridPhysicsMLModel,
+                    prepare_training_data, CatBoostModel, LinearModel, SimpleNNModel)
 from evaluation import evaluate_model, compare_models
 from scenarios.scenarios import get_months_for_scenario, get_scenario_definition
 from metric_calculation import compute_metric1, compute_metric2
@@ -196,6 +197,21 @@ def train_unified_model(
         model.fit(X_train, y_train, X_val, y_val)
         predictions = model.predict(X_val)
         
+    elif model_type == 'catboost':
+        model = CatBoostModel()
+        model.fit(X_train, y_train, X_val, y_val)
+        predictions = model.predict(X_val)
+
+    elif model_type == 'linear':
+        model = LinearModel(model_type='ridge')
+        model.fit(X_train, y_train)
+        predictions = model.predict(X_val)
+
+    elif model_type == 'nn':
+        model = SimpleNNModel()
+        model.fit(X_train, y_train)
+        predictions = model.predict(X_val)
+
     elif model_type == 'hybrid_lightgbm':
         avg_vol_train = kwargs.get('avg_vol_train')
         months_train = kwargs.get('months_train')
@@ -419,6 +435,157 @@ def train_unified(test_mode: bool = False) -> Dict[str, Any]:
         # Save model (with config prefix in multi-config mode)
         lgbm_model.save(config.get_model_filename("unified_lightgbm"))
         models_trained['lightgbm'] = lgbm_model
+
+    # =========================================================================
+    # 3b. CatBoost (Unified)
+    # =========================================================================
+    if MODELS_ENABLED.get('catboost', False):
+        print("\n📊 Training: CatBoost (Unified)")
+        
+        cat_model = CatBoostModel()
+        cat_model.fit(X_train, y_train, X_val, y_val)
+        
+        val_pred_data = featured.merge(val_brands, on=['country', 'brand_name'])
+        val_pred_data = val_pred_data[val_pred_data['months_postgx'].between(0, 23)].copy()
+        val_pred_data = add_unified_features(val_pred_data, avg_j)
+        val_pred_data['scenario_flag'] = 0
+        early_cols = ['early_post_mean', 'early_post_std', 'early_post_min', 
+                     'early_post_max', 'early_post_slope', 'early_post_last', 'early_erosion_ratio']
+        for col in early_cols:
+            if col in val_pred_data.columns:
+                val_pred_data[col] = 0
+        X_val_pred = val_pred_data[unified_feature_cols].fillna(0)
+        val_pred_data['volume_pred'] = cat_model.predict(X_val_pred)
+        pred_cat = val_pred_data[['country', 'brand_name', 'months_postgx', 'volume_pred']].copy()
+        pred_cat.columns = ['country', 'brand_name', 'months_postgx', 'volume']
+        s1_score = compute_metric1(val_actual_full, pred_cat, aux_df)
+        
+        val_pred_s2 = featured.merge(val_brands, on=['country', 'brand_name'])
+        val_pred_s2 = val_pred_s2[val_pred_s2['months_postgx'].between(6, 23)].copy()
+        val_pred_s2 = add_unified_features(val_pred_s2, avg_j)
+        val_pred_s2['scenario_flag'] = 1
+        X_val_s2 = val_pred_s2[unified_feature_cols].fillna(0)
+        val_pred_s2['volume_pred'] = cat_model.predict(X_val_s2)
+        pred_cat_s2 = val_pred_s2[['country', 'brand_name', 'months_postgx', 'volume_pred']].copy()
+        pred_cat_s2.columns = ['country', 'brand_name', 'months_postgx', 'volume']
+        val_actual_s2 = val_actual_full[val_actual_full['months_postgx'] >= 6]
+        s2_score = compute_metric2(val_actual_s2, pred_cat_s2, aux_df)
+        combined = 0.5 * s1_score + 0.5 * s2_score
+        
+        print(f"   S1 Score: {s1_score:.4f}")
+        print(f"   S2 Score: {s2_score:.4f}")
+        print(f"   Combined: {combined:.4f}")
+        
+        all_results.append({
+            'model': "CatBoost-Unified",
+            'final_score': combined,
+            's1_score': s1_score,
+            's2_score': s2_score,
+        })
+        model_names.append("CatBoost-Unified")
+        
+        cat_model.save(config.get_model_filename("unified_catboost"))
+        models_trained['catboost'] = cat_model
+
+    # =========================================================================
+    # 3c. Linear (Unified)
+    # =========================================================================
+    if MODELS_ENABLED.get('linear', False):
+        print("\n📊 Training: Linear (Unified)")
+        
+        lin_model = LinearModel(model_type='ridge')
+        lin_model.fit(X_train, y_train)
+        
+        val_pred_data = featured.merge(val_brands, on=['country', 'brand_name'])
+        val_pred_data = val_pred_data[val_pred_data['months_postgx'].between(0, 23)].copy()
+        val_pred_data = add_unified_features(val_pred_data, avg_j)
+        val_pred_data['scenario_flag'] = 0
+        for col in ['early_post_mean', 'early_post_std', 'early_post_min', 
+                    'early_post_max', 'early_post_slope', 'early_post_last', 'early_erosion_ratio']:
+            if col in val_pred_data.columns:
+                val_pred_data[col] = 0
+        X_val_pred = val_pred_data[unified_feature_cols].fillna(0)
+        val_pred_data['volume_pred'] = lin_model.predict(X_val_pred)
+        pred_lin = val_pred_data[['country', 'brand_name', 'months_postgx', 'volume_pred']].copy()
+        pred_lin.columns = ['country', 'brand_name', 'months_postgx', 'volume']
+        s1_score = compute_metric1(val_actual_full, pred_lin, aux_df)
+        
+        val_pred_s2 = featured.merge(val_brands, on=['country', 'brand_name'])
+        val_pred_s2 = val_pred_s2[val_pred_s2['months_postgx'].between(6, 23)].copy()
+        val_pred_s2 = add_unified_features(val_pred_s2, avg_j)
+        val_pred_s2['scenario_flag'] = 1
+        X_val_s2 = val_pred_s2[unified_feature_cols].fillna(0)
+        val_pred_s2['volume_pred'] = lin_model.predict(X_val_s2)
+        pred_lin_s2 = val_pred_s2[['country', 'brand_name', 'months_postgx', 'volume_pred']].copy()
+        pred_lin_s2.columns = ['country', 'brand_name', 'months_postgx', 'volume']
+        val_actual_s2 = val_actual_full[val_actual_full['months_postgx'] >= 6]
+        s2_score = compute_metric2(val_actual_s2, pred_lin_s2, aux_df)
+        combined = 0.5 * s1_score + 0.5 * s2_score
+        
+        print(f"   S1 Score: {s1_score:.4f}")
+        print(f"   S2 Score: {s2_score:.4f}")
+        print(f"   Combined: {combined:.4f}")
+        
+        all_results.append({
+            'model': "Linear-Unified",
+            'final_score': combined,
+            's1_score': s1_score,
+            's2_score': s2_score,
+        })
+        model_names.append("Linear-Unified")
+        
+        lin_model.save(config.get_model_filename("unified_linear"))
+        models_trained['linear'] = lin_model
+
+    # =========================================================================
+    # 3d. Simple NN (Unified)
+    # =========================================================================
+    if MODELS_ENABLED.get('nn', False):
+        print("\n📊 Training: NN (Unified)")
+        
+        nn_model = SimpleNNModel()
+        nn_model.fit(X_train, y_train)
+        
+        val_pred_data = featured.merge(val_brands, on=['country', 'brand_name'])
+        val_pred_data = val_pred_data[val_pred_data['months_postgx'].between(0, 23)].copy()
+        val_pred_data = add_unified_features(val_pred_data, avg_j)
+        val_pred_data['scenario_flag'] = 0
+        for col in ['early_post_mean', 'early_post_std', 'early_post_min', 
+                    'early_post_max', 'early_post_slope', 'early_post_last', 'early_erosion_ratio']:
+            if col in val_pred_data.columns:
+                val_pred_data[col] = 0
+        X_val_pred = val_pred_data[unified_feature_cols].fillna(0)
+        val_pred_data['volume_pred'] = nn_model.predict(X_val_pred)
+        pred_nn = val_pred_data[['country', 'brand_name', 'months_postgx', 'volume_pred']].copy()
+        pred_nn.columns = ['country', 'brand_name', 'months_postgx', 'volume']
+        s1_score = compute_metric1(val_actual_full, pred_nn, aux_df)
+        
+        val_pred_s2 = featured.merge(val_brands, on=['country', 'brand_name'])
+        val_pred_s2 = val_pred_s2[val_pred_s2['months_postgx'].between(6, 23)].copy()
+        val_pred_s2 = add_unified_features(val_pred_s2, avg_j)
+        val_pred_s2['scenario_flag'] = 1
+        X_val_s2 = val_pred_s2[unified_feature_cols].fillna(0)
+        val_pred_s2['volume_pred'] = nn_model.predict(X_val_s2)
+        pred_nn_s2 = val_pred_s2[['country', 'brand_name', 'months_postgx', 'volume_pred']].copy()
+        pred_nn_s2.columns = ['country', 'brand_name', 'months_postgx', 'volume']
+        val_actual_s2 = val_actual_full[val_actual_full['months_postgx'] >= 6]
+        s2_score = compute_metric2(val_actual_s2, pred_nn_s2, aux_df)
+        combined = 0.5 * s1_score + 0.5 * s2_score
+        
+        print(f"   S1 Score: {s1_score:.4f}")
+        print(f"   S2 Score: {s2_score:.4f}")
+        print(f"   Combined: {combined:.4f}")
+        
+        all_results.append({
+            'model': "NN-Unified",
+            'final_score': combined,
+            's1_score': s1_score,
+            's2_score': s2_score,
+        })
+        model_names.append("NN-Unified")
+        
+        nn_model.save(config.get_model_filename("unified_nn"))
+        models_trained['nn'] = nn_model
     
     # =========================================================================
     # 4. XGBoost (Unified)

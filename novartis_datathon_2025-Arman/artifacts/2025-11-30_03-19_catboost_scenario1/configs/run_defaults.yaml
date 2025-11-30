@@ -1,0 +1,167 @@
+# Default run-level settings for Novartis Datathon 2025
+# Seeds, CV scheme, scenarios, sample weights, experiment tracking
+
+# Reproducibility
+reproducibility:
+  seed: 42
+  deterministic: true
+
+# Validation configuration
+validation:
+  val_fraction: 0.2                   # 20% of series for validation
+  stratify_by: "bucket"               # Stratify by bucket for balanced split
+  split_level: "series"               # CRITICAL: split at series level, not row level
+
+# Cross-validation configuration
+cross_validation:
+  n_folds: 5                          # Number of CV folds
+  cv_strategy: "stratified_group"     # CV strategy toggle:
+                                      #   - "stratified_group": New standardized CV (bucket stratified + series grouped) [DEFAULT]
+                                      #   - "sklearn_stratified": Original sklearn StratifiedKFold
+                                      #   - "grouped": GroupKFold by therapeutic area
+
+# Scenario definitions
+scenarios:
+  scenario1:
+    name: "Scenario 1 - No Post-Entry Actuals"
+    forecast_start: 0
+    forecast_end: 23
+    feature_cutoff: 0                 # Only months_postgx < 0 for features
+    target_months: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+    
+  scenario2:
+    name: "Scenario 2 - First 6 Months Available"
+    forecast_start: 6
+    forecast_end: 23
+    feature_cutoff: 6                 # months_postgx < 6 allowed for features
+    target_months: [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+
+# Official competition metric weights (from metric_calculation.py)
+# IMPORTANT: These are the EXACT values from the official metric script
+# Do NOT modify unless the competition rules change
+official_metric:
+  # Bucket classification threshold
+  bucket_threshold: 0.25              # Bucket 1 if mean_erosion <= 0.25, else Bucket 2
+  
+  # Bucket weights in final PE score
+  bucket_weights:
+    bucket1: 2.0                      # High erosion - 2x weight (2/n1)
+    bucket2: 1.0                      # Low erosion - 1x weight (1/n2)
+  
+  # Metric 1 (Scenario 1 / Phase 1A) weights
+  metric1:
+    monthly_weight: 0.2               # term1: 0.2 * sum_abs_diff(0,23) / (24 * avg_vol)
+    accumulated_0_5_weight: 0.5       # term2: 0.5 * abs_sum_diff(0,5) / (6 * avg_vol)
+    accumulated_6_11_weight: 0.2      # term3: 0.2 * abs_sum_diff(6,11) / (6 * avg_vol)
+    accumulated_12_23_weight: 0.1     # term4: 0.1 * abs_sum_diff(12,23) / (12 * avg_vol)
+    # Time windows
+    monthly_range: [0, 23]
+    early_range: [0, 5]
+    mid_range: [6, 11]
+    late_range: [12, 23]
+  
+  # Metric 2 (Scenario 2 / Phase 1B) weights
+  metric2:
+    monthly_weight: 0.2               # term1: 0.2 * sum_abs_diff(6,23) / (18 * avg_vol)
+    accumulated_6_11_weight: 0.5      # term2: 0.5 * abs_sum_diff(6,11) / (6 * avg_vol)
+    accumulated_12_23_weight: 0.3     # term3: 0.3 * abs_sum_diff(12,23) / (12 * avg_vol)
+    # Time windows
+    monthly_range: [6, 23]
+    early_range: [6, 11]
+    late_range: [12, 23]
+
+# Sample weights to align training loss with official metric
+sample_weights:
+  scenario1:
+    # Phase 1A weights: 50% months 0-5, 20% months 6-11, 10% months 12-23, 20% monthly
+    months_0_5: 3.0                   # Highest priority - 50% of metric
+    months_6_11: 1.5                  # Medium priority - 20% of metric
+    months_12_23: 1.0                 # Lower priority - 10% of metric
+    
+  scenario2:
+    # Phase 1B weights: 50% months 6-11, 30% months 12-23, 20% monthly
+    months_6_11: 2.5                  # Highest priority - 50% of metric
+    months_12_23: 1.0                 # Medium priority - 30% of metric
+    
+  bucket_weights:
+    bucket1: 3.0                      # High erosion - 3x weight (increased from 2.0)
+    bucket2: 1.0                      # Medium/low erosion - 1x weight
+
+# Paths (relative to project root)
+paths:
+  artifacts_dir: "artifacts"
+  submissions_dir: "submissions"
+  logs_dir: "artifacts/logs"
+  metrics_dir: "artifacts/metrics"
+
+# Output settings
+output:
+  save_oof_predictions: true
+  save_test_predictions: true
+  save_feature_importance: true
+  save_training_curves: true
+  save_config_snapshot: true
+  
+# Metrics configuration (Section 6.7)
+metrics:
+  # Primary metric for model selection
+  primary: "metric1_official"
+  
+  # Secondary metrics to track
+  secondary:
+    - rmse_y_norm
+    - mae_y_norm
+    - mape_y_norm
+  
+  # Per-series metrics logging
+  log_per_series: true
+  
+  # Directory pattern for metrics output
+  log_dir_pattern: "artifacts/{run_id}/metrics"
+  
+  # Canonical metric names (used throughout codebase)
+  names:
+    scenario1: "metric1_official"
+    scenario2: "metric2_official"
+    rmse: "rmse_y_norm"
+    mae: "mae_y_norm"
+    mape: "mape_y_norm"
+
+# Logging configuration
+logging:
+  level: "INFO"
+  console: true
+  file: true
+  log_to_file: true
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Google Drive integration (for Colab)
+drive:
+  folder_id: "1iP8ffP5MfJ6hqig1-lQpVwzfrl9uuU03"
+  mount_path: "/content/drive"
+  base_path: "/content/drive/MyDrive/novartis-datathon-2025"
+  sync_artifacts: true
+
+# Hardware settings
+hardware:
+  use_gpu: false                      # GPU optional, not required
+  num_workers: 4
+
+# Experiment tracking
+experiment:
+  name: "novartis-datathon-2025"
+  description: "Generic Erosion Forecasting"
+
+# Experiment tracking backends (Section 5.1)
+# Supports MLflow and Weights & Biases (W&B)
+experiment_tracking:
+  enabled: false                      # Set to true to enable tracking
+  backend: "mlflow"                   # Options: "mlflow", "wandb"
+  experiment_name: "novartis-datathon-2025"
+  tracking_uri: null                  # MLflow tracking URI (null = local ./mlruns)
+  project_name: "novartis-datathon-2025"  # W&B project name
+  
+# Run naming
+run:
+  name_format: "{timestamp}_{model}_{scenario}"
+  timestamp_format: "%Y-%m-%d_%H-%M"

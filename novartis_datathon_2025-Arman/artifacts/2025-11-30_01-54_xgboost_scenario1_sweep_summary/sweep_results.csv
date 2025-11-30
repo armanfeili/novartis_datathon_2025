@@ -1,0 +1,8 @@
+error,run_id,config_id,official_metric
+'int' object has no attribute 'replace',2025-11-30_01-54_xgboost_scenario1_default,default,inf
+'int' object has no attribute 'replace',2025-11-30_01-54_xgboost_scenario1_low_lr,low_lr,inf
+'int' object has no attribute 'replace',2025-11-30_01-54_xgboost_scenario1_shallow,shallow,inf
+'int' object has no attribute 'replace',2025-11-30_01-54_xgboost_scenario1_deep,deep,inf
+'int' object has no attribute 'replace',2025-11-30_01-54_xgboost_scenario1_regularized,regularized,inf
+'int' object has no attribute 'replace',2025-11-30_01-54_xgboost_scenario1_s1_best,s1_best,inf
+'int' object has no attribute 'replace',2025-11-30_01-54_xgboost_scenario1_s2_best,s2_best,inf

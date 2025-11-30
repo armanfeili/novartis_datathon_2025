@@ -1,0 +1,73 @@
+{
+  "cv_official_mean": 0.00624,
+  "cv_official_std": 0.0021443880245888332,
+  "cv_rmse_mean": 0.0259056783786066,
+  "cv_rmse_std": 0.018165718335094266,
+  "cv_mae_mean": 0.004318788806728154,
+  "cv_mae_std": 0.0008712526552071301,
+  "n_folds": 5,
+  "fold_metrics": [
+    {
+      "official_metric": 0.0101,
+      "rmse_norm": 0.016211318972521947,
+      "mae_norm": 0.004730815361567374,
+      "scenario": 2,
+      "model_type": "lightgbm",
+      "train_time_seconds": 1.844179391860962,
+      "n_train_samples": 28116,
+      "n_val_samples": 7038,
+      "n_features": 123,
+      "fold": 1
+    },
+    {
+      "official_metric": 0.0054,
+      "rmse_norm": 0.033350404121354316,
+      "mae_norm": 0.004104907729760527,
+      "scenario": 2,
+      "model_type": "lightgbm",
+      "train_time_seconds": 1.7575695514678955,
+      "n_train_samples": 28116,
+      "n_val_samples": 7038,
+      "n_features": 123,
+      "fold": 2
+    },
+    {
+      "official_metric": 0.0041,
+      "rmse_norm": 0.008511976402250074,
+      "mae_norm": 0.003243940417786868,
+      "scenario": 2,
+      "model_type": "lightgbm",
+      "train_time_seconds": 3.0642411708831787,
+      "n_train_samples": 28116,
+      "n_val_samples": 7038,
+      "n_features": 123,
+      "fold": 3
+    },
+    {
+      "official_metric": 0.0069,
+      "rmse_norm": 0.058144871502349975,
+      "mae_norm": 0.0057671630077249895,
+      "scenario": 2,
+      "model_type": "lightgbm",
+      "train_time_seconds": 6.599294662475586,
+      "n_train_samples": 28134,
+      "n_val_samples": 7020,
+      "n_features": 123,
+      "fold": 4
+    },
+    {
+      "official_metric": 0.0047,
+      "rmse_norm": 0.013309820894556677,
+      "mae_norm": 0.0037471175168010116,
+      "scenario": 2,
+      "model_type": "lightgbm",
+      "train_time_seconds": 2.438255548477173,
+      "n_train_samples": 28134,
+      "n_val_samples": 7020,
+      "n_features": 123,
+      "fold": 5
+    }
+  ],
+  "scenario": 2,
+  "model_type": "lightgbm"
+}

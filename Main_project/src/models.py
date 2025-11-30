@@ -16,6 +16,10 @@ from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import lightgbm as lgb
 import xgboost as xgb
+from catboost import CatBoostRegressor
+from sklearn.linear_model import Ridge, Lasso, ElasticNet, HuberRegressor
+from sklearn.neural_network import MLPRegressor
+from statsmodels.tsa.arima.model import ARIMA
 import joblib
 from pathlib import Path
 import sys
@@ -1200,6 +1204,329 @@ class GradientBoostingModel:
                   f"Train={r['n_train_brands']} brands, Val={r['n_val_brands']} brands")
         
         return results
+
+
+# =============================================================================
+# CATBOOST MODEL
+# =============================================================================
+
+class CatBoostModel:
+    """CatBoost wrapper with simple defaults."""
+
+    def __init__(self, params: dict = None):
+        self.params = params or {
+            'depth': 6,
+            'learning_rate': 0.03,
+            'iterations': 300,
+            'loss_function': 'RMSE',
+            'verbose': False,
+            'random_seed': RANDOM_STATE,
+        }
+        self.model = None
+        self.feature_names = None
+
+    def fit(self, X_train: pd.DataFrame, y_train: pd.Series,
+            X_val: pd.DataFrame = None, y_val: pd.Series = None) -> 'CatBoostModel':
+        self.model = CatBoostRegressor(**self.params)
+        self.feature_names = list(X_train.columns)
+        if X_val is not None and y_val is not None:
+            self.model.fit(X_train, y_train, eval_set=[(X_val, y_val)], use_best_model=True, verbose=False)
+        else:
+            self.model.fit(X_train, y_train, verbose=False)
+        print("✅ CatBoost model trained")
+        return self
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        if self.model is None:
+            raise ValueError("Model not fitted.")
+        preds = self.model.predict(X)
+        return np.clip(preds, 0, None)
+
+    def save(self, name: str) -> Path:
+        latest_path = MODELS_DIR / f"{name}.joblib"
+        joblib.dump({'model': self.model, 'params': self.params, 'feature_names': self.feature_names}, latest_path)
+        print(f"✅ CatBoost model saved to {latest_path}")
+        return latest_path
+
+
+# =============================================================================
+# LINEAR MODELS
+# =============================================================================
+
+class LinearModel:
+    """Simple linear model selector."""
+
+    def __init__(self, model_type: str = 'ridge', params: dict = None):
+        self.model_type = model_type
+        defaults = {
+            'ridge': {'alpha': 1.0},
+            'lasso': {'alpha': 0.001, 'max_iter': 5000},
+            'elasticnet': {'alpha': 0.001, 'l1_ratio': 0.5, 'max_iter': 5000},
+            'huber': {'epsilon': 1.35, 'alpha': 0.0001},
+        }
+        self.params = params or defaults.get(model_type, defaults['ridge'])
+        self.model = None
+        self.feature_names = None
+
+    def fit(self, X_train: pd.DataFrame, y_train: pd.Series) -> 'LinearModel':
+        if self.model_type == 'lasso':
+            self.model = Lasso(**self.params)
+        elif self.model_type == 'elasticnet':
+            self.model = ElasticNet(**self.params)
+        elif self.model_type == 'huber':
+            self.model = HuberRegressor(**self.params)
+        else:
+            self.model = Ridge(**self.params)
+        self.model.fit(X_train, y_train)
+        self.feature_names = list(X_train.columns)
+        print(f"✅ Linear model trained ({self.model_type})")
+        return self
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        if self.model is None:
+            raise ValueError("Model not fitted.")
+        preds = self.model.predict(X)
+        return np.clip(preds, 0, None)
+
+    def save(self, name: str) -> Path:
+        latest_path = MODELS_DIR / f"{name}.joblib"
+        joblib.dump({'model': self.model, 'params': self.params, 'feature_names': self.feature_names}, latest_path)
+        print(f"✅ Linear model saved to {latest_path}")
+        return latest_path
+
+
+# =============================================================================
+# SIMPLE NEURAL NETWORK (MLP)
+# =============================================================================
+
+class SimpleNNModel:
+    """Sklearn MLPRegressor wrapper for quick NN baseline."""
+
+    def __init__(self, params: dict = None):
+        self.params = params or {
+            'hidden_layer_sizes': (128, 64),
+            'activation': 'relu',
+            'solver': 'adam',
+            'learning_rate_init': 0.001,
+            'max_iter': 200,
+            'random_state': RANDOM_STATE,
+        }
+        self.model = None
+        self.feature_names = None
+
+    def fit(self, X_train: pd.DataFrame, y_train: pd.Series) -> 'SimpleNNModel':
+        self.model = MLPRegressor(**self.params)
+        self.model.fit(X_train, y_train)
+        self.feature_names = list(X_train.columns)
+        print("✅ Simple NN (MLP) trained")
+        return self
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        if self.model is None:
+            raise ValueError("Model not fitted.")
+        preds = self.model.predict(X)
+        return np.clip(preds, 0, None)
+
+    def save(self, name: str) -> Path:
+        latest_path = MODELS_DIR / f"{name}.joblib"
+        joblib.dump({'model': self.model, 'params': self.params, 'feature_names': self.feature_names}, latest_path)
+        print(f"✅ Simple NN model saved to {latest_path}")
+        return latest_path
+
+
+# =============================================================================
+# ADDITIONAL TIME-SERIES MODELS (from other project reference)
+# =============================================================================
+
+class SeasonalNaiveModel:
+    """Seasonal naive forecaster using last seasonal period (default 12 months)."""
+
+    def __init__(self, season_length: int = 12):
+        self.season_length = season_length
+        self.history = {}
+        self.is_fitted = False
+
+    def fit(self, df: pd.DataFrame, target_col: str = 'volume') -> 'SeasonalNaiveModel':
+        series = df.sort_values(['country', 'brand_name', 'months_postgx'])
+        self.history = {
+            (c, b): grp[target_col].values for (c, b), grp in series.groupby(['country', 'brand_name'])
+        }
+        self.is_fitted = True
+        print(f"✅ Seasonal naive fitted on {len(self.history)} series")
+        return self
+
+    def predict(self, df: pd.DataFrame, target_col: str = 'volume') -> pd.DataFrame:
+        if not self.is_fitted:
+            raise ValueError("Model not fitted.")
+        preds = []
+        for _, row in df.iterrows():
+            key = (row['country'], row['brand_name'])
+            hist = self.history.get(key, [])
+            if len(hist) == 0:
+                pred = 0
+            else:
+                idx = row['months_postgx'] % max(1, self.season_length)
+                pred = hist[-self.season_length:][idx % len(hist[-self.season_length:])]
+            preds.append(pred)
+        out = df[['country', 'brand_name', 'months_postgx']].copy()
+        out[target_col] = np.maximum(preds, 0)
+        return out
+
+
+class SimpleARIMAModel:
+    """Per-brand ARIMA wrapper (non-seasonal) using statsmodels."""
+
+    def __init__(self, order: tuple = (1, 1, 1)):
+        self.order = order
+        self.models = {}
+        self.is_fitted = False
+
+    def fit(self, df: pd.DataFrame, target_col: str = 'volume') -> 'SimpleARIMAModel':
+        grouped = df.sort_values(['country', 'brand_name', 'months_postgx']).groupby(['country', 'brand_name'])
+        for key, grp in grouped:
+            try:
+                series = grp[target_col].astype(float).values
+                if len(series) < sum(self.order):
+                    continue
+                model = ARIMA(series, order=self.order)
+                self.models[key] = model.fit()
+            except Exception:
+                continue
+        self.is_fitted = True
+        print(f"✅ ARIMA fitted for {len(self.models)} series")
+        return self
+
+    def predict(self, df: pd.DataFrame, target_col: str = 'volume') -> pd.DataFrame:
+        if not self.is_fitted:
+            raise ValueError("Model not fitted.")
+        preds = []
+        for _, row in df.iterrows():
+            key = (row['country'], row['brand_name'])
+            model = self.models.get(key)
+            horizon = int(row['months_postgx']) + 1
+            if model is None:
+                preds.append(0)
+                continue
+            try:
+                fc = model.forecast(steps=horizon)
+                preds.append(fc[-1])
+            except Exception:
+                preds.append(0)
+        out = df[['country', 'brand_name', 'months_postgx']].copy()
+        out[target_col] = np.maximum(preds, 0)
+        return out
+
+
+class AutoARIMAModel:
+    """Auto-ARIMA wrapper using pmdarima (optional dependency)."""
+
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self.models = {}
+        self.is_fitted = False
+
+    def fit(self, df: pd.DataFrame, target_col: str = 'volume') -> 'AutoARIMAModel':
+        try:
+            from pmdarima import auto_arima
+        except ImportError:
+            raise ImportError("pmdarima is required for AutoARIMAModel.")
+
+        grouped = df.sort_values(['country', 'brand_name', 'months_postgx']).groupby(['country', 'brand_name'])
+        for key, grp in grouped:
+            series = grp[target_col].astype(float).values
+            if len(series) < 6:
+                continue
+            try:
+                self.models[key] = auto_arima(series, error_action='ignore', suppress_warnings=True, **self.kwargs)
+            except Exception:
+                continue
+        self.is_fitted = True
+        print(f"✅ Auto-ARIMA fitted for {len(self.models)} series")
+        return self
+
+    def predict(self, df: pd.DataFrame, target_col: str = 'volume') -> pd.DataFrame:
+        if not self.is_fitted:
+            raise ValueError("Model not fitted.")
+        preds = []
+        for _, row in df.iterrows():
+            key = (row['country'], row['brand_name'])
+            model = self.models.get(key)
+            horizon = int(row['months_postgx']) + 1
+            if model is None:
+                preds.append(0)
+                continue
+            try:
+                fc = model.predict(n_periods=horizon)
+                preds.append(fc[-1])
+            except Exception:
+                preds.append(0)
+        out = df[['country', 'brand_name', 'months_postgx']].copy()
+        out[target_col] = np.maximum(preds, 0)
+        return out
+
+
+class ProphetModel:
+    """Per-brand Prophet wrapper (optional dependency)."""
+
+    def __init__(self, params: dict = None):
+        self.params = params or {}
+        self.models = {}
+        self.is_fitted = False
+
+    def fit(self, df: pd.DataFrame, target_col: str = 'volume') -> 'ProphetModel':
+        try:
+            from prophet import Prophet
+        except ImportError:
+            raise ImportError("prophet is required for ProphetModel.")
+
+        grouped = df.sort_values(['country', 'brand_name', 'months_postgx']).groupby(['country', 'brand_name'])
+        for key, grp in grouped:
+            if len(grp) < 3:
+                continue
+            tmp = grp[['months_postgx', target_col]].copy()
+            tmp.rename(columns={'months_postgx': 'ds', target_col: 'y'}, inplace=True)
+            # Convert months_postgx to a pseudo-date to keep Prophet happy
+            tmp['ds'] = pd.to_datetime(tmp['ds'], unit='M', origin='unix')
+            try:
+                m = Prophet(**self.params)
+                m.fit(tmp)
+                self.models[key] = m
+            except Exception:
+                continue
+        self.is_fitted = True
+        print(f"✅ Prophet fitted for {len(self.models)} series")
+        return self
+
+    def predict(self, df: pd.DataFrame, target_col: str = 'volume') -> pd.DataFrame:
+        if not self.is_fitted:
+            raise ValueError("Model not fitted.")
+        preds = []
+        for _, row in df.iterrows():
+            key = (row['country'], row['brand_name'])
+            model = self.models.get(key)
+            if model is None:
+                preds.append(0)
+                continue
+            horizon = int(row['months_postgx'])
+            future = pd.DataFrame({'ds': pd.to_datetime([horizon], unit='M', origin='unix')})
+            try:
+                fc = model.predict(future)
+                preds.append(float(fc['yhat'].iloc[0]))
+            except Exception:
+                preds.append(0)
+        out = df[['country', 'brand_name', 'months_postgx']].copy()
+        out[target_col] = np.maximum(preds, 0)
+        return out
+
+
+class LSTMModelPlaceholder:
+    """
+    Placeholder for LSTM model from the reference project.
+    Dependency-heavy (PyTorch/TF); intentionally minimal to avoid breaking installs.
+    """
+
+    def __init__(self):
+        raise NotImplementedError("LSTM model requires a deep learning stack; integrate separately if needed.")
     
     def save(self, name: str) -> Path:
         """Save model to disk with date+timestamp (no overwrites)."""

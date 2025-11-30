@@ -15,7 +15,15 @@ from config import *
 from data_loader import load_all_data, merge_datasets, split_train_validation
 from bucket_calculator import compute_avg_j, create_auxiliary_file
 from feature_engineering import create_all_features, get_feature_columns
-from models import GradientBoostingModel, BaselineModels, prepare_training_data, train_and_evaluate
+from models import (
+    GradientBoostingModel,
+    BaselineModels,
+    prepare_training_data,
+    train_and_evaluate,
+    CatBoostModel,
+    LinearModel,
+    SimpleNNModel,
+)
 from evaluation import evaluate_model, analyze_worst_predictions, compare_models
 from submission import generate_submission, save_submission
 
@@ -30,7 +38,7 @@ def run_pipeline(scenario: int = 1,
     
     Args:
         scenario: 1 or 2
-        model_type: 'lightgbm', 'xgboost', or 'baseline'
+        model_type: 'baseline', 'lightgbm', 'xgboost', 'catboost', 'linear', or 'nn'
         test_mode: If True, only use subset of data for quick testing
         save_model: If True, save trained model
         generate_test_submission: If True, generate submission for test set
@@ -115,7 +123,7 @@ def run_pipeline(scenario: int = 1,
         )
         results['best_decay_rate'] = best_rate
         
-    else:
+    elif model_type in ['lightgbm', 'xgboost']:
         model, metrics = train_and_evaluate(
             X_train, y_train, X_val, y_val, model_type
         )
@@ -123,6 +131,26 @@ def run_pipeline(scenario: int = 1,
         
         if save_model:
             model.save(f"scenario{scenario}_{model_type}")
+    elif model_type == 'catboost':
+        model = CatBoostModel()
+        model.fit(X_train, y_train, X_val, y_val)
+        results['train_metrics'] = {}
+        if save_model:
+            model.save(f"scenario{scenario}_{model_type}")
+    elif model_type == 'linear':
+        model = LinearModel(model_type='ridge')
+        model.fit(X_train, y_train)
+        results['train_metrics'] = {}
+        if save_model:
+            model.save(f"scenario{scenario}_{model_type}")
+    elif model_type == 'nn':
+        model = SimpleNNModel()
+        model.fit(X_train, y_train)
+        results['train_metrics'] = {}
+        if save_model:
+            model.save(f"scenario{scenario}_{model_type}")
+    else:
+        raise ValueError(f"Unsupported model_type: {model_type}")
     
     # =========================================================================
     # STEP 7: Generate validation predictions

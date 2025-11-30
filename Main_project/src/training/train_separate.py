@@ -26,7 +26,9 @@ from config import *
 from data_loader import load_all_data, merge_datasets, split_train_validation
 from bucket_calculator import compute_avg_j, create_auxiliary_file
 from feature_engineering import create_all_features, get_feature_columns
-from models import GradientBoostingModel, BaselineModels, HybridPhysicsMLModel, ARIHOWModel, prepare_training_data
+from models import (GradientBoostingModel, BaselineModels, HybridPhysicsMLModel,
+                    ARIHOWModel, prepare_training_data, CatBoostModel,
+                    LinearModel, SimpleNNModel)
 from evaluation import evaluate_model, compare_models
 from scenarios.scenarios import get_months_for_scenario, get_scenario_definition
 
@@ -183,6 +185,28 @@ def train_scenario(
         # Save model (with config prefix in multi-config mode)
         xgb_model.save(config.get_model_filename(f"scenario{scenario}_xgboost"))
         models_trained['xgboost'] = xgb_model
+
+    # =========================================================================
+    # 4b. CatBoost
+    # =========================================================================
+    if MODELS_ENABLED.get('catboost', False):
+        print("\n📊 Training: CatBoost")
+        cat_model = CatBoostModel()
+        cat_model.fit(X_train, y_train, X_val, y_val)
+
+        val_pred_data = val_df[val_df['months_postgx'].isin(months_to_predict)].copy()
+        X_val_pred = val_pred_data[feature_cols].fillna(0)
+        val_pred_data['volume_pred'] = cat_model.predict(X_val_pred)
+
+        pred = val_pred_data[['country', 'brand_name', 'months_postgx', 'volume_pred']].copy()
+        pred.columns = ['country', 'brand_name', 'months_postgx', 'volume']
+
+        results = evaluate_model(val_actual, pred, aux_df, scenario)
+        all_results.append(results)
+        model_names.append("CatBoost")
+
+        cat_model.save(config.get_model_filename(f"scenario{scenario}_catboost"))
+        models_trained['catboost'] = cat_model
     
     # =========================================================================
     # 5 & 6. Hybrid Models
@@ -294,6 +318,50 @@ def train_scenario(
             
         except Exception as e:
             print(f"   ⚠️ ARIHOW failed: {e}")
+
+    # =========================================================================
+    # 8. Linear Models
+    # =========================================================================
+    if MODELS_ENABLED.get('linear', False):
+        print("\n📊 Training: Linear (Ridge)")
+        lin_model = LinearModel(model_type='ridge')
+        lin_model.fit(X_train, y_train)
+
+        val_pred_data = val_df[val_df['months_postgx'].isin(months_to_predict)].copy()
+        X_val_pred = val_pred_data[feature_cols].fillna(0)
+        val_pred_data['volume_pred'] = lin_model.predict(X_val_pred)
+
+        pred = val_pred_data[['country', 'brand_name', 'months_postgx', 'volume_pred']].copy()
+        pred.columns = ['country', 'brand_name', 'months_postgx', 'volume']
+
+        results = evaluate_model(val_actual, pred, aux_df, scenario)
+        all_results.append(results)
+        model_names.append("Linear-Ridge")
+
+        lin_model.save(config.get_model_filename(f"scenario{scenario}_linear"))
+        models_trained['linear'] = lin_model
+
+    # =========================================================================
+    # 9. Simple NN (MLP)
+    # =========================================================================
+    if MODELS_ENABLED.get('nn', False):
+        print("\n📊 Training: Simple NN (MLP)")
+        nn_model = SimpleNNModel()
+        nn_model.fit(X_train, y_train)
+
+        val_pred_data = val_df[val_df['months_postgx'].isin(months_to_predict)].copy()
+        X_val_pred = val_pred_data[feature_cols].fillna(0)
+        val_pred_data['volume_pred'] = nn_model.predict(X_val_pred)
+
+        pred = val_pred_data[['country', 'brand_name', 'months_postgx', 'volume_pred']].copy()
+        pred.columns = ['country', 'brand_name', 'months_postgx', 'volume']
+
+        results = evaluate_model(val_actual, pred, aux_df, scenario)
+        all_results.append(results)
+        model_names.append("NN-MLP")
+
+        nn_model.save(config.get_model_filename(f"scenario{scenario}_nn"))
+        models_trained['nn'] = nn_model
     
     # =========================================================================
     # Compare models
