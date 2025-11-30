@@ -1,4 +1,3 @@
-````markdown
 # Novartis Datathon 2025 – Generic Erosion Forecasting
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/armanfeili/novartis_datathon_2025/blob/Arman/notebooks/colab/main.ipynb)
@@ -703,7 +702,3 @@ This project is released under the **MIT License** – see [LICENSE](LICENSE).
 
 * **Novartis** and the **Barcelona Digital Finance Hub** for organizing the datathon and providing the dataset and evaluation framework.
 * All contributors who helped design, implement, and stress-test this pipeline.
-
-```
-::contentReference[oaicite:0]{index=0}
-```
