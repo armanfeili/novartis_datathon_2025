@@ -63,6 +63,92 @@ VALUE_RANGES = {
 # Validation Functions
 # =============================================================================
 
+def validate_meta_cols_sync(data_config: Optional[dict] = None) -> bool:
+    """
+    Validate that META_COLS constant matches config/data.yaml.
+    
+    This is a critical check to ensure code and config stay synchronized.
+    Should be called at pipeline startup.
+    
+    Args:
+        data_config: Optional loaded data.yaml config. If None, will load it.
+        
+    Returns:
+        True if synchronized, raises ValueError if not
+        
+    Raises:
+        ValueError: If META_COLS and config disagree
+    """
+    if data_config is None:
+        try:
+            data_config = load_config('configs/data.yaml')
+        except FileNotFoundError:
+            logger.warning("configs/data.yaml not found, skipping META_COLS sync validation")
+            return True
+    
+    config_meta_cols = set(data_config.get('columns', {}).get('meta_cols', []))
+    code_meta_cols = set(META_COLS)
+    
+    if config_meta_cols != code_meta_cols:
+        missing_in_code = config_meta_cols - code_meta_cols
+        extra_in_code = code_meta_cols - config_meta_cols
+        msg_parts = ["META_COLS mismatch between code and config:"]
+        if missing_in_code:
+            msg_parts.append(f"  In config but not code: {missing_in_code}")
+        if extra_in_code:
+            msg_parts.append(f"  In code but not config: {extra_in_code}")
+        raise ValueError("\n".join(msg_parts))
+    
+    logger.debug("META_COLS synchronized with configs/data.yaml")
+    return True
+
+
+def validate_dtypes(df: pd.DataFrame, name: str, strict: bool = False) -> List[str]:
+    """
+    Validate and optionally coerce DataFrame column dtypes against EXPECTED_DTYPES.
+    
+    Args:
+        df: DataFrame to validate
+        name: Name for logging (e.g., 'volume', 'generics')
+        strict: If True, raise error on mismatch. If False, log warning and try coercion.
+        
+    Returns:
+        List of dtype issues found
+    """
+    issues = []
+    
+    for col, expected_dtype in EXPECTED_DTYPES.items():
+        if col not in df.columns:
+            continue
+            
+        actual_dtype = df[col].dtype
+        
+        # Check dtype compatibility
+        is_compatible = False
+        if expected_dtype == 'object':
+            is_compatible = actual_dtype == 'object' or pd.api.types.is_string_dtype(actual_dtype)
+        elif expected_dtype == 'int':
+            is_compatible = pd.api.types.is_integer_dtype(actual_dtype)
+        elif expected_dtype == 'float':
+            is_compatible = pd.api.types.is_float_dtype(actual_dtype) or pd.api.types.is_integer_dtype(actual_dtype)
+        elif expected_dtype == 'bool':
+            is_compatible = actual_dtype == 'bool' or actual_dtype == 'boolean'
+        
+        if not is_compatible:
+            issue = f"{col}: expected {expected_dtype}, got {actual_dtype}"
+            issues.append(issue)
+            
+            if strict:
+                logger.error(f"{name} dtype validation failed: {issue}")
+            else:
+                logger.warning(f"{name} dtype mismatch (will attempt coercion): {issue}")
+    
+    if issues and strict:
+        raise ValueError(f"{name} dtype validation failed:\n" + "\n".join(issues))
+    
+    return issues
+
+
 def validate_dataframe_schema(df: pd.DataFrame, name: str, required_cols: List[str]) -> None:
     """
     Validate that a DataFrame has required columns.
@@ -720,6 +806,76 @@ def _load_cache(path: Path) -> pd.DataFrame:
         return pd.read_pickle(path)
 
 
+# =============================================================================
+# BONUS EXPERIMENTS: G6 - Light Data Augmentation
+# =============================================================================
+
+def augment_panel(
+    panel_df: pd.DataFrame,
+    config: dict
+) -> pd.DataFrame:
+    """
+    Apply light data augmentation to panel (G6: Data Augmentation).
+    
+    Augmentation techniques:
+    - Volume jitter: Add small random noise to volume (±percentage)
+    - Random month dropping: Drop random months with small probability
+    
+    Args:
+        panel_df: Panel DataFrame with columns: country, brand_name, months_postgx, volume
+        config: Augmentation configuration dict
+        
+    Returns:
+        Augmented panel DataFrame
+    """
+    augmentation_config = config.get('augmentation', {})
+    
+    if not augmentation_config.get('enabled', False):
+        return panel_df.copy()
+    
+    jitter_pct = augmentation_config.get('jitter_volume_pct', 0.05)
+    drop_prob = augmentation_config.get('drop_random_month_prob', 0.05)
+    min_months = augmentation_config.get('min_months_postgx', 0)
+    max_months = augmentation_config.get('max_months_postgx', 23)
+    
+    panel_augmented = panel_df.copy()
+    
+    # Apply augmentation per series
+    augmented_rows = []
+    
+    for (country, brand_name), group in panel_df.groupby(['country', 'brand_name']):
+        group = group.sort_values('months_postgx').copy()
+        
+        # Volume jitter
+        if jitter_pct > 0:
+            noise = np.random.uniform(-jitter_pct, jitter_pct, size=len(group))
+            group['volume'] = group['volume'] * (1 + noise)
+            group['volume'] = np.maximum(group['volume'], 0.0)  # Ensure non-negative
+        
+        # Random month dropping
+        if drop_prob > 0:
+            # Only drop months that are not critical (avoid target months)
+            # For training, we typically want to keep all months, so this is conservative
+            drop_mask = np.random.random(size=len(group)) < drop_prob
+            # Don't drop if it would leave too few months
+            if drop_mask.sum() < len(group) * 0.8:  # Keep at least 80% of months
+                group = group[~drop_mask].copy()
+        
+        # Filter to valid month range
+        group = group[
+            (group['months_postgx'] >= min_months) & 
+            (group['months_postgx'] <= max_months)
+        ].copy()
+        
+        augmented_rows.append(group)
+    
+    if augmented_rows:
+        panel_augmented = pd.concat(augmented_rows, ignore_index=True)
+        logger.info(f"Augmentation applied: jitter={jitter_pct:.2%}, drop_prob={drop_prob:.2%}")
+    
+    return panel_augmented
+
+
 def get_panel(
     split: str,
     config: dict,
@@ -796,6 +952,17 @@ def get_panel(
     # Compute pre-entry stats
     is_train = (split == 'train')
     panel = compute_pre_entry_stats(panel, is_train=is_train)
+    
+    # BONUS: G6 - Apply data augmentation (only for training split)
+    # Note: Augmentation is applied AFTER pre-entry stats but BEFORE caching
+    # This ensures augmentation is fresh each time during training
+    # but cached panels remain consistent
+    if is_train:
+        # Check if augmentation is enabled in config
+        # Note: We need run_config for augmentation settings, but get_panel only has data_config
+        # So we'll apply augmentation later in the training pipeline if needed
+        # For now, we skip augmentation here to avoid breaking caching
+        pass
     
     # Validate panel schema
     validate_panel_schema(panel, split=split, raise_on_error=False)
@@ -1053,15 +1220,20 @@ def run_pre_training_leakage_check(
 def validate_date_continuity(
     panel_df: pd.DataFrame,
     min_months: int = -12,
-    max_months: int = 23
+    max_months: int = 23,
+    use_expected_range: bool = False
 ) -> Tuple[bool, pd.DataFrame]:
     """
     Validate that there are no gaps in months_postgx per series.
+    
+    V6: Enhanced to properly use min_months/max_months parameters.
     
     Args:
         panel_df: Panel DataFrame with months_postgx column
         min_months: Minimum expected months_postgx (default -12)
         max_months: Maximum expected months_postgx (default 23)
+        use_expected_range: If True, check gaps against [min_months, max_months].
+            If False (default), check gaps within each series' own range.
         
     Returns:
         Tuple of (is_valid, issues_df)
@@ -1083,38 +1255,66 @@ def validate_date_continuity(
         min_actual = group['months_postgx'].min()
         max_actual = group['months_postgx'].max()
         
-        # Expected months for this series (based on its actual range)
-        expected_months = set(range(min_actual, max_actual + 1))
+        # V6: Use min_months/max_months if use_expected_range is True
+        if use_expected_range:
+            # Check coverage against the expected range [min_months, max_months]
+            # Only consider months within both expected and actual range
+            check_min = max(min_months, min_actual)
+            check_max = min(max_months, max_actual)
+            expected_months = set(range(check_min, check_max + 1))
+            
+            # Also flag if series doesn't cover enough of expected range
+            coverage_issues = []
+            if min_actual > min_months:
+                coverage_issues.append(f"starts at {min_actual} (expected {min_months})")
+            if max_actual < max_months:
+                coverage_issues.append(f"ends at {max_actual} (expected {max_months})")
+        else:
+            # Default: check gaps within series' own range
+            expected_months = set(range(min_actual, max_actual + 1))
+            coverage_issues = []
+        
         missing = expected_months - actual_months
         
-        if missing:
+        if missing or (use_expected_range and coverage_issues):
             issues_list.append({
                 'country': country,
                 'brand_name': brand,
                 'min_month': min_actual,
                 'max_month': max_actual,
+                'expected_min': min_months if use_expected_range else min_actual,
+                'expected_max': max_months if use_expected_range else max_actual,
                 'expected_count': len(expected_months),
                 'actual_count': len(actual_months),
-                'missing_months': sorted(missing),
-                'gap_count': len(missing)
+                'missing_months': sorted(missing) if missing else [],
+                'gap_count': len(missing),
+                'coverage_issues': '; '.join(coverage_issues) if coverage_issues else None
             })
     
     issues_df = pd.DataFrame(issues_list) if issues_list else pd.DataFrame()
     is_valid = len(issues_df) == 0
     
     if is_valid:
-        logger.info("Date continuity validation passed: no gaps in months_postgx")
+        logger.info(
+            f"Date continuity validation passed: no gaps in months_postgx "
+            f"{'(expected range)' if use_expected_range else '(series range)'}"
+        )
     else:
         logger.warning(f"Date continuity issues found in {len(issues_df)} series:")
-        total_gaps = issues_df['gap_count'].sum()
-        logger.warning(f"  Total gaps: {total_gaps}")
+        if 'gap_count' in issues_df.columns:
+            total_gaps = issues_df['gap_count'].sum()
+            logger.warning(f"  Total gaps: {total_gaps}")
         # Log worst offenders
-        worst = issues_df.nlargest(5, 'gap_count')
+        sort_col = 'gap_count' if 'gap_count' in issues_df.columns else 'actual_count'
+        worst = issues_df.nlargest(5, sort_col)
         for _, row in worst.iterrows():
-            logger.warning(
+            msg = (
                 f"  {row['country']}/{row['brand_name']}: "
                 f"{row['gap_count']} gaps in months [{row['min_month']}, {row['max_month']}]"
             )
+            if row.get('coverage_issues'):
+                msg += f" ({row['coverage_issues']})"
+            logger.warning(msg)
     
     return is_valid, issues_df
 

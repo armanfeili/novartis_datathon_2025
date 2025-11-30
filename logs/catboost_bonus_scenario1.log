@@ -1,0 +1,65 @@
+2025-11-30 10:00:40,684 - __main__ - INFO - Starting experiment: catboost_bonus_s1
+2025-11-30 10:00:40,752 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_s1/configs (hash: 7e5af79c)
+2025-11-30 10:00:40,752 - __main__ - INFO - Config hash: 7e5af79c
+2025-11-30 10:00:40,781 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-30 10:00:40,781 - src.utils - INFO - [Load cached features for train S1 train] starting...
+2025-11-30 10:00:40,782 - src.features - INFO - Loading cached features from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/processed/features_train_s1_train.parquet
+2025-11-30 10:00:40,875 - src.features - INFO - Loaded X: (46872, 87), y: 46872
+2025-11-30 10:00:40,875 - src.utils - INFO - [Load cached features for train S1 train] done in 0.094s
+2025-11-30 10:00:40,898 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-30 10:00:40,898 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-30 10:00:40,913 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-30 10:00:40,913 - src.utils - INFO - [Load cached train panel] done in 0.015s
+2025-11-30 10:00:40,913 - src.utils - INFO - [Load features (cached)] done in 0.133s
+2025-11-30 10:00:40,913 - src.utils - INFO - [Create validation split] starting...
+2025-11-30 10:00:40,928 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series each, 130 series total) into 'OTHER'
+2025-11-30 10:00:40,931 - src.validation - INFO - 'OTHER' class now contains 130 series
+2025-11-30 10:00:41,024 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-30 10:00:41,024 - src.validation - INFO - Train rows: 37,488, Val rows: 9,384
+2025-11-30 10:00:41,026 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-30 10:00:41,027 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-30 10:00:41,039 - src.utils - INFO - [Create validation split] done in 0.126s
+2025-11-30 10:00:41,073 - __main__ - INFO - Features: 86 columns
+2025-11-30 10:00:41,073 - __main__ - INFO - Meta: 9 columns: ['country', 'brand_name', 'months_postgx', 'bucket', 'avg_vol_12m', 'y_norm', 'volume', 'mean_erosion', 'month']
+2025-11-30 10:00:41,083 - __main__ - INFO - Features: 86 columns
+2025-11-30 10:00:41,083 - __main__ - INFO - Meta: 9 columns: ['country', 'brand_name', 'months_postgx', 'bucket', 'avg_vol_12m', 'y_norm', 'volume', 'mean_erosion', 'month']
+2025-11-30 10:00:41,969 - __main__ - INFO - Sample weights - min: 0.58, max: 3.46, mean: 1.00
+2025-11-30 10:00:41,987 - src.utils - INFO - [Train catboost for scenario 1] starting...
+2025-11-30 10:01:06,485 - src.models.cat_model - INFO - CatBoost trained for 772 iterations
+2025-11-30 10:01:06,486 - src.utils - INFO - [Train catboost for scenario 1] done in 24.499s
+2025-11-30 10:01:08,761 - __main__ - INFO - Validation metrics: Official=0.7692, RMSE=0.2488, MAE=0.1795
+2025-11-30 10:01:08,762 - __main__ - INFO - Training time: 24.52 seconds
+2025-11-30 10:01:08,771 - src.models.cat_model - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_s1/model_1.bin.cbm with metadata
+2025-11-30 10:01:08,771 - __main__ - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_s1/model_1.bin
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 6255, in <module>
+    main()
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 5756, in main
+    run_experiment(
+  File "/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py", line 3667, in run_experiment
+    if transform_params is not None:
+       ^^^^^^^^^^^^^^^^
+NameError: name 'transform_params' is not defined. Did you mean: 'transform_path'?
+0:	learn: 0.2902730	test: 0.2964403	best: 0.2964403 (0)	total: 123ms	remaining: 6m 8s
+100:	learn: 0.2260679	test: 0.2544609	best: 0.2544077 (98)	total: 3.01s	remaining: 1m 26s
+200:	learn: 0.2073591	test: 0.2521063	best: 0.2520377 (199)	total: 5.24s	remaining: 1m 12s
+300:	learn: 0.1953555	test: 0.2505688	best: 0.2505332 (298)	total: 8.8s	remaining: 1m 18s
+400:	learn: 0.1847556	test: 0.2502617	best: 0.2502617 (400)	total: 11.1s	remaining: 1m 11s
+500:	learn: 0.1761155	test: 0.2493763	best: 0.2493402 (491)	total: 13.1s	remaining: 1m 5s
+600:	learn: 0.1685128	test: 0.2491062	best: 0.2491062 (600)	total: 15.4s	remaining: 1m 1s
+700:	learn: 0.1625479	test: 0.2490106	best: 0.2489723 (673)	total: 17.7s	remaining: 57.9s
+800:	learn: 0.1575676	test: 0.2488658	best: 0.2488118 (772)	total: 21.3s	remaining: 58.4s
+Stopped by overfitting detector  (100 iterations wait)
+
+bestTest = 0.2488118079
+bestIteration = 772
+
+Shrink model to first 773 iterations.

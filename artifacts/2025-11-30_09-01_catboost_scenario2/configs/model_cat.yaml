@@ -1,0 +1,181 @@
+# =============================================================================
+# CatBoost Model Configuration - Novartis Datathon 2025
+# =============================================================================
+# HERO MODEL - Primary model for competition submission
+#
+# CatBoost is the hero model due to:
+# - Native categorical handling (no encoding needed)
+# - Robust regularization preventing overfitting
+# - Good performance on imbalanced time windows
+# - Sample weight support aligned with official metric
+#
+# Usage:
+#   - Single run: Set sweep.enabled=false, use params directly
+#   - Named config: Set active_config_id to use a preset from sweep_configs
+#   - Sweep mode: Set sweep.enabled=true to iterate
+#   - GPU mode: Set gpu.enabled=true (auto-configured in notebook)
+#
+# CLI Examples:
+#   python -m src.train --scenario 1 --model catboost
+#   python -m src.train --scenario 1 --model catboost --config-id conservative
+# =============================================================================
+
+model:
+  name: "catboost"
+  task: "regression"
+  priority: 1  # HERO MODEL - primary for competition
+
+# =============================================================================
+# ACTIVE CONFIGURATION ID
+# =============================================================================
+# Set this to use a specific named configuration from sweep_configs.
+# Set to null or "default" to use the base params below.
+active_config_id: null
+
+# =============================================================================
+# GPU CONFIGURATION
+# =============================================================================
+gpu:
+  enabled: false  # Set true for GPU training (auto-set by notebook)
+  device_id: 0
+
+# =============================================================================
+# SWEEP CONFIGURATION
+# =============================================================================
+# CatBoost is the hero model - sweep is valuable for hyperparameter tuning.
+#
+# Modes:
+#   - "configs": Iterate over sweep_configs list (explicit configs)
+#   - "grid": Expand sweep.grid into Cartesian product of all combinations
+sweep:
+  enabled: true  # Enable sweep for hero model
+  mode: "configs"  # "configs" or "grid"
+  selection_metric: "official_metric"  # PRIMARY: Use official PE metric
+  n_folds: 3  # K-fold CV for robustness
+  
+  # Grid mode: Expand all combinations
+  grid:
+    depth: [4, 6, 8]
+    learning_rate: [0.01, 0.03, 0.05]
+
+# =============================================================================
+# NAMED SWEEP CONFIGURATIONS (explicit config list)
+# =============================================================================
+# Each config has: id, description (optional), and param overrides.
+sweep_configs:
+  - id: "default"
+    description: "Default balanced configuration"
+    params:
+      depth: 6
+      learning_rate: 0.03
+      l2_leaf_reg: 3.0
+
+  - id: "shallow"
+    description: "Shallow trees for simpler patterns"
+    params:
+      depth: 4
+      learning_rate: 0.05
+      l2_leaf_reg: 1.0
+
+  - id: "conservative"
+    description: "Conservative settings with strong regularization"
+    params:
+      depth: 5
+      learning_rate: 0.02
+      l2_leaf_reg: 10.0
+      random_strength: 2.0
+
+  - id: "s1_best"
+    description: "Best configuration for Scenario 1"
+    params:
+      depth: 6
+      learning_rate: 0.03
+      l2_leaf_reg: 3.0
+
+  - id: "s2_best"
+    description: "Best configuration for Scenario 2"
+    params:
+      depth: 6
+      learning_rate: 0.03
+      l2_leaf_reg: 3.0
+
+# =============================================================================
+# MODEL HYPERPARAMETERS (Base Configuration)
+# =============================================================================
+# These are the default parameters used when active_config_id is null.
+# Named configs in sweep_configs override specific values.
+params:
+  # Core
+  loss_function: "RMSE"
+  eval_metric: "RMSE"  # Early stopping metric
+  
+  # Tree structure
+  depth: 6
+  min_data_in_leaf: 20
+  
+  # Learning
+  learning_rate: 0.03
+  iterations: 3000  # High value, rely on early stopping
+  
+  # Regularization
+  l2_leaf_reg: 3.0
+  random_strength: 1.0
+  bagging_temperature: 1.0
+  
+  # Early stopping
+  early_stopping_rounds: 100
+  
+  # System
+  random_seed: 42
+  verbose: 100
+  thread_count: -1
+
+# =============================================================================
+# TRAINING SETTINGS
+# =============================================================================
+training:
+  use_early_stopping: true
+  eval_metric: "RMSE"
+  use_sample_weights: true  # Align with official metric
+
+# =============================================================================
+# CATEGORICAL FEATURES
+# =============================================================================
+# CatBoost handles categoricals natively - no encoding needed
+categorical_features:
+  - "ther_area"
+  - "main_package"
+  - "time_bucket"
+  - "hospital_rate_bin"
+  - "n_gxs_bin"
+
+# =============================================================================
+# SCENARIO-SPECIFIC BEST PARAMS (for quick reference)
+# =============================================================================
+# Mapped to sweep_configs: s1_best, s2_best
+best_params:
+  scenario1:
+    depth: 6
+    learning_rate: 0.03
+    l2_leaf_reg: 3.0
+  scenario2:
+    depth: 6
+    learning_rate: 0.03
+    l2_leaf_reg: 3.0
+
+# =============================================================================
+# SWEEP PRESETS (LOW PRIORITY - only for final validation)
+# =============================================================================
+sweep_presets:
+  # Minimal sweep: 4 combinations
+  minimal:
+    depth: [4, 6]
+    learning_rate: [0.03, 0.05]
+
+# =============================================================================
+# ENSEMBLE SETTINGS
+# =============================================================================
+ensemble:
+  include: true           # Hero model - always include in ensemble
+  weight_optimization: true
+  default_weight: 0.5     # Primary weight - hero model

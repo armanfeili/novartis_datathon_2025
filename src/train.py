@@ -63,7 +63,7 @@ from .data import (
     handle_missing_values, META_COLS, ID_COLS, TIME_COL,
     get_panel, verify_no_future_leakage
 )
-from .features import make_features, select_training_rows, _normalize_scenario, get_features
+from .features import make_features, select_training_rows, _normalize_scenario, get_features, prune_features_by_importance
 from .validation import create_validation_split, get_fold_series
 from .evaluate import (
     compute_metric1, compute_metric2, create_aux_file,
@@ -286,17 +286,36 @@ class ExperimentTracker:
 
 def setup_experiment_tracking(
     run_config: dict,
-    run_name: str
+    run_name: str,
+    tags: Optional[Dict[str, str]] = None,
+    config: Optional[Dict[str, Any]] = None
 ) -> Optional[ExperimentTracker]:
     """
-    Setup experiment tracking from run_config.
+    Setup experiment tracking from run_config with optional auto-start.
+    
+    Section 13.1: Provides consistent experiment tracking setup across all
+    training pipelines with standard run naming and tagging.
     
     Args:
         run_config: Run configuration dictionary
-        run_name: Name for the run
+        run_name: Name for the run (pattern: YYYY-mm-dd_HH-MM_<model>_scenario<1|2>[_suffix])
+        tags: Optional dictionary of tags (e.g., config_hash, git_commit)
+        config: Optional config dict to log as parameters
         
     Returns:
-        ExperimentTracker instance or None
+        ExperimentTracker instance or None if tracking is disabled
+        
+    Example:
+        tracker = setup_experiment_tracking(
+            run_config,
+            run_name='2025-01-15_14-30_catboost_scenario1',
+            tags={'config_hash': 'abc123', 'git_commit': 'def456'},
+            config={'model': 'catboost', 'scenario': 1}
+        )
+        if tracker:
+            with tracker:
+                # ... training code ...
+                tracker.log_metrics({'official_metric': 0.15})
     """
     tracking_config = run_config.get('experiment_tracking', {})
     
@@ -317,6 +336,200 @@ def setup_experiment_tracking(
     )
     
     return tracker
+
+
+def generate_run_name(
+    model_type: str,
+    scenario: int,
+    suffix: Optional[str] = None,
+    timestamp: Optional[str] = None
+) -> str:
+    """
+    Generate a consistent run name following the project convention.
+    
+    Section 13.1: Standard run naming pattern for all experiments.
+    
+    Pattern: YYYY-mm-dd_HH-MM_<model_type>_scenario<1|2>[_suffix]
+    
+    Args:
+        model_type: Type of model (catboost, lightgbm, xgboost, etc.)
+        scenario: Scenario number (1 or 2)
+        suffix: Optional suffix to append (e.g., 'cv', 'hpo', 'sweep')
+        timestamp: Optional timestamp string (defaults to current time)
+        
+    Returns:
+        Formatted run name string
+        
+    Example:
+        >>> generate_run_name('catboost', 1)
+        '2025-01-15_14-30_catboost_scenario1'
+        >>> generate_run_name('catboost', 2, suffix='cv5')
+        '2025-01-15_14-30_catboost_scenario2_cv5'
+    """
+    if timestamp is None:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    
+    run_name = f"{timestamp}_{model_type}_scenario{scenario}"
+    
+    if suffix:
+        run_name = f"{run_name}_{suffix}"
+    
+    return run_name
+
+
+def get_standard_tags(
+    run_config: Dict[str, Any],
+    model_config: Optional[Dict[str, Any]] = None,
+    config_hash: Optional[str] = None
+) -> Dict[str, str]:
+    """
+    Generate standard tags for experiment tracking.
+    
+    Section 13.1: Consistent tagging across all tracked experiments.
+    
+    Args:
+        run_config: Run configuration dictionary
+        model_config: Model configuration dictionary
+        config_hash: Pre-computed config hash
+        
+    Returns:
+        Dictionary of standard tags
+    """
+    tags = {
+        'git_commit': get_git_commit_hash() or 'unknown',
+        'seed': str(run_config.get('reproducibility', {}).get('seed', 42)),
+    }
+    
+    if config_hash:
+        tags['config_hash'] = config_hash
+    
+    if model_config:
+        active_config = model_config.get('_active_config_id')
+        if active_config:
+            tags['config_id'] = active_config
+    
+    return tags
+
+
+def validate_training_data(
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    scenario: int,
+    min_train_rows: int = 100,
+    min_val_rows: int = 20,
+    min_train_series: int = 3,
+    min_val_series: int = 1
+) -> None:
+    """
+    Validate training and validation data before model training.
+    
+    Section 25.1: Safety guards to detect empty or insufficient data
+    with clear error messages.
+    
+    Args:
+        train_df: Training DataFrame
+        val_df: Validation DataFrame
+        scenario: Scenario number for context in error messages
+        min_train_rows: Minimum required training rows
+        min_val_rows: Minimum required validation rows
+        min_train_series: Minimum required unique training series
+        min_val_series: Minimum required unique validation series
+        
+    Raises:
+        ValueError: If data is empty or below minimum thresholds
+        
+    Example:
+        validate_training_data(train_df, val_df, scenario=1)
+    """
+    # Check for empty data
+    if train_df is None or len(train_df) == 0:
+        raise ValueError(
+            f"Scenario {scenario}: Training data is empty. "
+            "Check data loading and filtering steps."
+        )
+    
+    if val_df is None or len(val_df) == 0:
+        raise ValueError(
+            f"Scenario {scenario}: Validation data is empty. "
+            "Check validation split configuration (val_fraction may be too small)."
+        )
+    
+    # Check minimum rows
+    if len(train_df) < min_train_rows:
+        raise ValueError(
+            f"Scenario {scenario}: Training data has only {len(train_df)} rows "
+            f"(minimum: {min_train_rows}). Consider using more data or reducing val_fraction."
+        )
+    
+    if len(val_df) < min_val_rows:
+        raise ValueError(
+            f"Scenario {scenario}: Validation data has only {len(val_df)} rows "
+            f"(minimum: {min_val_rows}). Consider increasing val_fraction."
+        )
+    
+    # Check minimum series
+    id_cols = ['country', 'brand_name']
+    if all(col in train_df.columns for col in id_cols):
+        n_train_series = train_df[id_cols].drop_duplicates().shape[0]
+        n_val_series = val_df[id_cols].drop_duplicates().shape[0]
+        
+        if n_train_series < min_train_series:
+            raise ValueError(
+                f"Scenario {scenario}: Training data has only {n_train_series} unique series "
+                f"(minimum: {min_train_series}). Need more diverse training data."
+            )
+        
+        if n_val_series < min_val_series:
+            raise ValueError(
+                f"Scenario {scenario}: Validation data has only {n_val_series} unique series "
+                f"(minimum: {min_val_series}). Validation may not be representative."
+            )
+        
+        # Log data statistics
+        logger.info(f"Scenario {scenario} data validation passed:")
+        logger.info(f"  Training: {len(train_df)} rows, {n_train_series} series")
+        logger.info(f"  Validation: {len(val_df)} rows, {n_val_series} series")
+
+
+def ensure_reproducibility(
+    run_config: Dict[str, Any],
+    artifacts_dir: Optional[Path] = None
+) -> str:
+    """
+    Ensure reproducibility by setting seed and creating config snapshot.
+    
+    Section 25.2: Consistent reproducibility setup across all entrypoints.
+    
+    Args:
+        run_config: Run configuration dictionary
+        artifacts_dir: Optional directory to save reproducibility info
+        
+    Returns:
+        The seed value that was set
+        
+    Side Effects:
+        - Calls set_seed() with the configured seed
+        - If artifacts_dir provided, saves reproducibility_info.json
+    """
+    seed = run_config.get('reproducibility', {}).get('seed', 42)
+    set_seed(seed)
+    
+    if artifacts_dir:
+        artifacts_dir = Path(artifacts_dir)
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        
+        repro_info = {
+            'seed': seed,
+            'git_commit': get_git_commit_hash(),
+            'timestamp': datetime.now().isoformat(),
+            'python_version': sys.version,
+        }
+        
+        with open(artifacts_dir / 'reproducibility_info.json', 'w') as f:
+            json.dump(repro_info, f, indent=2)
+    
+    logger.debug(f"Reproducibility configured with seed={seed}")
+    return str(seed)
 
 
 # ==============================================================================
@@ -573,6 +786,209 @@ class TrainingCheckpoint:
                 float('inf') if self.minimize else float('-inf'))
         except Exception:
             return float('inf') if self.minimize else float('-inf')
+    
+    def has_checkpoint(self) -> bool:
+        """Check if any checkpoint exists."""
+        checkpoints = list(self.checkpoint_dir.glob("checkpoint_*"))
+        return len(checkpoints) > 0 or (self.checkpoint_dir / "best").exists()
+    
+    def get_best_metric(self) -> Optional[float]:
+        """Get the best metric value from all checkpoints."""
+        best_path = self.checkpoint_dir / "best"
+        if best_path.exists():
+            return self._get_checkpoint_metric(best_path)
+        return None
+    
+    def save_scenario_checkpoint(
+        self,
+        model: Any,
+        scenario: int,
+        metrics: Dict[str, float],
+        config: Optional[Dict] = None,
+        model_type: str = 'catboost'
+    ) -> Path:
+        """
+        Save a checkpoint for a specific scenario.
+        
+        Section 14.2: Per-scenario checkpointing with consistent naming.
+        
+        Args:
+            model: Trained model instance
+            scenario: Scenario number (1 or 2)
+            metrics: Metrics dictionary including 'official_metric'
+            config: Optional configuration dictionary
+            model_type: Type of model for naming
+            
+        Returns:
+            Path to saved checkpoint directory
+        """
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        checkpoint_name = f"scenario{scenario}_{model_type}_{timestamp}"
+        checkpoint_path = self.checkpoint_dir / checkpoint_name
+        checkpoint_path.mkdir(parents=True, exist_ok=True)
+        
+        # Save model
+        model_path = checkpoint_path / f"model_scenario{scenario}.bin"
+        model.save(str(model_path))
+        
+        # Save state
+        state = {
+            'scenario': scenario,
+            'model_type': model_type,
+            'metrics': metrics,
+            'timestamp': timestamp,
+            'checkpoint_name': checkpoint_name
+        }
+        
+        if config:
+            state['config'] = config
+        
+        state_path = checkpoint_path / "scenario_state.json"
+        with open(state_path, 'w') as f:
+            json.dump(state, f, indent=2, default=str)
+        
+        # Check if this is the best for this scenario
+        official_metric = metrics.get('official_metric', float('inf'))
+        best_scenario_path = self.checkpoint_dir / f"best_scenario{scenario}"
+        
+        should_save_best = True
+        if best_scenario_path.exists():
+            prev_best = self._get_checkpoint_metric(best_scenario_path)
+            if self.minimize:
+                should_save_best = official_metric < prev_best
+            else:
+                should_save_best = official_metric > prev_best
+        
+        if should_save_best:
+            if best_scenario_path.exists():
+                shutil.rmtree(best_scenario_path)
+            shutil.copytree(checkpoint_path, best_scenario_path)
+            logger.info(f"New best for scenario {scenario}: {official_metric:.4f}")
+        
+        logger.info(f"Saved scenario {scenario} checkpoint: {checkpoint_path}")
+        return checkpoint_path
+    
+    def load_scenario_checkpoint(
+        self,
+        scenario: int,
+        model_class: Optional[type] = None,
+        model_config: Optional[dict] = None,
+        load_best: bool = True
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Load a checkpoint for a specific scenario.
+        
+        Section 14.3: Resume from scenario-specific checkpoint.
+        
+        Args:
+            scenario: Scenario number (1 or 2)
+            model_class: Model class to instantiate
+            model_config: Configuration for model instantiation
+            load_best: If True, load best checkpoint; otherwise load latest
+            
+        Returns:
+            Dictionary with loaded state or None if not found
+        """
+        if load_best:
+            checkpoint_path = self.checkpoint_dir / f"best_scenario{scenario}"
+        else:
+            # Find latest checkpoint for this scenario
+            pattern = f"scenario{scenario}_*"
+            checkpoints = sorted(
+                self.checkpoint_dir.glob(pattern),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True
+            )
+            checkpoint_path = checkpoints[0] if checkpoints else None
+        
+        if checkpoint_path is None or not checkpoint_path.exists():
+            logger.info(f"No checkpoint found for scenario {scenario}")
+            return None
+        
+        # Load state
+        state_path = checkpoint_path / "scenario_state.json"
+        if not state_path.exists():
+            logger.warning(f"Checkpoint state not found: {state_path}")
+            return None
+        
+        with open(state_path, 'r') as f:
+            state = json.load(f)
+        
+        # Load model
+        model_path = checkpoint_path / f"model_scenario{scenario}.bin"
+        if model_class is not None and model_path.exists():
+            model = model_class(model_config or {})
+            model.load(str(model_path))
+            state['model'] = model
+        else:
+            state['model_path'] = str(model_path)
+        
+        logger.info(f"Loaded scenario {scenario} checkpoint from: {checkpoint_path}")
+        return state
+    
+    def cleanup_scenario_checkpoints(self, scenario: int, keep_best: bool = True):
+        """
+        Clean up old checkpoints for a specific scenario.
+        
+        Section 14.4: Cleanup logic that preserves best checkpoints.
+        
+        Args:
+            scenario: Scenario number to clean up
+            keep_best: If True, keep the best_scenarioN directory
+        """
+        pattern = f"scenario{scenario}_*"
+        checkpoints = list(self.checkpoint_dir.glob(pattern))
+        
+        for cp in checkpoints:
+            if cp.is_dir() and cp.name != f"best_scenario{scenario}":
+                try:
+                    shutil.rmtree(cp)
+                    logger.debug(f"Removed old scenario {scenario} checkpoint: {cp}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove checkpoint {cp}: {e}")
+        
+        if not keep_best:
+            best_path = self.checkpoint_dir / f"best_scenario{scenario}"
+            if best_path.exists():
+                try:
+                    shutil.rmtree(best_path)
+                    logger.debug(f"Removed best scenario {scenario} checkpoint")
+                except Exception as e:
+                    logger.warning(f"Failed to remove best checkpoint: {e}")
+
+
+def load_checkpoint_if_requested(
+    checkpoint_dir: Union[str, Path],
+    scenario: int,
+    resume_checkpoint: bool = False,
+    model_class: Optional[type] = None,
+    model_config: Optional[dict] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Load checkpoint if resume is requested.
+    
+    Section 14.3: Helper function for resume from checkpoint capability.
+    
+    Args:
+        checkpoint_dir: Directory containing checkpoints
+        scenario: Scenario number to resume
+        resume_checkpoint: If True, attempt to load checkpoint
+        model_class: Model class for instantiation
+        model_config: Configuration for model instantiation
+        
+    Returns:
+        Loaded checkpoint state or None if not resuming
+    """
+    if not resume_checkpoint:
+        return None
+    
+    checkpoint_mgr = TrainingCheckpoint(checkpoint_dir=checkpoint_dir)
+    return checkpoint_mgr.load_scenario_checkpoint(
+        scenario=scenario,
+        model_class=model_class,
+        model_config=model_config,
+        load_best=True
+    )
 
 
 # ==============================================================================
@@ -738,6 +1154,73 @@ def validate_weights_correlation(
 # HYPERPARAMETER OPTIMIZATION (Section 5.5)
 # ==============================================================================
 
+def get_default_search_space(model_type: str) -> Dict[str, List]:
+    """
+    Get default search space for hyperparameter optimization.
+    
+    Section 16.1.2: Default search spaces for supported model types.
+    
+    Args:
+        model_type: Type of model
+        
+    Returns:
+        Dictionary with parameter ranges [min, max]
+    """
+    search_spaces = {
+        'catboost': {
+            'depth': [4, 8],
+            'learning_rate': [0.01, 0.1],
+            'l2_leaf_reg': [1.0, 10.0],
+            'min_data_in_leaf': [10, 50],
+            'random_strength': [0.0, 5.0],
+            'bagging_temperature': [0.0, 5.0],
+        },
+        'lightgbm': {
+            'num_leaves': [15, 63],
+            'learning_rate': [0.01, 0.1],
+            'min_data_in_leaf': [10, 50],
+            'feature_fraction': [0.6, 1.0],
+            'bagging_fraction': [0.6, 1.0],
+        },
+        'xgboost': {
+            'max_depth': [4, 8],
+            'learning_rate': [0.01, 0.1],
+            'min_child_weight': [1, 10],
+            'colsample_bytree': [0.6, 1.0],
+            'subsample': [0.6, 1.0],
+        }
+    }
+    return search_spaces.get(model_type, {})
+
+
+def merge_search_space(
+    user_search_space: Optional[Dict[str, List]],
+    model_type: str
+) -> Dict[str, List]:
+    """
+    Merge user-provided search space with defaults.
+    
+    Section 16.1.2: User can override only some ranges, rest use defaults.
+    
+    Args:
+        user_search_space: User-provided search space (optional)
+        model_type: Type of model
+        
+    Returns:
+        Merged search space dictionary
+    """
+    default_space = get_default_search_space(model_type)
+    
+    if user_search_space is None:
+        return default_space
+    
+    # Merge: user overrides defaults
+    merged = default_space.copy()
+    merged.update(user_search_space)
+    
+    return merged
+
+
 def create_optuna_objective(
     X_train: pd.DataFrame,
     y_train: pd.Series,
@@ -748,102 +1231,115 @@ def create_optuna_objective(
     scenario: int,
     model_type: str = 'catboost',
     search_space: Optional[Dict] = None,
-    run_config: Optional[Dict] = None
+    run_config: Optional[Dict] = None,
+    disable_tracking: bool = True
 ) -> Callable:
     """
     Create an Optuna objective function for hyperparameter optimization.
+    
+    Section 16.1.1: Uses train_scenario_model with model_config={'params': params}.
+    Experiment tracking is disabled by default to avoid excessive logging.
     
     Args:
         X_train, y_train, meta_train: Training data
         X_val, y_val, meta_val: Validation data
         scenario: Scenario number
         model_type: Type of model to tune
-        search_space: Custom search space dict
+        search_space: Custom search space dict (merged with defaults)
         run_config: Run configuration
+        disable_tracking: If True, disable experiment tracking inside objective
         
     Returns:
         Objective function for Optuna
     """
+    # Merge user search space with defaults
+    merged_search_space = merge_search_space(search_space, model_type)
+    
+    # Create run_config copy without tracking if needed
+    hpo_run_config = run_config.copy() if run_config else {}
+    if disable_tracking:
+        hpo_run_config['experiment_tracking'] = {'enabled': False}
+    
     def objective(trial: 'optuna.Trial') -> float:
         """Optuna objective function."""
         # Define hyperparameters based on model type
         if model_type == 'catboost':
             params = {
                 'depth': trial.suggest_int('depth', 
-                    search_space.get('depth', [4, 8])[0],
-                    search_space.get('depth', [4, 8])[1]
+                    merged_search_space.get('depth', [4, 8])[0],
+                    merged_search_space.get('depth', [4, 8])[1]
                 ),
                 'learning_rate': trial.suggest_float('learning_rate',
-                    search_space.get('learning_rate', [0.01, 0.1])[0],
-                    search_space.get('learning_rate', [0.01, 0.1])[1],
+                    merged_search_space.get('learning_rate', [0.01, 0.1])[0],
+                    merged_search_space.get('learning_rate', [0.01, 0.1])[1],
                     log=True
                 ),
                 'l2_leaf_reg': trial.suggest_float('l2_leaf_reg',
-                    search_space.get('l2_leaf_reg', [1.0, 10.0])[0],
-                    search_space.get('l2_leaf_reg', [1.0, 10.0])[1],
+                    merged_search_space.get('l2_leaf_reg', [1.0, 10.0])[0],
+                    merged_search_space.get('l2_leaf_reg', [1.0, 10.0])[1],
                     log=True
                 ),
                 'min_data_in_leaf': trial.suggest_int('min_data_in_leaf',
-                    search_space.get('min_data_in_leaf', [10, 50])[0],
-                    search_space.get('min_data_in_leaf', [10, 50])[1]
+                    merged_search_space.get('min_data_in_leaf', [10, 50])[0],
+                    merged_search_space.get('min_data_in_leaf', [10, 50])[1]
                 ),
                 'random_strength': trial.suggest_float('random_strength',
-                    search_space.get('random_strength', [0.0, 5.0])[0],
-                    search_space.get('random_strength', [0.0, 5.0])[1]
+                    merged_search_space.get('random_strength', [0.0, 5.0])[0],
+                    merged_search_space.get('random_strength', [0.0, 5.0])[1]
                 ),
                 'bagging_temperature': trial.suggest_float('bagging_temperature',
-                    search_space.get('bagging_temperature', [0.0, 5.0])[0],
-                    search_space.get('bagging_temperature', [0.0, 5.0])[1]
+                    merged_search_space.get('bagging_temperature', [0.0, 5.0])[0],
+                    merged_search_space.get('bagging_temperature', [0.0, 5.0])[1]
                 ),
             }
             
         elif model_type == 'lightgbm':
             params = {
                 'num_leaves': trial.suggest_int('num_leaves',
-                    search_space.get('num_leaves', [15, 63])[0],
-                    search_space.get('num_leaves', [15, 63])[1]
+                    merged_search_space.get('num_leaves', [15, 63])[0],
+                    merged_search_space.get('num_leaves', [15, 63])[1]
                 ),
                 'learning_rate': trial.suggest_float('learning_rate',
-                    search_space.get('learning_rate', [0.01, 0.1])[0],
-                    search_space.get('learning_rate', [0.01, 0.1])[1],
+                    merged_search_space.get('learning_rate', [0.01, 0.1])[0],
+                    merged_search_space.get('learning_rate', [0.01, 0.1])[1],
                     log=True
                 ),
                 'min_data_in_leaf': trial.suggest_int('min_data_in_leaf',
-                    search_space.get('min_data_in_leaf', [10, 50])[0],
-                    search_space.get('min_data_in_leaf', [10, 50])[1]
+                    merged_search_space.get('min_data_in_leaf', [10, 50])[0],
+                    merged_search_space.get('min_data_in_leaf', [10, 50])[1]
                 ),
                 'feature_fraction': trial.suggest_float('feature_fraction',
-                    search_space.get('feature_fraction', [0.6, 1.0])[0],
-                    search_space.get('feature_fraction', [0.6, 1.0])[1]
+                    merged_search_space.get('feature_fraction', [0.6, 1.0])[0],
+                    merged_search_space.get('feature_fraction', [0.6, 1.0])[1]
                 ),
                 'bagging_fraction': trial.suggest_float('bagging_fraction',
-                    search_space.get('bagging_fraction', [0.6, 1.0])[0],
-                    search_space.get('bagging_fraction', [0.6, 1.0])[1]
+                    merged_search_space.get('bagging_fraction', [0.6, 1.0])[0],
+                    merged_search_space.get('bagging_fraction', [0.6, 1.0])[1]
                 ),
             }
             
         elif model_type == 'xgboost':
             params = {
                 'max_depth': trial.suggest_int('max_depth',
-                    search_space.get('max_depth', [4, 8])[0],
-                    search_space.get('max_depth', [4, 8])[1]
+                    merged_search_space.get('max_depth', [4, 8])[0],
+                    merged_search_space.get('max_depth', [4, 8])[1]
                 ),
                 'learning_rate': trial.suggest_float('learning_rate',
-                    search_space.get('learning_rate', [0.01, 0.1])[0],
-                    search_space.get('learning_rate', [0.01, 0.1])[1],
+                    merged_search_space.get('learning_rate', [0.01, 0.1])[0],
+                    merged_search_space.get('learning_rate', [0.01, 0.1])[1],
                     log=True
                 ),
                 'min_child_weight': trial.suggest_int('min_child_weight',
-                    search_space.get('min_child_weight', [1, 10])[0],
-                    search_space.get('min_child_weight', [1, 10])[1]
+                    merged_search_space.get('min_child_weight', [1, 10])[0],
+                    merged_search_space.get('min_child_weight', [1, 10])[1]
                 ),
                 'colsample_bytree': trial.suggest_float('colsample_bytree',
-                    search_space.get('colsample_bytree', [0.6, 1.0])[0],
-                    search_space.get('colsample_bytree', [0.6, 1.0])[1]
+                    merged_search_space.get('colsample_bytree', [0.6, 1.0])[0],
+                    merged_search_space.get('colsample_bytree', [0.6, 1.0])[1]
                 ),
                 'subsample': trial.suggest_float('subsample',
-                    search_space.get('subsample', [0.6, 1.0])[0],
-                    search_space.get('subsample', [0.6, 1.0])[1]
+                    merged_search_space.get('subsample', [0.6, 1.0])[0],
+                    merged_search_space.get('subsample', [0.6, 1.0])[1]
                 ),
             }
         else:
@@ -857,7 +1353,7 @@ def create_optuna_objective(
                 scenario=scenario,
                 model_type=model_type,
                 model_config={'params': params},
-                run_config=run_config
+                run_config=hpo_run_config
             )
             
             # Return official metric (to minimize)
@@ -898,6 +1394,9 @@ def run_hyperparameter_optimization(
     """
     Run hyperparameter optimization using Optuna.
     
+    Section 16.2: HPO runner with configurable n_trials, timeout, and search space.
+    Results are saved to artifacts_dir for later use.
+    
     Args:
         X_train, y_train, meta_train: Training data
         X_val, y_val, meta_val: Validation data  
@@ -905,7 +1404,7 @@ def run_hyperparameter_optimization(
         model_type: Type of model to tune
         n_trials: Number of optimization trials
         timeout: Maximum time in seconds (None for no limit)
-        search_space: Custom search space dict (uses defaults if None)
+        search_space: Custom search space dict (merged with defaults)
         run_config: Run configuration
         study_name: Name for Optuna study
         storage: Storage URL for distributed optimization
@@ -920,33 +1419,8 @@ def run_hyperparameter_optimization(
             "Install with: pip install optuna"
         )
     
-    # Default search spaces
-    default_search_spaces = {
-        'catboost': {
-            'depth': [4, 8],
-            'learning_rate': [0.01, 0.1],
-            'l2_leaf_reg': [1.0, 10.0],
-            'min_data_in_leaf': [10, 50],
-            'random_strength': [0.0, 5.0],
-            'bagging_temperature': [0.0, 5.0],
-        },
-        'lightgbm': {
-            'num_leaves': [15, 63],
-            'learning_rate': [0.01, 0.1],
-            'min_data_in_leaf': [10, 50],
-            'feature_fraction': [0.6, 1.0],
-            'bagging_fraction': [0.6, 1.0],
-        },
-        'xgboost': {
-            'max_depth': [4, 8],
-            'learning_rate': [0.01, 0.1],
-            'min_child_weight': [1, 10],
-            'colsample_bytree': [0.6, 1.0],
-            'subsample': [0.6, 1.0],
-        }
-    }
-    
-    search_space = search_space or default_search_spaces.get(model_type, {})
+    # Merge user search space with defaults
+    merged_search_space = merge_search_space(search_space, model_type)
     
     # Create study
     study_name = study_name or f"{model_type}_scenario{scenario}_{datetime.now():%Y%m%d_%H%M%S}"
@@ -959,13 +1433,13 @@ def run_hyperparameter_optimization(
         pruner=MedianPruner(n_startup_trials=10, n_warmup_steps=0)
     )
     
-    # Create objective
+    # Create objective with merged search space
     objective = create_optuna_objective(
         X_train, y_train, meta_train,
         X_val, y_val, meta_val,
         scenario=scenario,
         model_type=model_type,
-        search_space=search_space,
+        search_space=merged_search_space,
         run_config=run_config
     )
     
@@ -1027,6 +1501,82 @@ def run_hyperparameter_optimization(
     logger.info(f"Best params: {study.best_params}")
     
     return results
+
+
+def is_hpo_enabled(run_config: Dict[str, Any]) -> bool:
+    """
+    Check if HPO is enabled in run configuration.
+    
+    Section 16.2.3: Simple boolean flag for HPO enablement.
+    
+    Checks for `hpo.enabled` in run_config.
+    
+    Args:
+        run_config: Run configuration dictionary
+        
+    Returns:
+        True if HPO is enabled
+    """
+    hpo_config = run_config.get('hpo', {})
+    return hpo_config.get('enabled', False)
+
+
+def get_hpo_settings(run_config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Get HPO settings from run configuration.
+    
+    Section 16.2.3: Extract HPO settings with defaults.
+    
+    Args:
+        run_config: Run configuration dictionary
+        
+    Returns:
+        Dictionary with n_trials, timeout, and other HPO settings
+    """
+    hpo_config = run_config.get('hpo', {})
+    return {
+        'enabled': hpo_config.get('enabled', False),
+        'n_trials': hpo_config.get('n_trials', 50),
+        'timeout': hpo_config.get('timeout', 3600),
+        'search_space': hpo_config.get('search_space'),
+    }
+
+
+def propagate_hpo_best_params(
+    model_config: Dict[str, Any],
+    hpo_results: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Propagate best HPO parameters into model configuration.
+    
+    Section 16.2.2: After HPO, merge best params back into model_config.
+    
+    Args:
+        model_config: Original model configuration
+        hpo_results: Results from run_hyperparameter_optimization
+        
+    Returns:
+        Updated model configuration with best params
+    """
+    if not hpo_results or 'best_params' not in hpo_results:
+        return model_config
+    
+    updated_config = model_config.copy()
+    
+    # Merge best params into params section
+    if 'params' not in updated_config:
+        updated_config['params'] = {}
+    
+    updated_config['params'].update(hpo_results['best_params'])
+    
+    # Add metadata about HPO source
+    updated_config['_hpo_applied'] = True
+    updated_config['_hpo_best_value'] = hpo_results.get('best_value')
+    updated_config['_hpo_n_trials'] = hpo_results.get('n_trials')
+    
+    logger.info(f"Applied HPO best params to model config: {hpo_results['best_params']}")
+    
+    return updated_config
 
 
 # ==============================================================================
@@ -1131,6 +1681,84 @@ class MemoryProfiler:
         
         current, peak = tracemalloc.get_traced_memory()
         logger.info(f"Memory: current={current/1024**2:.1f}MB, peak={peak/1024**2:.1f}MB")
+    
+    def save_report(self, artifacts_dir: Union[str, Path]) -> Optional[Path]:
+        """
+        Save memory profiling report to artifacts directory.
+        
+        Section 17.2: Save memory_report.json to artifacts_dir.
+        
+        Args:
+            artifacts_dir: Directory to save the report
+            
+        Returns:
+            Path to saved report or None if profiling disabled
+        """
+        if not self.enabled:
+            return None
+        
+        report = self.get_report()
+        if not report.get('enabled'):
+            return None
+        
+        artifacts_dir = Path(artifacts_dir)
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        
+        report_path = artifacts_dir / 'memory_report.json'
+        with open(report_path, 'w') as f:
+            json.dump(report, f, indent=2, default=str)
+        
+        logger.info(f"Memory report saved to {report_path}")
+        
+        # Log top memory growth sites
+        if 'top_memory_growth' in report:
+            logger.debug("Top memory growth sites:")
+            for item in report['top_memory_growth'][:5]:
+                logger.debug(f"  {item['file']}: {item['size_diff_mb']:.2f}MB")
+        
+        return report_path
+    
+    def __enter__(self):
+        """Context manager entry."""
+        self.start()
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit."""
+        self.stop()
+        return False
+
+
+def create_memory_profiler(
+    run_config: Dict[str, Any],
+    cli_enabled: Optional[bool] = None
+) -> MemoryProfiler:
+    """
+    Create MemoryProfiler based on configuration.
+    
+    Section 17.1: Optional memory profiling controlled by config or CLI flag.
+    
+    Args:
+        run_config: Run configuration dictionary
+        cli_enabled: Override from CLI flag (takes precedence)
+        
+    Returns:
+        MemoryProfiler instance (enabled or disabled based on config)
+    """
+    # CLI flag takes precedence
+    if cli_enabled is not None:
+        enabled = cli_enabled
+    else:
+        # Check run_config for profiling settings
+        profiling_config = run_config.get('profiling', {})
+        enabled = profiling_config.get('memory', False)
+    
+    profiler = MemoryProfiler(enabled=enabled)
+    
+    if enabled:
+        logger.info("Memory profiling enabled")
+    
+    return profiler
 
 
 # ==============================================================================
@@ -1623,27 +2251,49 @@ def compute_metric_aligned_weights(
 
 
 def split_features_target_meta(
-    df: pd.DataFrame
+    df: pd.DataFrame,
+    validate_target: bool = True
 ) -> Tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
     """
     Separate pure features from target and meta columns.
     
     This GUARANTEES bucket/y_norm never leak into model features.
     
+    Section 18.1.1: META_COLS always excluded from features.
+    Section 18.1.2: Symmetric with get_feature_matrix_and_meta for inference.
+    
     Args:
         df: DataFrame with features, target, and meta columns
+        validate_target: If True, raises error if TARGET_COL is missing
         
     Returns:
         X: Pure features for model (excludes all META_COLS)
         y: Target (y_norm)
         meta: Meta columns for weights, grouping, metrics
+        
+    Raises:
+        ValueError: If TARGET_COL is missing and validate_target=True
+        ValueError: If META_COLS leak into features
     """
+    # 18.1.2: Check that TARGET_COL exists (training mode requires it)
+    if validate_target and TARGET_COL not in df.columns:
+        raise ValueError(
+            f"TARGET_COL '{TARGET_COL}' not found in DataFrame. "
+            f"Available columns: {list(df.columns)[:20]}..."
+        )
+    
     # Identify feature columns (everything except meta)
+    # 18.1.1: Use META_COLS consistently to guarantee no leakage
     feature_cols = [c for c in df.columns if c not in META_COLS]
     
     # Split
     X = df[feature_cols].copy()
-    y = df[TARGET_COL].copy()
+    
+    # Handle target (may be missing for inference mode)
+    if TARGET_COL in df.columns:
+        y = df[TARGET_COL].copy()
+    else:
+        y = pd.Series(dtype=float)
     
     # Meta columns that exist in the dataframe
     meta_cols_present = [c for c in META_COLS if c in df.columns]
@@ -1651,12 +2301,23 @@ def split_features_target_meta(
     
     # Log
     logger.info(f"Features: {len(feature_cols)} columns")
-    logger.info(f"Meta: {len(meta_cols_present)} columns")
+    logger.info(f"Meta: {len(meta_cols_present)} columns: {meta_cols_present}")
     
-    # Validate no leakage
+    # 18.1.1: Validate no leakage - raise immediately if any META_COLS in features
     leaked = set(X.columns) & set(META_COLS)
     if leaked:
-        raise ValueError(f"LEAKAGE DETECTED! Meta columns in features: {leaked}")
+        raise ValueError(
+            f"LEAKAGE DETECTED! Meta columns in features: {leaked}. "
+            f"Check that META_COLS definition matches data.yaml columns.meta_cols."
+        )
+    
+    # Additional validation: check for suspicious column patterns
+    suspicious_patterns = ['_target', '_bucket', '_y_norm', 'future_', 'label_']
+    suspicious_cols = [c for c in X.columns if any(p in c.lower() for p in suspicious_patterns)]
+    if suspicious_cols:
+        logger.warning(
+            f"Suspicious columns detected in features (may indicate leakage): {suspicious_cols[:10]}"
+        )
     
     return X, y, meta
 
@@ -1670,6 +2331,8 @@ def get_feature_matrix_and_meta(
     CRITICAL: Uses META_COLS same as training's split_features_target_meta
     to ensure feature_cols match the model exactly!
     
+    Section 18.1.2: Symmetric with split_features_target_meta for training.
+    
     Args:
         df: DataFrame with features and meta columns
         
@@ -1679,20 +2342,62 @@ def get_feature_matrix_and_meta(
     """
     # Use META_COLS to exclude same columns as training
     # This ensures feature columns match the trained model exactly
+    # Also exclude raw categorical columns that are only used for encoding (not as direct features)
+    raw_categoricals_to_exclude = ['ther_area', 'main_package']  # These are encoded, not used directly
+    
     feature_cols = []
     for col in df.columns:
         if col in META_COLS:
             continue
+        if col in raw_categoricals_to_exclude:
+            continue  # Exclude raw categoricals - only encoded versions should be features
         if pd.api.types.is_numeric_dtype(df[col]):
             feature_cols.append(col)
         elif df[col].dtype.name == 'category':
-            feature_cols.append(col)
+            # Only include categorical columns that are encoded versions (have '_encoded' suffix)
+            # Raw categoricals like 'ther_area' should be excluded - they're encoded elsewhere
+            if col.endswith('_encoded'):
+                feature_cols.append(col)
+            # For other categoricals, exclude them (they should be encoded first)
+            # This prevents issues with CatBoost expecting them in cat_features list
     
     X = df[feature_cols].copy()
+    
+    # Ensure all categorical-like features are integers (for CatBoost compatibility)
+    # CatBoost requires categorical features to be integers, not floats
+    categorical_patterns = ['_encoded', '_bin']  # Patterns that indicate categorical features
+    
+    for col in X.columns:
+        is_categorical = (
+            col.endswith('_encoded') or
+            col.endswith('_bin') or
+            X[col].dtype.name == 'category'
+        )
+        
+        if is_categorical:
+            if X[col].dtype.name == 'category':
+                # Category dtype: convert to codes
+                X[col] = X[col].cat.codes.astype(int)
+                X[col] = X[col].replace(-1, 0).astype(int)  # Replace missing with 0
+            elif X[col].dtype in ['float64', 'float32']:
+                # Float: convert to int (e.g., 0.0 -> 0)
+                X[col] = X[col].fillna(0).astype(int)
+            elif pd.api.types.is_integer_dtype(X[col]):
+                # Already integer: ensure no NaN
+                X[col] = X[col].fillna(0).astype(int)
     
     # Meta columns that exist
     meta_cols_present = [c for c in META_COLS if c in df.columns]
     meta = df[meta_cols_present].copy()
+    
+    # 18.1.2: Log for debugging symmetry issues
+    logger.debug(f"Inference features: {len(feature_cols)} columns")
+    logger.debug(f"Inference meta: {len(meta_cols_present)} columns")
+    
+    # Validate no meta columns in features
+    leaked = set(X.columns) & set(META_COLS)
+    if leaked:
+        raise ValueError(f"LEAKAGE DETECTED in inference! Meta columns in features: {leaked}")
     
     return X, meta
 
@@ -1880,6 +2585,64 @@ def compute_sample_weights(
     return weights
 
 
+# ==============================================================================
+# BONUS EXPERIMENTS: B10 - Target Transform
+# ==============================================================================
+
+def transform_target(y: np.ndarray, transform_config: dict) -> Tuple[np.ndarray, dict]:
+    """
+    Transform target variable (B10: Target Transform).
+    
+    Args:
+        y: Target values (normalized volume)
+        transform_config: Transform configuration dict
+        
+    Returns:
+        (transformed_y, transform_params) where transform_params can be used for inverse
+    """
+    transform_type = transform_config.get('type', 'none')
+    epsilon = float(transform_config.get('epsilon', 1e-6))  # Ensure float type
+    
+    if transform_type == 'none':
+        return y.copy(), {'type': 'none'}
+    elif transform_type == 'log1p':
+        y_transformed = np.log1p(np.maximum(y, 0) + epsilon)
+        return y_transformed, {'type': 'log1p', 'epsilon': epsilon}
+    elif transform_type == 'power':
+        power_exp = float(transform_config.get('power_exponent', 0.5))  # Ensure float type
+        y_transformed = np.power(np.maximum(y, 0) + epsilon, power_exp)
+        return y_transformed, {'type': 'power', 'exponent': power_exp, 'epsilon': epsilon}
+    else:
+        raise ValueError(f"Unknown target transform type: {transform_type}")
+
+
+def inverse_transform_target(y_transformed: np.ndarray, transform_params: dict) -> np.ndarray:
+    """
+    Inverse transform target variable.
+    
+    Args:
+        y_transformed: Transformed target values
+        transform_params: Parameters from transform_target
+        
+    Returns:
+        Original scale target values
+    """
+    transform_type = transform_params.get('type', 'none')
+    epsilon = transform_params.get('epsilon', 1e-6)
+    
+    if transform_type == 'none':
+        return y_transformed.copy()
+    elif transform_type == 'log1p':
+        y_original = np.expm1(y_transformed) - epsilon
+        return np.maximum(y_original, 0.0)
+    elif transform_type == 'power':
+        power_exp = transform_params.get('exponent', 0.5)
+        y_original = np.power(np.maximum(y_transformed, 0), 1.0 / power_exp) - epsilon
+        return np.maximum(y_original, 0.0)
+    else:
+        raise ValueError(f"Unknown transform type: {transform_type}")
+
+
 def train_scenario_model(
     X_train: pd.DataFrame,
     y_train: pd.Series,
@@ -1901,6 +2664,8 @@ def train_scenario_model(
     Uses sample weights from META to align with official metric.
     Optionally saves unified metric records for training/validation.
     
+    Section 18.2: Standard model interface with consistent metric computation.
+    
     Args:
         X_train, y_train, meta_train: Training data
         X_val, y_val, meta_val: Validation data
@@ -1914,10 +2679,42 @@ def train_scenario_model(
         
     Returns:
         (trained_model, metrics_dict)
+        
+    Note:
+        All model wrappers must support:
+        - fit(X_train, y_train, X_val=None, y_val=None, sample_weight=None)
+        - predict(X)
     """
     scenario = _normalize_scenario(scenario)
+    
+    # 18.2.2: Validate that avg_vol_12m is present in meta_val (required for metric computation)
+    if 'avg_vol_12m' not in meta_val.columns:
+        raise ValueError(
+            "meta_val must contain 'avg_vol_12m' for official metric computation. "
+            f"Available columns: {list(meta_val.columns)}"
+        )
+    
+    # BONUS: B10 - Apply target transform if configured
+    transform_config = run_config.get('target_transform', {}) if run_config else {}
+    transform_type = transform_config.get('type', 'none')
+    
+    y_train_original = y_train.copy()
+    y_val_original = y_val.copy()
+    transform_params = None
+    
+    if transform_type != 'none':
+        y_train_transformed, transform_params = transform_target(y_train.values, transform_config)
+        y_val_transformed, _ = transform_target(y_val.values, transform_config)
+        y_train = pd.Series(y_train_transformed, index=y_train.index)
+        y_val = pd.Series(y_val_transformed, index=y_val.index)
+        logger.info(f"Applied target transform: {transform_type}")
+    
     # Import model class
     model = _get_model(model_type, model_config)
+    
+    # Store transform params in model if it supports it (for inference)
+    if hasattr(model, '_transform_params'):
+        model._transform_params = transform_params
     
     # Compute sample weights (using run_config if available)
     sample_weights = compute_sample_weights(meta_train, scenario, config=run_config)
@@ -1948,6 +2745,7 @@ def train_scenario_model(
             if col not in X_val_for_model.columns:
                 X_val_for_model[col] = meta_val[col].values
     
+    # 18.2.1: Standard model interface - all models must support fit/predict
     with timer(f"Train {model_type} for scenario {scenario}"):
         model.fit(
             X_train_for_model, y_train,
@@ -1958,12 +2756,18 @@ def train_scenario_model(
     train_time = time.time() - train_start
     
     # Compute validation metrics
-    val_preds_norm = model.predict(X_val_for_model)
+    val_preds_norm_transformed = model.predict(X_val_for_model)
+    
+    # BONUS: B10 - Inverse transform predictions if transform was applied
+    if transform_params is not None:
+        val_preds_norm = inverse_transform_target(val_preds_norm_transformed, transform_params)
+    else:
+        val_preds_norm = val_preds_norm_transformed
     
     # Denormalize predictions for metric calculation
     avg_vol_val = meta_val['avg_vol_12m'].values
     val_preds_volume = val_preds_norm * avg_vol_val
-    val_actual_volume = y_val.values * avg_vol_val
+    val_actual_volume = y_val_original.values * avg_vol_val
     
     # Build DataFrames for official metric
     df_pred = meta_val[['country', 'brand_name', 'months_postgx']].copy()
@@ -1972,9 +2776,16 @@ def train_scenario_model(
     df_actual = meta_val[['country', 'brand_name', 'months_postgx']].copy()
     df_actual['volume'] = val_actual_volume
     
-    # Create aux file from validation data
-    val_with_bucket = meta_val[['country', 'brand_name', 'avg_vol_12m', 'bucket']].drop_duplicates()
-    val_with_bucket = val_with_bucket.rename(columns={'avg_vol_12m': 'avg_vol'})
+    # 18.2.2: Create aux file correctly for compute_metric1/2
+    # Ensure bucket column exists
+    if 'bucket' not in meta_val.columns:
+        logger.warning("'bucket' not in meta_val, official metric may fail")
+        val_with_bucket = meta_val[['country', 'brand_name', 'avg_vol_12m']].drop_duplicates()
+        val_with_bucket = val_with_bucket.rename(columns={'avg_vol_12m': 'avg_vol'})
+        val_with_bucket['bucket'] = 1  # Default bucket
+    else:
+        val_with_bucket = meta_val[['country', 'brand_name', 'avg_vol_12m', 'bucket']].drop_duplicates()
+        val_with_bucket = val_with_bucket.rename(columns={'avg_vol_12m': 'avg_vol'})
     
     # Compute official metric
     try:
@@ -1990,10 +2801,16 @@ def train_scenario_model(
     rmse = np.sqrt(np.mean((val_preds_norm - y_val.values) ** 2))
     mae = np.mean(np.abs(val_preds_norm - y_val.values))
     
+    # Compute R² score
+    ss_res = np.sum((val_preds_norm - y_val.values) ** 2)
+    ss_tot = np.sum((y_val.values - np.mean(y_val.values)) ** 2)
+    r2 = 1 - (ss_res / ss_tot) if ss_tot > 0 else np.nan
+    
     metrics = {
         'official_metric': official_metric,
         'rmse_norm': rmse,
         'mae_norm': mae,
+        'r2_norm': r2,
         'scenario': scenario,
         'model_type': model_type,
         'train_time_seconds': train_time,
@@ -2002,7 +2819,7 @@ def train_scenario_model(
         'n_features': len(X_train.columns),
     }
     
-    # Save unified metric records if metrics_dir is provided
+    # 18.2.3: Save unified metric records if metrics_dir is provided
     if metrics_dir is not None:
         metrics_dir = Path(metrics_dir)
         metrics_dir.mkdir(parents=True, exist_ok=True)
@@ -2365,10 +3182,14 @@ def run_cross_validation(
     save_oof: bool = True,
     artifacts_dir: Optional[Path] = None,
     run_id: Optional[str] = None,
-    metrics_dir: Optional[Path] = None
+    metrics_dir: Optional[Path] = None,
+    tracker: Optional['ExperimentTracker'] = None
 ) -> Tuple[List[Any], Dict, pd.DataFrame]:
     """
-    Run K-fold cross-validation at series level.
+    Run K-fold cross-validation at series level with optional experiment tracking.
+    
+    Section 13.1/13.3: Integrates ExperimentTracker for logging per-fold and
+    aggregated CV metrics.
     
     Args:
         panel_features: DataFrame with features already built
@@ -2381,6 +3202,7 @@ def run_cross_validation(
         artifacts_dir: Directory to save artifacts
         run_id: Optional run ID for metrics logging
         metrics_dir: Optional directory to save unified metric records
+        tracker: Optional ExperimentTracker for logging CV metrics
         
     Returns:
         (list of models, aggregated metrics dict, OOF predictions DataFrame)
@@ -2396,6 +3218,14 @@ def run_cross_validation(
     oof_predictions = []
     
     logger.info(f"Starting {n_folds}-fold cross-validation for scenario {scenario}")
+    
+    # Log CV configuration to tracker if available
+    if tracker and tracker._run_active:
+        tracker.log_params({
+            'cv_n_folds': n_folds,
+            'cv_scenario': scenario,
+            'cv_model_type': model_type,
+        })
     
     for fold_idx, (train_df, val_df) in enumerate(folds):
         logger.info(f"=== Fold {fold_idx + 1}/{n_folds} ===")
@@ -2420,6 +3250,14 @@ def run_cross_validation(
         metrics['fold'] = fold_idx + 1
         fold_metrics.append(metrics)
         models.append(model)
+        
+        # Log per-fold metrics to tracker
+        if tracker and tracker._run_active:
+            tracker.log_metrics({
+                f'fold{fold_idx+1}_official_metric': metrics['official_metric'],
+                f'fold{fold_idx+1}_rmse_norm': metrics['rmse_norm'],
+                f'fold{fold_idx+1}_mae_norm': metrics['mae_norm'],
+            }, step=fold_idx)
         
         # Collect OOF predictions
         if save_oof:
@@ -2449,6 +3287,17 @@ def run_cross_validation(
         'scenario': scenario,
         'model_type': model_type,
     }
+    
+    # Log aggregated CV metrics to tracker
+    if tracker and tracker._run_active:
+        tracker.log_metrics({
+            'cv_official_mean': agg_metrics['cv_official_mean'],
+            'cv_official_std': agg_metrics['cv_official_std'],
+            'cv_rmse_mean': agg_metrics['cv_rmse_mean'],
+            'cv_rmse_std': agg_metrics['cv_rmse_std'],
+            'cv_mae_mean': agg_metrics['cv_mae_mean'],
+            'cv_mae_std': agg_metrics['cv_mae_std'],
+        })
     
     # Save aggregated CV metrics using unified logging
     if metrics_dir is not None:
@@ -2600,18 +3449,37 @@ def run_experiment(
     
     # Load and prepare data using cached features if enabled
     if use_cached_features:
+        # BONUS: G6 - Check if augmentation is enabled
+        # If augmentation is enabled, we need to rebuild features (can't use cache)
+        augmentation_config = run_config.get('augmentation', {})
+        use_augmentation = augmentation_config.get('enabled', False)
+        
+        # If augmentation is enabled, we need to rebuild features to apply augmentation
+        # Otherwise, use cached features for speed
+        force_rebuild_features = force_rebuild or use_augmentation
+        
         with timer("Load features (cached)"):
+            # Pass run_config to features_config so augmentation can be applied
+            if use_augmentation and features_config is not None:
+                # Merge augmentation config into features_config for get_features
+                features_config_with_aug = features_config.copy()
+                features_config_with_aug['run_config'] = run_config
+            else:
+                features_config_with_aug = features_config
+            
             X_full, y_full, meta_full = get_features(
                 split='train',
                 scenario=scenario,
                 mode='train',
                 data_config=data_config,
-                features_config=features_config,
-                use_cache=True,
-                force_rebuild=force_rebuild
+                features_config=features_config_with_aug,
+                use_cache=not force_rebuild_features,
+                force_rebuild=force_rebuild_features
             )
             # Combine for validation split
-            train_rows = pd.concat([X_full, meta_full], axis=1)
+            # Remove columns from meta that already exist in X to avoid duplicates
+            meta_cols_to_add = [c for c in meta_full.columns if c not in X_full.columns]
+            train_rows = pd.concat([X_full, meta_full[meta_cols_to_add]], axis=1)
             train_rows['y_norm'] = y_full
             
             # Get panel for metadata (load cached)
@@ -2628,6 +3496,13 @@ def run_experiment(
             )
             panel = handle_missing_values(panel)
             panel = compute_pre_entry_stats(panel, is_train=True)
+            
+            # BONUS: G6 - Apply data augmentation if enabled
+            augmentation_config = run_config.get('augmentation', {})
+            if augmentation_config.get('enabled', False):
+                from .data import augment_panel
+                logger.info("Applying data augmentation to training panel")
+                panel = augment_panel(panel, run_config)
         
         with timer("Feature engineering"):
             panel_features = make_features(panel, scenario=scenario, mode='train', config=features_config)
@@ -2660,24 +3535,215 @@ def run_experiment(
     with open(artifacts_dir / "metadata.json", "w") as f:
         json.dump(metadata, f, indent=2, default=str)
     
-    # Train model
-    model, metrics = train_scenario_model(
-        X_train, y_train, meta_train,
-        X_val, y_val, meta_val,
-        scenario=scenario,
-        model_type=model_type,
-        model_config=model_config,
-        run_config=run_config
-    )
+    # BONUS: B8 - Multi-seed training
+    multi_seed_config = run_config.get('multi_seed', {})
+    if multi_seed_config.get('enabled', False):
+        logger.info("Multi-seed experiment enabled")
+        seed_results = run_multi_seed_experiment(
+            X_train, y_train, meta_train,
+            X_val, y_val, meta_val,
+            scenario=scenario,
+            model_type=model_type,
+            model_config=model_config,
+            run_config=run_config,
+            artifacts_dir=artifacts_dir
+        )
+        # Use best seed model
+        best_seed = seed_results.loc[seed_results['official_metric'].idxmin(), 'seed']
+        logger.info(f"Best seed: {best_seed}")
+        # Load best model
+        best_model_path = artifacts_dir / f'seed_{best_seed}' / 'model.bin'
+        if best_model_path.exists():
+            from .models.cat_model import CatBoostModel
+            model = CatBoostModel(model_config)
+            model.load(str(best_model_path))
+            metrics = {'official_metric': seed_results.loc[seed_results['seed'] == best_seed, 'official_metric'].iloc[0]}
+        else:
+            # Fall back to regular training
+            model, metrics = train_scenario_model(
+                X_train, y_train, meta_train,
+                X_val, y_val, meta_val,
+                scenario=scenario,
+                model_type=model_type,
+                model_config=model_config,
+                run_config=run_config
+            )
+    # BONUS: B2 - Bucket specialization
+    elif run_config.get('bucket_specialization', {}).get('enabled', False):
+        logger.info("Bucket specialization enabled")
+        bucket_models = train_bucket_specialized_models(
+            X_train, y_train, meta_train,
+            X_val, y_val, meta_val,
+            scenario=scenario,
+            model_type=model_type,
+            model_config=model_config,
+            run_config=run_config,
+            artifacts_dir=artifacts_dir
+        )
+        # For compatibility, use bucket 1 model as primary
+        if 1 in bucket_models:
+            model, metrics = bucket_models[1]
+        else:
+            # Fall back to regular training
+            model, metrics = train_scenario_model(
+                X_train, y_train, meta_train,
+                X_val, y_val, meta_val,
+                scenario=scenario,
+                model_type=model_type,
+                model_config=model_config,
+                run_config=run_config
+            )
+    else:
+        # Regular training
+        model, metrics = train_scenario_model(
+            X_train, y_train, meta_train,
+            X_val, y_val, meta_val,
+            scenario=scenario,
+            model_type=model_type,
+            model_config=model_config,
+            run_config=run_config
+        )
+    
+    # BONUS: B3 - Fit calibration on validation set
+    calibration_config = run_config.get('calibration', {})
+    if calibration_config.get('enabled', False):
+        logger.info("Fitting calibration parameters")
+        # Build validation DataFrame with predictions
+        # Note: model.predict() already returns inverse-transformed predictions if target transform was used
+        # Prepare X_val for prediction (add meta columns if needed for hybrid/arihow models)
+        X_val_for_calib = X_val.copy()
+        if model_type.lower().startswith('hybrid'):
+            if 'months_postgx' not in X_val_for_calib.columns:
+                X_val_for_calib['months_postgx'] = meta_val['months_postgx'].values
+            if 'avg_vol_12m' not in X_val_for_calib.columns:
+                X_val_for_calib['avg_vol_12m'] = meta_val['avg_vol_12m'].values
+        elif model_type.lower() in ('arihow', 'arima_hw', 'arima_holtwinters'):
+            for col in ['country', 'brand_name', 'months_postgx', 'avg_vol_12m']:
+                if col not in X_val_for_calib.columns:
+                    X_val_for_calib[col] = meta_val[col].values
+        
+        val_preds_norm = model.predict(X_val_for_calib)
+        avg_vol_val = meta_val['avg_vol_12m'].values
+        val_preds_volume = val_preds_norm * avg_vol_val
+        # Get actual volumes - model was trained on y_norm, so y_val is already in normalized space
+        val_actual_volume = y_val.values * avg_vol_val
+        
+        df_val_calib = meta_val[['country', 'brand_name', 'months_postgx']].copy()
+        df_val_calib['scenario'] = scenario
+        df_val_calib['bucket'] = meta_val.get('bucket', 1)
+        df_val_calib['volume_true'] = val_actual_volume
+        df_val_calib['volume_pred'] = val_preds_volume
+        
+        calibration_params = fit_grouped_calibration(
+            df_val_calib,
+            run_config,
+            artifacts_dir=artifacts_dir
+        )
+        logger.info(f"Calibration parameters fitted for {len(calibration_params)} groups")
+    
+    # BONUS: B6 - Fit bias corrections
+    bias_config = run_config.get('bias_correction', {})
+    if bias_config.get('enabled', False):
+        logger.info("Fitting bias corrections")
+        # Prepare X_val for prediction (add meta columns if needed for hybrid/arihow models)
+        X_val_for_bias = X_val.copy()
+        if model_type.lower().startswith('hybrid'):
+            if 'months_postgx' not in X_val_for_bias.columns:
+                X_val_for_bias['months_postgx'] = meta_val['months_postgx'].values
+            if 'avg_vol_12m' not in X_val_for_bias.columns:
+                X_val_for_bias['avg_vol_12m'] = meta_val['avg_vol_12m'].values
+        elif model_type.lower() in ('arihow', 'arima_hw', 'arima_holtwinters'):
+            for col in ['country', 'brand_name', 'months_postgx', 'avg_vol_12m']:
+                if col not in X_val_for_bias.columns:
+                    X_val_for_bias[col] = meta_val[col].values
+        
+        val_preds_norm = model.predict(X_val_for_bias)
+        avg_vol_val = meta_val['avg_vol_12m'].values
+        val_preds_volume = val_preds_norm * avg_vol_val
+        # Get actual volumes - model was trained on y_norm, so y_val is already in normalized space
+        val_actual_volume = y_val.values * avg_vol_val
+        
+        df_val_bias = meta_val.copy()
+        df_val_bias['volume_true'] = val_actual_volume
+        df_val_bias['volume_pred'] = val_preds_volume
+        
+        # Merge group columns (e.g., ther_area) from panel if needed
+        group_cols = bias_config.get('group_cols', ['ther_area', 'country'])
+        missing_group_cols = [col for col in group_cols if col not in df_val_bias.columns]
+        if missing_group_cols and 'panel' in locals():
+            # Try to merge from panel
+            panel_group_cols = [col for col in missing_group_cols if col in panel.columns]
+            if panel_group_cols:
+                # Merge by country and brand_name
+                panel_subset = panel[['country', 'brand_name'] + panel_group_cols].drop_duplicates()
+                df_val_bias = df_val_bias.merge(
+                    panel_subset,
+                    on=['country', 'brand_name'],
+                    how='left'
+                )
+                logger.info(f"Merged group columns from panel: {panel_group_cols}")
+        
+        # Filter to only use group columns that exist
+        available_group_cols = [col for col in group_cols if col in df_val_bias.columns]
+        if not available_group_cols:
+            logger.warning(f"None of the requested group columns {group_cols} are available. Skipping bias correction.")
+        else:
+            # Temporarily update config to use only available columns
+            bias_config_updated = bias_config.copy()
+            bias_config_updated['group_cols'] = available_group_cols
+            run_config_updated = run_config.copy()
+            run_config_updated['bias_correction'] = bias_config_updated
+            
+            bias_corrections = fit_bias_corrections(
+                df_val_bias,
+                run_config_updated,
+                artifacts_dir=artifacts_dir
+            )
+            logger.info(f"Bias corrections fitted for {len(bias_corrections)} groups")
+    
+    # BONUS: B7 - Feature pruning (if enabled, save importance for later use)
+    pruning_config = features_config.get('feature_pruning', {})
+    if pruning_config.get('enabled', False) and hasattr(model, 'get_feature_importance'):
+        logger.info("Extracting feature importance for pruning")
+        importance = model.get_feature_importance()
+        if len(importance) > 0:
+            # Convert to dict format
+            feature_importance_dict = dict(zip(importance['feature'], importance['importance']))
+            # Prune features (for future training runs)
+            X_train_pruned, dropped_features = prune_features_by_importance(
+                X_train,
+                feature_importance_dict,
+                pruning_config,
+                artifacts_dir=artifacts_dir
+            )
+            logger.info(f"Feature pruning: {len(dropped_features)} features dropped")
     
     # Save model
     model_path = artifacts_dir / f"model_{scenario}.bin"
     model.save(str(model_path))
     logger.info(f"Model saved to {model_path}")
     
+    # BONUS: B10 - Save target transform parameters if used
+    transform_config = run_config.get('target_transform', {}) if run_config else {}
+    transform_type = transform_config.get('type', 'none')
+    if transform_type != 'none':
+        # Build transform params from config to save for inference
+        transform_params = {
+            'type': transform_type,
+            'epsilon': float(transform_config.get('epsilon', 1e-6))
+        }
+        if transform_type == 'power':
+            transform_params['exponent'] = float(transform_config.get('power_exponent', 0.5))
+        transform_path = artifacts_dir / f"target_transform_params_{scenario}.json"
+        import json as json_module
+        with open(transform_path, 'w') as f:
+            json_module.dump(transform_params, f, indent=2)
+        logger.info(f"Target transform parameters saved to {transform_path}")
+    
     # Save metrics
+    import json as json_module
     with open(artifacts_dir / "metrics.json", "w") as f:
-        json.dump(metrics, f, indent=2)
+        json_module.dump(metrics, f, indent=2)
     
     # Save feature importance
     if hasattr(model, 'get_feature_importance'):
@@ -2704,10 +3770,13 @@ def compare_models(
     scenario: int,
     model_configs: Dict[str, Dict],
     sample_weight_train: Optional[pd.Series] = None,
-    sample_weight_val: Optional[pd.Series] = None
+    sample_weight_val: Optional[pd.Series] = None,
+    artifacts_dir: Optional[Path] = None
 ) -> pd.DataFrame:
     """
     Compare multiple model types on the same train/validation split.
+    
+    Section 21.1: Uses official metric for comparison and saves results to CSV.
     
     This function trains and evaluates different model configurations
     to identify the best performing approach.
@@ -2721,6 +3790,7 @@ def compare_models(
                       Each config should have 'model_type' and optional 'params'
         sample_weight_train: Training sample weights
         sample_weight_val: Validation sample weights (for weighted metrics)
+        artifacts_dir: Optional directory to save comparison results
         
     Returns:
         DataFrame with comparison results sorted by official metric
@@ -2809,6 +3879,23 @@ def compare_models(
     
     logger.info(f"\nModel Comparison Results:")
     logger.info(f"\n{results_df.to_string()}")
+    
+    # Section 21.1.3: Save comparison tables to CSV
+    if artifacts_dir:
+        artifacts_dir = Path(artifacts_dir)
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        
+        csv_path = artifacts_dir / f'model_comparison_scenario{scenario}.csv'
+        results_df.to_csv(csv_path, index=False)
+        logger.info(f"Model comparison saved to {csv_path}")
+        
+        # Also save as markdown
+        md_path = artifacts_dir / f'model_comparison_scenario{scenario}.md'
+        with open(md_path, 'w') as f:
+            f.write(f"# Model Comparison - Scenario {scenario}\n\n")
+            f.write(f"**Best Model**: {results_df.iloc[0]['model_name']}\n")
+            f.write(f"**Best Official Metric**: {results_df.iloc[0]['official_metric']:.4f}\n\n")
+            f.write(results_df.to_markdown(index=False))
     
     return results_df
 
@@ -3082,6 +4169,272 @@ def optimize_ensemble_weights_on_validation(
     return best_weights, best_metric
 
 
+# =============================================================================
+# SECTION 11: Optional Multi-Model Ensemble Training
+# =============================================================================
+
+def train_multi_model_ensemble(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    meta_train: pd.DataFrame,
+    X_val: pd.DataFrame,
+    y_val: pd.Series,
+    meta_val: pd.DataFrame,
+    scenario: int,
+    model_types: List[str] = ['catboost', 'linear'],
+    model_configs: Optional[Dict[str, dict]] = None,
+    run_config: Optional[dict] = None,
+    optimize_weights: bool = True,
+    optimization_metric: str = 'official',
+    hero_model: str = 'catboost',
+    ensemble_improvement_threshold: float = 0.0,
+    n_restarts: int = 5,
+    artifacts_dir: Optional[Path] = None
+) -> Dict[str, Any]:
+    """
+    Train multiple model types on the same data and build an optimized ensemble.
+    
+    Section 11: Optional Ensemble Layer
+    
+    This function implements a clean path to:
+    1. Train CatBoost, Linear, and/or other models on the same folds
+    2. Collect per-model validation predictions
+    3. Optimize ensemble weights using the official metric
+    4. Enable ensemble only if it improves over the hero model alone
+    
+    The ensemble is evaluated against the hero model (typically CatBoost).
+    If the ensemble doesn't improve over the hero by at least the threshold,
+    the function recommends using the hero model alone.
+    
+    Args:
+        X_train: Training features
+        y_train: Training target
+        meta_train: Training metadata
+        X_val: Validation features
+        y_val: Validation target
+        meta_val: Validation metadata
+        scenario: 1 or 2
+        model_types: List of model types to train (e.g., ['catboost', 'linear', 'hybrid'])
+        model_configs: Dict mapping model_type to config override
+        run_config: Run configuration (for sample weights)
+        optimize_weights: If True, optimize ensemble weights on validation
+        optimization_metric: 'official', 'rmse', or 'mae'
+        hero_model: Model type to compare against (default: 'catboost')
+        ensemble_improvement_threshold: Minimum improvement over hero to enable ensemble
+        n_restarts: Number of restarts for weight optimization
+        artifacts_dir: Optional directory to save results
+        
+    Returns:
+        Dictionary with:
+        - 'models': Dict[model_type, trained_model]
+        - 'per_model_metrics': Dict[model_type, metrics_dict]
+        - 'per_model_predictions': Dict[model_type, val_predictions]
+        - 'ensemble_weights': np.ndarray (optimized weights)
+        - 'ensemble_metric': float (ensemble's official metric)
+        - 'hero_metric': float (hero model's official metric)
+        - 'improvement': float (ensemble - hero, lower is better)
+        - 'use_ensemble': bool (True if ensemble improves over hero)
+        - 'recommendation': str (human-readable recommendation)
+    """
+    scenario = _normalize_scenario(scenario)
+    model_configs = model_configs or {}
+    
+    logger.info(f"=== Multi-Model Ensemble Training: Scenario {scenario} ===")
+    logger.info(f"Model types: {model_types}")
+    logger.info(f"Hero model: {hero_model}")
+    
+    # Ensure hero model is in the list
+    if hero_model not in model_types:
+        model_types = [hero_model] + list(model_types)
+        logger.info(f"Added hero model to list: {model_types}")
+    
+    # Train each model type
+    trained_models = {}
+    per_model_metrics = {}
+    per_model_predictions = {}
+    
+    for model_type in model_types:
+        logger.info(f"Training {model_type}...")
+        
+        config = model_configs.get(model_type, {})
+        
+        try:
+            model, metrics = train_scenario_model(
+                X_train=X_train,
+                y_train=y_train,
+                meta_train=meta_train,
+                X_val=X_val,
+                y_val=y_val,
+                meta_val=meta_val,
+                scenario=scenario,
+                model_type=model_type,
+                model_config=config,
+                run_config=run_config
+            )
+            
+            # Store model and metrics
+            trained_models[model_type] = model
+            per_model_metrics[model_type] = metrics
+            
+            # Get validation predictions
+            val_preds = model.predict(X_val)
+            per_model_predictions[model_type] = val_preds
+            
+            logger.info(f"  {model_type}: official={metrics.get('official_metric', np.nan):.4f}, "
+                       f"rmse={metrics.get('rmse_norm', np.nan):.4f}")
+            
+        except Exception as e:
+            logger.error(f"Failed to train {model_type}: {e}")
+            continue
+    
+    if len(trained_models) == 0:
+        raise ValueError("No models were successfully trained")
+    
+    if len(trained_models) == 1:
+        # Only one model trained - no ensemble possible
+        model_type = list(trained_models.keys())[0]
+        metrics = per_model_metrics[model_type]
+        
+        result = {
+            'models': trained_models,
+            'per_model_metrics': per_model_metrics,
+            'per_model_predictions': per_model_predictions,
+            'ensemble_weights': np.array([1.0]),
+            'ensemble_metric': metrics.get('official_metric', np.nan),
+            'hero_metric': metrics.get('official_metric', np.nan),
+            'improvement': 0.0,
+            'use_ensemble': False,
+            'recommendation': f"Only {model_type} trained - no ensemble possible"
+        }
+        return result
+    
+    # Get hero model metric
+    hero_metric = per_model_metrics.get(hero_model, {}).get('official_metric', np.nan)
+    
+    # Optimize ensemble weights
+    if optimize_weights:
+        logger.info("Optimizing ensemble weights on validation...")
+        
+        models_list = [trained_models[mt] for mt in model_types if mt in trained_models]
+        
+        optimal_weights, ensemble_metric = optimize_ensemble_weights_on_validation(
+            models=models_list,
+            X_val=X_val,
+            y_val=y_val,
+            meta_val=meta_val,
+            scenario=scenario,
+            optimization_metric=optimization_metric,
+            n_restarts=n_restarts
+        )
+    else:
+        # Equal weights
+        n_models = len(trained_models)
+        optimal_weights = np.ones(n_models) / n_models
+        
+        # Compute ensemble metric with equal weights
+        all_preds = np.array([per_model_predictions[mt] for mt in model_types if mt in trained_models])
+        ensemble_preds = np.dot(optimal_weights, all_preds)
+        
+        # Compute official metric for ensemble
+        avg_vol = meta_val['avg_vol_12m'].values
+        pred_volume = ensemble_preds * avg_vol
+        actual_volume = y_val.values * avg_vol
+        
+        pred_df = meta_val[['country', 'brand_name', 'months_postgx']].copy()
+        pred_df['volume'] = pred_volume
+        
+        actual_df = pred_df[['country', 'brand_name', 'months_postgx']].copy()
+        actual_df['volume'] = actual_volume
+        
+        aux_df = create_aux_file(meta_val, y_val)
+        
+        try:
+            if scenario == 1:
+                ensemble_metric = compute_metric1(actual_df, pred_df, aux_df)
+            else:
+                ensemble_metric = compute_metric2(actual_df, pred_df, aux_df)
+        except Exception as e:
+            logger.warning(f"Could not compute ensemble official metric: {e}")
+            ensemble_metric = np.nan
+    
+    # Compute improvement (lower is better for official metric)
+    improvement = hero_metric - ensemble_metric  # positive = ensemble is better
+    
+    # Determine if ensemble should be used
+    use_ensemble = improvement > ensemble_improvement_threshold and not np.isnan(improvement)
+    
+    # Generate recommendation
+    if np.isnan(hero_metric) or np.isnan(ensemble_metric):
+        recommendation = "Could not compute metrics - cannot recommend"
+    elif use_ensemble:
+        recommendation = (
+            f"USE ENSEMBLE: Improves over {hero_model} by {improvement:.4f} "
+            f"({hero_metric:.4f} -> {ensemble_metric:.4f})"
+        )
+    else:
+        recommendation = (
+            f"USE {hero_model.upper()} ALONE: Ensemble improvement ({improvement:.4f}) "
+            f"below threshold ({ensemble_improvement_threshold:.4f})"
+        )
+    
+    logger.info(f"\n{'='*60}")
+    logger.info("ENSEMBLE TRAINING RESULTS:")
+    logger.info(f"  Hero model ({hero_model}): {hero_metric:.4f}")
+    logger.info(f"  Ensemble: {ensemble_metric:.4f}")
+    logger.info(f"  Improvement: {improvement:.4f}")
+    logger.info(f"  Weights: {dict(zip([mt for mt in model_types if mt in trained_models], optimal_weights.round(4)))}")
+    logger.info(f"  Recommendation: {recommendation}")
+    logger.info('='*60)
+    
+    result = {
+        'models': trained_models,
+        'per_model_metrics': per_model_metrics,
+        'per_model_predictions': per_model_predictions,
+        'ensemble_weights': optimal_weights,
+        'ensemble_metric': ensemble_metric,
+        'hero_metric': hero_metric,
+        'improvement': improvement,
+        'use_ensemble': use_ensemble,
+        'recommendation': recommendation
+    }
+    
+    # Save results to artifacts if provided
+    if artifacts_dir is not None:
+        artifacts_dir = Path(artifacts_dir)
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save summary
+        summary = {
+            'scenario': scenario,
+            'model_types': model_types,
+            'hero_model': hero_model,
+            'hero_metric': float(hero_metric) if not np.isnan(hero_metric) else None,
+            'ensemble_metric': float(ensemble_metric) if not np.isnan(ensemble_metric) else None,
+            'improvement': float(improvement) if not np.isnan(improvement) else None,
+            'use_ensemble': use_ensemble,
+            'weights': {
+                mt: float(w) for mt, w in zip(
+                    [mt for mt in model_types if mt in trained_models], 
+                    optimal_weights
+                )
+            },
+            'per_model_metrics': {
+                mt: {k: float(v) if isinstance(v, (int, float)) and not np.isnan(v) else v 
+                     for k, v in metrics.items()}
+                for mt, metrics in per_model_metrics.items()
+            },
+            'recommendation': recommendation
+        }
+        
+        import json
+        with open(artifacts_dir / 'ensemble_summary.json', 'w') as f:
+            json.dump(summary, f, indent=2, default=str)
+        
+        logger.info(f"Saved ensemble summary to {artifacts_dir / 'ensemble_summary.json'}")
+    
+    return result
+
+
 def train_xgb_lgbm_ensemble(
     scenario: int,
     xgb_config_path: Optional[str] = None,
@@ -3093,10 +4446,14 @@ def train_xgb_lgbm_ensemble(
     optimize_weights: bool = True,
     use_official_metric: bool = True,
     run_name: Optional[str] = None,
-    use_cached_features: bool = True
+    use_cached_features: bool = True,
+    enable_tracking: bool = True
 ) -> Dict[str, Any]:
     """
     Train an XGBoost + LightGBM ensemble with optional weight optimization.
+    
+    Section 13.1/21.2: Integrates ExperimentTracker for logging individual
+    and ensemble metrics. Uses official metric for weight optimization.
     
     This function trains both XGBoost and LightGBM models and combines them
     into an ensemble. Weights can be:
@@ -3116,6 +4473,7 @@ def train_xgb_lgbm_ensemble(
         use_official_metric: If True, optimize weights using official metric
         run_name: Optional run name
         use_cached_features: If True, use cached feature loading
+        enable_tracking: If True, use ExperimentTracker (if configured)
         
     Returns:
         Dictionary with:
@@ -3142,7 +4500,7 @@ def train_xgb_lgbm_ensemble(
     set_seed(seed)
     
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    run_name = run_name or f"{timestamp}_xgb_lgbm_ensemble_scenario{scenario}"
+    run_name = run_name or generate_run_name('xgb_lgbm_ensemble', scenario, timestamp=timestamp)
     
     artifacts_dir = get_project_root() / run_config['paths']['artifacts_dir'] / run_name
     artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -3150,202 +4508,250 @@ def train_xgb_lgbm_ensemble(
     setup_logging(log_file=str(artifacts_dir / "ensemble.log"))
     logger.info(f"Training XGB+LGBM ensemble: {run_name}")
     
-    # Load data
-    logger.info("Loading features...")
-    if use_cached_features:
-        X_full, y_full, meta_full = get_features(
-            split='train',
-            scenario=scenario,
-            mode='train',
-            data_config=data_config,
-            features_config=features_config,
-            use_cache=True
-        )
-        full_df = pd.concat([X_full, meta_full], axis=1)
-        full_df['y_norm'] = y_full
-    else:
-        train_data = load_raw_data(data_config, split='train')
-        panel = prepare_base_panel(
-            train_data['volume'],
-            train_data['generics'],
-            train_data['medicine_info']
-        )
-        panel = handle_missing_values(panel)
-        panel = compute_pre_entry_stats(panel, is_train=True)
-        panel_features = make_features(panel, scenario=scenario, mode='train', config=features_config)
-        full_df = select_training_rows(panel_features, scenario=scenario)
-    
-    # Create train/val split
-    train_df, val_df = create_validation_split(
-        full_df,
-        val_fraction=run_config['validation']['val_fraction'],
-        stratify_by=run_config['validation']['stratify_by'],
-        random_state=seed
-    )
-    
-    X_train, y_train, meta_train = split_features_target_meta(train_df)
-    X_val, y_val, meta_val = split_features_target_meta(val_df)
-    
-    # Train XGBoost
-    logger.info("Training XGBoost model...")
-    xgb_model, xgb_metrics = train_scenario_model(
-        X_train, y_train, meta_train,
-        X_val, y_val, meta_val,
-        scenario=scenario,
-        model_type='xgboost',
-        model_config=xgb_config,
-        run_config=run_config
-    )
-    xgb_model.save(str(artifacts_dir / "xgb_model.bin"))
-    logger.info(f"XGBoost official_metric: {xgb_metrics.get('official_metric', np.nan):.4f}")
-    
-    # Train LightGBM
-    logger.info("Training LightGBM model...")
-    lgbm_model, lgbm_metrics = train_scenario_model(
-        X_train, y_train, meta_train,
-        X_val, y_val, meta_val,
-        scenario=scenario,
-        model_type='lightgbm',
-        model_config=lgbm_config,
-        run_config=run_config
-    )
-    lgbm_model.save(str(artifacts_dir / "lgbm_model.bin"))
-    logger.info(f"LightGBM official_metric: {lgbm_metrics.get('official_metric', np.nan):.4f}")
-    
-    # Create ensemble
-    models = [xgb_model, lgbm_model]
-    model_names = ['xgboost', 'lightgbm']
-    
-    if ensemble_method == 'weighted' and optimize_weights:
-        logger.info("Optimizing ensemble weights...")
-        
-        # Get validation predictions
-        xgb_preds = xgb_model.predict(X_val)
-        lgbm_preds = lgbm_model.predict(X_val)
-        preds_list = [xgb_preds, lgbm_preds]
-        
-        if use_official_metric:
-            # Optimize using official metric
-            weights, best_metric = optimize_ensemble_weights_on_validation(
-                models=[xgb_model, lgbm_model],
-                X_val=X_val,
-                y_val=y_val,
-                meta_val=meta_val,
-                scenario=scenario,
-                optimization_metric='official'
+    # Setup experiment tracking (Section 13.1)
+    tracker = None
+    if enable_tracking:
+        tracker = setup_experiment_tracking(run_config, run_name)
+        if tracker:
+            standard_tags = get_standard_tags(run_config)
+            tracker.start_run(
+                run_name=run_name,
+                tags=standard_tags,
+                config={
+                    'scenario': scenario,
+                    'ensemble_method': ensemble_method,
+                    'optimize_weights': optimize_weights,
+                    'use_official_metric': use_official_metric,
+                }
             )
-            logger.info(f"Optimized weights (official metric): XGB={weights[0]:.3f}, LGBM={weights[1]:.3f}")
-        else:
-            # Optimize using MSE
-            from scipy.optimize import minimize
-            
-            def ensemble_mse(w):
-                w = w / w.sum()
-                pred = w[0] * xgb_preds + w[1] * lgbm_preds
-                return np.mean((pred - y_val.values) ** 2)
-            
-            result = minimize(
-                ensemble_mse,
-                [0.5, 0.5],
-                method='SLSQP',
-                bounds=[(0, 1), (0, 1)],
-                constraints={'type': 'eq', 'fun': lambda w: w.sum() - 1}
-            )
-            weights = result.x / result.x.sum()
-            logger.info(f"Optimized weights (MSE): XGB={weights[0]:.3f}, LGBM={weights[1]:.3f}")
-        
-        # Create weighted ensemble
-        ensemble = WeightedAveragingEnsemble({
-            'models': models,
-            'weights': list(weights),
-            'clip_predictions': True
-        })
-        ensemble.feature_names = list(X_train.columns)
-    else:
-        # Simple averaging
-        weights = np.array([0.5, 0.5])
-        ensemble = AveragingEnsemble({
-            'models': models,
-            'clip_predictions': True
-        })
-        ensemble.feature_names = list(X_train.columns)
-        logger.info("Using equal weights: XGB=0.5, LGBM=0.5")
-    
-    # Compute ensemble metrics on validation
-    logger.info("Computing ensemble validation metrics...")
-    ensemble_preds = ensemble.predict(X_val)
-    
-    # Denormalize for official metric
-    avg_vol_val = meta_val['avg_vol_12m'].values
-    ensemble_preds_volume = ensemble_preds * avg_vol_val
-    val_actual_volume = y_val.values * avg_vol_val
-    
-    # Build DataFrames for official metric
-    df_pred = meta_val[['country', 'brand_name', 'months_postgx']].copy()
-    df_pred['volume'] = ensemble_preds_volume
-    
-    df_actual = meta_val[['country', 'brand_name', 'months_postgx']].copy()
-    df_actual['volume'] = val_actual_volume
-    
-    val_with_bucket = meta_val[['country', 'brand_name', 'avg_vol_12m', 'bucket']].drop_duplicates()
-    val_with_bucket = val_with_bucket.rename(columns={'avg_vol_12m': 'avg_vol'})
+            # Log parameters (Section 13.2)
+            tracker.log_params({
+                'scenario': scenario,
+                'ensemble_method': ensemble_method,
+                'optimize_weights': optimize_weights,
+                'use_official_metric': use_official_metric,
+                'seed': seed,
+            })
     
     try:
-        if scenario == 1:
-            ensemble_official = compute_metric1(df_actual, df_pred, val_with_bucket)
+        # Load data
+        logger.info("Loading features...")
+        if use_cached_features:
+            X_full, y_full, meta_full = get_features(
+                split='train',
+                scenario=scenario,
+                mode='train',
+                data_config=data_config,
+                features_config=features_config,
+                use_cache=True
+            )
+            full_df = pd.concat([X_full, meta_full], axis=1)
+            full_df['y_norm'] = y_full
         else:
-            ensemble_official = compute_metric2(df_actual, df_pred, val_with_bucket)
+            train_data = load_raw_data(data_config, split='train')
+            panel = prepare_base_panel(
+                train_data['volume'],
+                train_data['generics'],
+                train_data['medicine_info']
+            )
+            panel = handle_missing_values(panel)
+            panel = compute_pre_entry_stats(panel, is_train=True)
+            panel_features = make_features(panel, scenario=scenario, mode='train', config=features_config)
+            full_df = select_training_rows(panel_features, scenario=scenario)
+        
+        # Create train/val split
+        train_df, val_df = create_validation_split(
+            full_df,
+            val_fraction=run_config['validation']['val_fraction'],
+            stratify_by=run_config['validation']['stratify_by'],
+            random_state=seed
+        )
+        
+        X_train, y_train, meta_train = split_features_target_meta(train_df)
+        X_val, y_val, meta_val = split_features_target_meta(val_df)
+        
+        # Train XGBoost
+        logger.info("Training XGBoost model...")
+        xgb_model, xgb_metrics = train_scenario_model(
+            X_train, y_train, meta_train,
+            X_val, y_val, meta_val,
+            scenario=scenario,
+            model_type='xgboost',
+            model_config=xgb_config,
+            run_config=run_config
+        )
+        xgb_model.save(str(artifacts_dir / "xgb_model.bin"))
+        logger.info(f"XGBoost official_metric: {xgb_metrics.get('official_metric', np.nan):.4f}")
+        
+        # Train LightGBM
+        logger.info("Training LightGBM model...")
+        lgbm_model, lgbm_metrics = train_scenario_model(
+            X_train, y_train, meta_train,
+            X_val, y_val, meta_val,
+            scenario=scenario,
+            model_type='lightgbm',
+            model_config=lgbm_config,
+            run_config=run_config
+        )
+        lgbm_model.save(str(artifacts_dir / "lgbm_model.bin"))
+        logger.info(f"LightGBM official_metric: {lgbm_metrics.get('official_metric', np.nan):.4f}")
+        
+        # Create ensemble
+        models = [xgb_model, lgbm_model]
+        model_names = ['xgboost', 'lightgbm']
+        
+        if ensemble_method == 'weighted' and optimize_weights:
+            logger.info("Optimizing ensemble weights...")
+            
+            # Get validation predictions
+            xgb_preds = xgb_model.predict(X_val)
+            lgbm_preds = lgbm_model.predict(X_val)
+            preds_list = [xgb_preds, lgbm_preds]
+            
+            if use_official_metric:
+                # Optimize using official metric
+                weights, best_metric = optimize_ensemble_weights_on_validation(
+                    models=[xgb_model, lgbm_model],
+                    X_val=X_val,
+                    y_val=y_val,
+                    meta_val=meta_val,
+                    scenario=scenario,
+                    optimization_metric='official'
+                )
+                logger.info(f"Optimized weights (official metric): XGB={weights[0]:.3f}, LGBM={weights[1]:.3f}")
+            else:
+                # Optimize using MSE
+                from scipy.optimize import minimize
+                
+                def ensemble_mse(w):
+                    w = w / w.sum()
+                    pred = w[0] * xgb_preds + w[1] * lgbm_preds
+                    return np.mean((pred - y_val.values) ** 2)
+                
+                result = minimize(
+                    ensemble_mse,
+                    [0.5, 0.5],
+                    method='SLSQP',
+                    bounds=[(0, 1), (0, 1)],
+                    constraints={'type': 'eq', 'fun': lambda w: w.sum() - 1}
+                )
+                weights = result.x / result.x.sum()
+                logger.info(f"Optimized weights (MSE): XGB={weights[0]:.3f}, LGBM={weights[1]:.3f}")
+            
+            # Create weighted ensemble
+            ensemble = WeightedAveragingEnsemble({
+                'models': models,
+                'weights': list(weights),
+                'clip_predictions': True
+            })
+            ensemble.feature_names = list(X_train.columns)
+        else:
+            # Simple averaging
+            weights = np.array([0.5, 0.5])
+            ensemble = AveragingEnsemble({
+                'models': models,
+                'clip_predictions': True
+            })
+            ensemble.feature_names = list(X_train.columns)
+            logger.info("Using equal weights: XGB=0.5, LGBM=0.5")
+        
+        # Compute ensemble metrics on validation
+        logger.info("Computing ensemble validation metrics...")
+        ensemble_preds = ensemble.predict(X_val)
+        
+        # Denormalize for official metric
+        avg_vol_val = meta_val['avg_vol_12m'].values
+        ensemble_preds_volume = ensemble_preds * avg_vol_val
+        val_actual_volume = y_val.values * avg_vol_val
+        
+        # Build DataFrames for official metric
+        df_pred = meta_val[['country', 'brand_name', 'months_postgx']].copy()
+        df_pred['volume'] = ensemble_preds_volume
+        
+        df_actual = meta_val[['country', 'brand_name', 'months_postgx']].copy()
+        df_actual['volume'] = val_actual_volume
+        
+        val_with_bucket = meta_val[['country', 'brand_name', 'avg_vol_12m', 'bucket']].drop_duplicates()
+        val_with_bucket = val_with_bucket.rename(columns={'avg_vol_12m': 'avg_vol'})
+        
+        try:
+            if scenario == 1:
+                ensemble_official = compute_metric1(df_actual, df_pred, val_with_bucket)
+            else:
+                ensemble_official = compute_metric2(df_actual, df_pred, val_with_bucket)
+        except Exception as e:
+            logger.warning(f"Could not compute official metric for ensemble: {e}")
+            ensemble_official = np.nan
+        
+        ensemble_rmse = np.sqrt(np.mean((ensemble_preds - y_val.values) ** 2))
+        
+        ensemble_metrics = {
+            'official_metric': ensemble_official,
+            'rmse_norm': ensemble_rmse,
+            'weights': {'xgboost': weights[0], 'lightgbm': weights[1]}
+        }
+        
+        logger.info(f"Ensemble official_metric: {ensemble_official:.4f}")
+        logger.info(f"Ensemble RMSE: {ensemble_rmse:.4f}")
+        
+        # Compare models
+        logger.info("\n=== Model Comparison ===")
+        logger.info(f"XGBoost:   official_metric={xgb_metrics.get('official_metric', np.nan):.4f}")
+        logger.info(f"LightGBM:  official_metric={lgbm_metrics.get('official_metric', np.nan):.4f}")
+        logger.info(f"Ensemble:  official_metric={ensemble_official:.4f}")
+        
+        # Log metrics to tracker (Section 13.3)
+        if tracker and tracker._run_active:
+            tracker.log_metrics({
+                'xgb_official_metric': xgb_metrics.get('official_metric', np.nan),
+                'xgb_rmse_norm': xgb_metrics.get('rmse_norm', np.nan),
+                'lgbm_official_metric': lgbm_metrics.get('official_metric', np.nan),
+                'lgbm_rmse_norm': lgbm_metrics.get('rmse_norm', np.nan),
+                'ensemble_official_metric': ensemble_official,
+                'ensemble_rmse_norm': ensemble_rmse,
+                'weight_xgboost': float(weights[0]),
+                'weight_lightgbm': float(weights[1]),
+            })
+        
+        # Save ensemble
+        ensemble.save(str(artifacts_dir / "ensemble.bin"))
+        
+        # Save results
+        results = {
+            'scenario': scenario,
+            'ensemble_method': ensemble_method,
+            'weights': {'xgboost': float(weights[0]), 'lightgbm': float(weights[1])},
+            'xgb_metrics': xgb_metrics,
+            'lgbm_metrics': lgbm_metrics,
+            'ensemble_metrics': ensemble_metrics,
+            'artifacts_dir': str(artifacts_dir)
+        }
+        
+        with open(artifacts_dir / "ensemble_results.json", "w") as f:
+            json.dump(results, f, indent=2, default=str)
+        
+        # End experiment tracking (Section 13.4)
+        if tracker:
+            tracker.end_run(status='FINISHED')
+        
+        return {
+            'ensemble': ensemble,
+            'xgb_model': xgb_model,
+            'lgbm_model': lgbm_model,
+            'weights': weights,
+            'metrics': {
+                'xgboost': xgb_metrics,
+                'lightgbm': lgbm_metrics,
+                'ensemble': ensemble_metrics
+            },
+            'artifacts_dir': str(artifacts_dir)
+        }
+    
     except Exception as e:
-        logger.warning(f"Could not compute official metric for ensemble: {e}")
-        ensemble_official = np.nan
-    
-    ensemble_rmse = np.sqrt(np.mean((ensemble_preds - y_val.values) ** 2))
-    
-    ensemble_metrics = {
-        'official_metric': ensemble_official,
-        'rmse_norm': ensemble_rmse,
-        'weights': {'xgboost': weights[0], 'lightgbm': weights[1]}
-    }
-    
-    logger.info(f"Ensemble official_metric: {ensemble_official:.4f}")
-    logger.info(f"Ensemble RMSE: {ensemble_rmse:.4f}")
-    
-    # Compare models
-    logger.info("\n=== Model Comparison ===")
-    logger.info(f"XGBoost:   official_metric={xgb_metrics.get('official_metric', np.nan):.4f}")
-    logger.info(f"LightGBM:  official_metric={lgbm_metrics.get('official_metric', np.nan):.4f}")
-    logger.info(f"Ensemble:  official_metric={ensemble_official:.4f}")
-    
-    # Save ensemble
-    ensemble.save(str(artifacts_dir / "ensemble.bin"))
-    
-    # Save results
-    results = {
-        'scenario': scenario,
-        'ensemble_method': ensemble_method,
-        'weights': {'xgboost': float(weights[0]), 'lightgbm': float(weights[1])},
-        'xgb_metrics': xgb_metrics,
-        'lgbm_metrics': lgbm_metrics,
-        'ensemble_metrics': ensemble_metrics,
-        'artifacts_dir': str(artifacts_dir)
-    }
-    
-    with open(artifacts_dir / "ensemble_results.json", "w") as f:
-        json.dump(results, f, indent=2, default=str)
-    
-    return {
-        'ensemble': ensemble,
-        'xgb_model': xgb_model,
-        'lgbm_model': lgbm_model,
-        'weights': weights,
-        'metrics': {
-            'xgboost': xgb_metrics,
-            'lightgbm': lgbm_metrics,
-            'ensemble': ensemble_metrics
-        },
-        'artifacts_dir': str(artifacts_dir)
-    }
-
+        # End tracking with failure status
+        if tracker:
+            tracker.end_run(status='FAILED')
+        raise
 
 # =============================================================================
 # SECTION: CONFIG SWEEP - Train Multiple Hyperparameter Configurations
@@ -4427,6 +5833,500 @@ Examples:
             use_cached_features=not args.no_cache,
             force_rebuild=args.force_rebuild
         )
+
+
+# ==============================================================================
+# BONUS EXPERIMENTS: B2 - Bucket Specialization
+# ==============================================================================
+
+def train_bucket_specialized_models(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    meta_train: pd.DataFrame,
+    X_val: pd.DataFrame,
+    y_val: pd.Series,
+    meta_val: pd.DataFrame,
+    scenario: int,
+    model_type: str = 'catboost',
+    model_config: Optional[dict] = None,
+    run_config: Optional[dict] = None,
+    artifacts_dir: Optional[Path] = None
+) -> Dict[int, Tuple[Any, Dict]]:
+    """
+    Train separate models for each bucket (B2: Bucket Specialization).
+    
+    Args:
+        X_train, y_train, meta_train: Training data (must have 'bucket' column)
+        X_val, y_val, meta_val: Validation data (must have 'bucket' column)
+        scenario: 1 or 2
+        model_type: Model type to use ('catboost', 'lightgbm', etc.)
+        model_config: Model configuration
+        run_config: Run configuration
+        artifacts_dir: Directory to save bucket-specific models
+        
+    Returns:
+        Dictionary mapping bucket -> (model, metrics_dict)
+    """
+    if 'bucket' not in meta_train.columns:
+        raise ValueError("meta_train must contain 'bucket' column for bucket specialization")
+    
+    bucket_config = run_config.get('bucket_specialization', {}) if run_config else {}
+    buckets = bucket_config.get('buckets', [1, 2])
+    base_model_type = bucket_config.get('base_model_type', 'catboost')
+    
+    bucket_models = {}
+    artifacts_dir = Path(artifacts_dir) if artifacts_dir else None
+    
+    for bucket in buckets:
+        logger.info(f"Training bucket {bucket} specialized model...")
+        
+        # Filter training data by bucket
+        train_mask = meta_train['bucket'] == bucket
+        val_mask = meta_val['bucket'] == bucket
+        
+        if train_mask.sum() == 0:
+            logger.warning(f"No training samples for bucket {bucket}, skipping")
+            continue
+        
+        X_train_bk = X_train[train_mask].copy()
+        y_train_bk = y_train[train_mask].copy()
+        meta_train_bk = meta_train[train_mask].copy()
+        
+        X_val_bk = X_val[val_mask].copy()
+        y_val_bk = y_val[val_mask].copy()
+        meta_val_bk = meta_val[val_mask].copy()
+        
+        logger.info(f"Bucket {bucket}: {len(X_train_bk)} train, {len(X_val_bk)} val samples")
+        
+        # Train model for this bucket
+        model, metrics = train_scenario_model(
+            X_train_bk, y_train_bk, meta_train_bk,
+            X_val_bk, y_val_bk, meta_val_bk,
+            scenario=scenario,
+            model_type=base_model_type,
+            model_config=model_config,
+            run_config=run_config
+        )
+        
+        # Save bucket-specific model
+        if artifacts_dir:
+            bucket_dir = artifacts_dir / f'bucket{bucket}_{base_model_type}'
+            bucket_dir.mkdir(parents=True, exist_ok=True)
+            model.save(str(bucket_dir / 'model.bin'))
+            
+            # Save metrics
+            metrics_path = bucket_dir / 'metrics.json'
+            with open(metrics_path, 'w') as f:
+                json.dump(metrics, f, indent=2)
+        
+        bucket_models[bucket] = (model, metrics)
+        logger.info(f"Bucket {bucket} model: Official={metrics.get('official_metric', np.nan):.4f}")
+    
+    return bucket_models
+
+
+# ==============================================================================
+# BONUS EXPERIMENTS: B3 - Post-hoc Calibration
+# ==============================================================================
+
+def fit_grouped_calibration(
+    df_val: pd.DataFrame,
+    config: dict,
+    artifacts_dir: Optional[Path] = None
+) -> Dict[Tuple, Dict[str, float]]:
+    """
+    Fit calibration parameters for grouped predictions (B3: Calibration).
+    
+    Groups predictions by (scenario, bucket, time_window) and fits linear
+    calibration: volume_true = a * volume_pred + b
+    
+    Args:
+        df_val: Validation DataFrame with columns:
+            - scenario, bucket, months_postgx, volume_true, volume_pred
+        config: Calibration configuration dict
+        artifacts_dir: Directory to save calibration parameters
+        
+    Returns:
+        Dictionary mapping (scenario, bucket, window_id) -> {'a': slope, 'b': intercept}
+    """
+    calibration_config = config.get('calibration', {})
+    grouping = calibration_config.get('grouping', ['scenario', 'bucket', 'time_window'])
+    method = calibration_config.get('method', 'linear')
+    
+    time_windows_s1 = calibration_config.get('time_windows_s1', [[0, 5], [6, 11], [12, 23]])
+    time_windows_s2 = calibration_config.get('time_windows_s2', [[6, 11], [12, 17], [18, 23]])
+    
+    calibration_params = {}
+    
+    # Assign time windows
+    df_val = df_val.copy()
+    df_val['time_window'] = None
+    
+    for scenario in [1, 2]:
+        windows = time_windows_s1 if scenario == 1 else time_windows_s2
+        mask = df_val['scenario'] == scenario
+        
+        for window_id, (start, end) in enumerate(windows):
+            window_mask = mask & (df_val['months_postgx'] >= start) & (df_val['months_postgx'] <= end)
+            df_val.loc[window_mask, 'time_window'] = window_id
+    
+    # Fit calibration per group
+    for (scenario, bucket, time_window), group_df in df_val.groupby(['scenario', 'bucket', 'time_window']):
+        if len(group_df) < 5:  # Need minimum samples
+            logger.warning(f"Insufficient samples for calibration group ({scenario}, {bucket}, {time_window})")
+            continue
+        
+        volume_true = group_df['volume_true'].values
+        volume_pred = group_df['volume_pred'].values
+        
+        if method == 'linear':
+            # Linear regression: volume_true = a * volume_pred + b
+            from sklearn.linear_model import LinearRegression
+            reg = LinearRegression()
+            reg.fit(volume_pred.reshape(-1, 1), volume_true)
+            a = reg.coef_[0]
+            b = reg.intercept_
+        elif method == 'isotonic':
+            from sklearn.isotonic import IsotonicRegression
+            reg = IsotonicRegression(out_of_bounds='clip')
+            reg.fit(volume_pred, volume_true)
+            # For isotonic, we'll store the model itself
+            a = 1.0  # Placeholder
+            b = 0.0  # Placeholder
+            calibration_params[(scenario, bucket, time_window)] = {
+                'method': 'isotonic',
+                'model': reg,
+                'a': a,
+                'b': b
+            }
+            continue
+        else:
+            raise ValueError(f"Unknown calibration method: {method}")
+        
+        calibration_params[(scenario, bucket, time_window)] = {
+            'method': method,
+            'a': float(a),
+            'b': float(b),
+            'n_samples': len(group_df)
+        }
+        
+        logger.debug(f"Calibration ({scenario}, {bucket}, {time_window}): a={a:.4f}, b={b:.4f}, n={len(group_df)}")
+    
+    # Save calibration parameters
+    if artifacts_dir:
+        artifacts_dir = Path(artifacts_dir)
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Convert to JSON-serializable format (skip isotonic models)
+        params_json = {}
+        for key, params in calibration_params.items():
+            if params['method'] != 'isotonic':
+                params_json[str(key)] = params
+            else:
+                # For isotonic, save metadata only
+                params_json[str(key)] = {
+                    'method': 'isotonic',
+                    'n_samples': params['n_samples']
+                }
+        
+        calib_path = artifacts_dir / 'calibration_params.json'
+        with open(calib_path, 'w') as f:
+            json.dump(params_json, f, indent=2)
+        logger.info(f"Saved calibration parameters to {calib_path}")
+    
+    return calibration_params
+
+
+# ==============================================================================
+# BONUS EXPERIMENTS: B6 - Group-Level Bias Correction
+# ==============================================================================
+
+def fit_bias_corrections(
+    df_val: pd.DataFrame,
+    config: dict,
+    artifacts_dir: Optional[Path] = None
+) -> Dict[Tuple, float]:
+    """
+    Fit bias corrections per group (B6: Bias Correction).
+    
+    Computes mean error per group (e.g., ther_area, country) and stores
+    as additive corrections.
+    
+    Args:
+        df_val: Validation DataFrame with columns:
+            - group columns (e.g., ther_area, country)
+            - volume_true, volume_pred
+        config: Bias correction configuration
+        artifacts_dir: Directory to save bias corrections
+        
+    Returns:
+        Dictionary mapping group tuple -> bias value
+    """
+    bias_config = config.get('bias_correction', {})
+    group_cols = bias_config.get('group_cols', ['ther_area', 'country'])
+    method = bias_config.get('method', 'mean_error')
+    min_samples = bias_config.get('min_samples_per_group', 5)
+    
+    # Filter to only use group columns that exist in df_val
+    available_group_cols = [col for col in group_cols if col in df_val.columns]
+    if not available_group_cols:
+        logger.warning(f"None of the requested group columns {group_cols} are available in validation data. Skipping bias correction.")
+        return {}
+    
+    if len(available_group_cols) < len(group_cols):
+        logger.warning(f"Some group columns missing: {set(group_cols) - set(available_group_cols)}. Using only: {available_group_cols}")
+    
+    # Compute errors
+    df_val = df_val.copy()
+    df_val['error'] = df_val['volume_true'] - df_val['volume_pred']
+    
+    bias_corrections = {}
+    
+    # Compute bias per group (using only available columns)
+    for group_key, group_df in df_val.groupby(available_group_cols):
+        if len(group_df) < min_samples:
+            continue
+        
+        if method == 'mean_error':
+            bias = group_df['error'].mean()
+        elif method == 'median_error':
+            bias = group_df['error'].median()
+        else:
+            raise ValueError(f"Unknown bias correction method: {method}")
+        
+        # Convert group_key to tuple if it's not already
+        if isinstance(group_key, tuple):
+            key = group_key
+        else:
+            key = (group_key,)
+        
+        bias_corrections[key] = float(bias)
+        logger.debug(f"Bias correction {key}: {bias:.4f} (n={len(group_df)})")
+    
+    # Save bias corrections
+    if artifacts_dir:
+        artifacts_dir = Path(artifacts_dir)
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Convert to JSON-serializable format
+        # Convert tuple keys to strings for JSON serialization
+        bias_json = {}
+        for k, v in bias_corrections.items():
+            # Handle both tuple and single-value keys
+            if isinstance(k, tuple):
+                key_str = str(k)
+            else:
+                key_str = str(k)
+            bias_json[key_str] = float(v)
+        
+        bias_path = artifacts_dir / 'bias_corrections.json'
+        import json as json_module
+        with open(bias_path, 'w') as f:
+            json_module.dump(bias_json, f, indent=2)
+        logger.info(f"Saved bias corrections to {bias_path}")
+    
+    return bias_corrections
+
+
+# ==============================================================================
+# BONUS EXPERIMENTS: B8 - Multi-Seed Training
+# ==============================================================================
+
+def run_multi_seed_experiment(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    meta_train: pd.DataFrame,
+    X_val: pd.DataFrame,
+    y_val: pd.Series,
+    meta_val: pd.DataFrame,
+    scenario: int,
+    model_type: str = 'catboost',
+    model_config: Optional[dict] = None,
+    run_config: Optional[dict] = None,
+    artifacts_dir: Optional[Path] = None
+) -> pd.DataFrame:
+    """
+    Train model with multiple random seeds and compare results (B8: Multi-Seed).
+    
+    Args:
+        X_train, y_train, meta_train: Training data
+        X_val, y_val, meta_val: Validation data
+        scenario: 1 or 2
+        model_type: Model type
+        model_config: Model configuration
+        run_config: Run configuration
+        artifacts_dir: Directory to save seed-specific models
+        
+    Returns:
+        DataFrame with one row per seed: seed, official_metric, rmse, mae, model_path
+    """
+    multi_seed_config = run_config.get('multi_seed', {}) if run_config else {}
+    seeds = multi_seed_config.get('seeds', [42, 2025, 1337])
+    
+    results = []
+    artifacts_dir = Path(artifacts_dir) if artifacts_dir else None
+    
+    for seed in seeds:
+        logger.info(f"Training with seed {seed}...")
+        
+        # Override seed in model config
+        seed_model_config = model_config.copy() if model_config else {}
+        if 'params' not in seed_model_config:
+            seed_model_config['params'] = {}
+        seed_model_config['params']['random_seed'] = seed
+        
+        # Override seed in run config
+        seed_run_config = run_config.copy() if run_config else {}
+        if 'reproducibility' not in seed_run_config:
+            seed_run_config['reproducibility'] = {}
+        seed_run_config['reproducibility']['seed'] = seed
+        
+        # Set seed
+        set_seed(seed)
+        
+        # Train model
+        model, metrics = train_scenario_model(
+            X_train, y_train, meta_train,
+            X_val, y_val, meta_val,
+            scenario=scenario,
+            model_type=model_type,
+            model_config=seed_model_config,
+            run_config=seed_run_config
+        )
+        
+        # Save model
+        model_path = None
+        if artifacts_dir:
+            seed_dir = artifacts_dir / f'seed_{seed}'
+            seed_dir.mkdir(parents=True, exist_ok=True)
+            model_path = seed_dir / 'model.bin'
+            model.save(str(model_path))
+        
+        results.append({
+            'seed': seed,
+            'official_metric': metrics.get('official_metric', np.nan),
+            'rmse_norm': metrics.get('rmse_norm', np.nan),
+            'mae_norm': metrics.get('mae_norm', np.nan),
+            'model_path': str(model_path) if model_path else None
+        })
+        
+        logger.info(f"Seed {seed}: Official={metrics.get('official_metric', np.nan):.4f}")
+    
+    results_df = pd.DataFrame(results)
+    
+    # Save summary
+    if artifacts_dir:
+        summary_path = artifacts_dir / 'multi_seed_summary.csv'
+        results_df.to_csv(summary_path, index=False)
+        logger.info(f"Saved multi-seed summary to {summary_path}")
+        
+        # Log statistics
+        logger.info(f"Multi-seed results:")
+        logger.info(f"  Mean official metric: {results_df['official_metric'].mean():.4f}")
+        logger.info(f"  Std official metric: {results_df['official_metric'].std():.4f}")
+        logger.info(f"  Best seed: {results_df.loc[results_df['official_metric'].idxmin(), 'seed']}")
+    
+    return results_df
+
+
+# ==============================================================================
+# BONUS EXPERIMENTS: B5 - Residual Model Training
+# ==============================================================================
+
+def train_residual_model(
+    df_residual: pd.DataFrame,
+    features_config: Optional[dict] = None,
+    residual_config: Optional[dict] = None,
+    artifacts_dir: Optional[Path] = None
+) -> Tuple[Any, Dict]:
+    """
+    Train residual model on high-risk segments (B5: Residual Model).
+    
+    Args:
+        df_residual: DataFrame with columns:
+            - country, brand_name, months_postgx, bucket, scenario
+            - volume_true, volume_pred (from hero model)
+            - All feature columns
+        features_config: Feature configuration
+        residual_config: Residual model configuration
+        artifacts_dir: Directory to save residual model
+        
+    Returns:
+        (trained_residual_model, metrics_dict)
+    """
+    residual_config = residual_config or {}
+    model_type = residual_config.get('model_type', 'catboost')
+    target_buckets = residual_config.get('target_buckets', [1])
+    target_windows_s1 = residual_config.get('target_windows_s1', [[0, 5], [6, 11]])
+    target_windows_s2 = residual_config.get('target_windows_s2', [[6, 11]])
+    
+    # Compute residual
+    df_residual = df_residual.copy()
+    df_residual['residual'] = df_residual['volume_true'] - df_residual['volume_pred']
+    
+    # Filter to target buckets and windows
+    mask = df_residual['bucket'].isin(target_buckets)
+    
+    # Filter by time windows per scenario
+    window_mask = pd.Series(False, index=df_residual.index)
+    for scenario in [1, 2]:
+        windows = target_windows_s1 if scenario == 1 else target_windows_s2
+        scenario_mask = df_residual['scenario'] == scenario
+        
+        for start, end in windows:
+            window_mask |= scenario_mask & (df_residual['months_postgx'] >= start) & (df_residual['months_postgx'] <= end)
+    
+    mask &= window_mask
+    
+    if mask.sum() == 0:
+        raise ValueError("No samples match residual model criteria")
+    
+    df_residual_filtered = df_residual[mask].copy()
+    logger.info(f"Residual model training: {len(df_residual_filtered)} samples")
+    
+    # Split features and target
+    feature_cols = [c for c in df_residual_filtered.columns 
+                    if c not in ['country', 'brand_name', 'months_postgx', 'bucket', 
+                                'scenario', 'volume_true', 'volume_pred', 'residual']]
+    
+    X_residual = df_residual_filtered[feature_cols]
+    y_residual = df_residual_filtered['residual']
+    
+    # Simple train/val split (80/20)
+    from sklearn.model_selection import train_test_split
+    X_train_res, X_val_res, y_train_res, y_val_res = train_test_split(
+        X_residual, y_residual, test_size=0.2, random_state=42
+    )
+    
+    # Train residual model
+    model = _get_model(model_type, residual_config.get('model_config', {}))
+    model.fit(X_train_res, y_train_res, X_val=X_val_res, y_val=y_val_res)
+    
+    # Evaluate
+    val_pred_residual = model.predict(X_val_res)
+    rmse = np.sqrt(np.mean((val_pred_residual - y_val_res.values) ** 2))
+    mae = np.mean(np.abs(val_pred_residual - y_val_res.values))
+    
+    metrics = {
+        'rmse_residual': rmse,
+        'mae_residual': mae,
+        'n_train': len(X_train_res),
+        'n_val': len(X_val_res)
+    }
+    
+    # Save model
+    if artifacts_dir:
+        artifacts_dir = Path(artifacts_dir)
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        model.save(str(artifacts_dir / 'residual_model.bin'))
+        
+        metrics_path = artifacts_dir / 'residual_metrics.json'
+        with open(metrics_path, 'w') as f:
+            json.dump(metrics, f, indent=2)
+    
+    logger.info(f"Residual model: RMSE={rmse:.4f}, MAE={mae:.4f}")
+    
+    return model, metrics
 
 
 if __name__ == "__main__":

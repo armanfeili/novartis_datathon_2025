@@ -434,7 +434,10 @@ def generate_submission(
     test_panel: pd.DataFrame,
     submission_template: pd.DataFrame,
     feature_cols_s1: Optional[List[str]] = None,
-    feature_cols_s2: Optional[List[str]] = None
+    feature_cols_s2: Optional[List[str]] = None,
+    run_config: Optional[dict] = None,
+    artifacts_dir_s1: Optional[Union[str, Path]] = None,
+    artifacts_dir_s2: Optional[Union[str, Path]] = None
 ) -> pd.DataFrame:
     """
     Generate final submission file.
@@ -446,6 +449,9 @@ def generate_submission(
         submission_template: Template DataFrame with required rows
         feature_cols_s1: Feature columns for Scenario 1 (must match training)
         feature_cols_s2: Feature columns for Scenario 2 (must match training)
+        run_config: Optional run configuration for bonus experiments
+        artifacts_dir_s1: Optional artifacts directory for Scenario 1 (for loading bonus artifacts)
+        artifacts_dir_s2: Optional artifacts directory for Scenario 2 (for loading bonus artifacts)
     
     CRITICAL: Models output normalized volume (y_norm).
     Must inverse transform: volume = y_norm * avg_vol_12m
@@ -477,16 +483,75 @@ def generate_submission(
             ].copy()
             
             if len(s1_pred_rows) > 0:
-                X_s1, meta_s1 = get_feature_matrix_and_meta(s1_pred_rows)
-                
-                # Filter to training feature columns if specified
-                if feature_cols_s1 is not None:
-                    X_s1 = X_s1[[c for c in feature_cols_s1 if c in X_s1.columns]]
-                
+                # BONUS: B2 - Check if bucket specialization is enabled
+                bucket_spec_config = run_config.get('bucket_specialization', {}) if run_config else {}
+                if bucket_spec_config.get('enabled', False) and artifacts_dir_s1:
+                    # Load bucket models
+                    buckets = bucket_spec_config.get('buckets', [1, 2])
+                    model_type = bucket_spec_config.get('base_model_type', 'catboost')
+                    bucket_models = load_bucket_models(artifacts_dir_s1, buckets, model_type)
+                    
+                    if bucket_models:
+                        # Ensure bucket column exists in test panel
+                        if 'bucket' not in s1_panel_expanded.columns:
+                            # Compute bucket from pre-entry stats
+                            from .data import compute_pre_entry_stats
+                            s1_panel_expanded = compute_pre_entry_stats(s1_panel_expanded, is_train=False)
+                        
+                        # Route predictions by bucket
+                        pred_df = route_predictions_by_bucket(
+                            s1_panel_expanded,
+                            bucket_models,
+                            scenario=1,
+                            artifacts_dir=artifacts_dir_s1
+                        )
+                        predictions.append(pred_df)
+                        logger.info(f"Scenario 1 (bucket-specialized): {len(pred_df)} predictions generated")
+                    else:
+                        # Fall back to regular prediction
+                        X_s1, meta_s1 = get_feature_matrix_and_meta(s1_pred_rows)
+                        if feature_cols_s1 is not None:
+                            X_s1 = X_s1[[c for c in feature_cols_s1 if c in X_s1.columns]]
+                        y_norm_pred_transformed = model_scenario1.predict(X_s1)
+                        # Apply inverse target transform if available
+                        if artifacts_dir_s1:
+                            transform_params = load_target_transform_params(artifacts_dir_s1, scenario=1)
+                            if transform_params:
+                                from .train import inverse_transform_target
+                                y_norm_pred = inverse_transform_target(y_norm_pred_transformed, transform_params)
+                            else:
+                                y_norm_pred = y_norm_pred_transformed
+                        else:
+                            y_norm_pred = y_norm_pred_transformed
+                        volume_pred = y_norm_pred * meta_s1['avg_vol_12m'].values
+                        pred_df = meta_s1[['country', 'brand_name', 'months_postgx']].copy()
+                        pred_df['volume'] = volume_pred
+                        predictions.append(pred_df)
+                        logger.info(f"Scenario 1: {len(pred_df)} predictions generated")
+                else:
+                    # Regular prediction
+                    X_s1, meta_s1 = get_feature_matrix_and_meta(s1_pred_rows)
+                    
+                    # Filter to training feature columns if specified
+                    if feature_cols_s1 is not None:
+                        X_s1 = X_s1[[c for c in feature_cols_s1 if c in X_s1.columns]]
+                    
                 # Predict
-                y_norm_pred = model_scenario1.predict(X_s1)
+                y_norm_pred_transformed = model_scenario1.predict(X_s1)
                 
-                # Inverse transform
+                # BONUS: B10 - Apply inverse target transform if model was trained with transform
+                if artifacts_dir_s1:
+                    transform_params = load_target_transform_params(artifacts_dir_s1, scenario=1)
+                    if transform_params:
+                        from .train import inverse_transform_target
+                        y_norm_pred = inverse_transform_target(y_norm_pred_transformed, transform_params)
+                        logger.debug("Applied inverse target transform for Scenario 1")
+                    else:
+                        y_norm_pred = y_norm_pred_transformed
+                else:
+                    y_norm_pred = y_norm_pred_transformed
+                
+                # Inverse transform (normalize to volume)
                 volume_pred = y_norm_pred * meta_s1['avg_vol_12m'].values
                 
                 # Build prediction DataFrame
@@ -514,24 +579,83 @@ def generate_submission(
             ].copy()
             
             if len(s2_pred_rows) > 0:
-                X_s2, meta_s2 = get_feature_matrix_and_meta(s2_pred_rows)
-                
-                # Filter to training feature columns if specified
-                if feature_cols_s2 is not None:
-                    X_s2 = X_s2[[c for c in feature_cols_s2 if c in X_s2.columns]]
-                
-                # Predict
-                y_norm_pred = model_scenario2.predict(X_s2)
-                
-                # Inverse transform
-                volume_pred = y_norm_pred * meta_s2['avg_vol_12m'].values
-                
-                # Build prediction DataFrame
-                pred_df = meta_s2[['country', 'brand_name', 'months_postgx']].copy()
-                pred_df['volume'] = volume_pred
-                predictions.append(pred_df)
-                
-                logger.info(f"Scenario 2: {len(pred_df)} predictions generated")
+                # BONUS: B2 - Check if bucket specialization is enabled
+                bucket_spec_config = run_config.get('bucket_specialization', {}) if run_config else {}
+                if bucket_spec_config.get('enabled', False) and artifacts_dir_s2:
+                    # Load bucket models
+                    buckets = bucket_spec_config.get('buckets', [1, 2])
+                    model_type = bucket_spec_config.get('base_model_type', 'catboost')
+                    bucket_models = load_bucket_models(artifacts_dir_s2, buckets, model_type)
+                    
+                    if bucket_models:
+                        # Ensure bucket column exists in test panel
+                        if 'bucket' not in s2_panel_expanded.columns:
+                            # Compute bucket from pre-entry stats
+                            from .data import compute_pre_entry_stats
+                            s2_panel_expanded = compute_pre_entry_stats(s2_panel_expanded, is_train=False)
+                        
+                        # Route predictions by bucket
+                        pred_df = route_predictions_by_bucket(
+                            s2_panel_expanded,
+                            bucket_models,
+                            scenario=2,
+                            artifacts_dir=artifacts_dir_s2
+                        )
+                        predictions.append(pred_df)
+                        logger.info(f"Scenario 2 (bucket-specialized): {len(pred_df)} predictions generated")
+                    else:
+                        # Fall back to regular prediction
+                        X_s2, meta_s2 = get_feature_matrix_and_meta(s2_pred_rows)
+                        if feature_cols_s2 is not None:
+                            X_s2 = X_s2[[c for c in feature_cols_s2 if c in X_s2.columns]]
+                        y_norm_pred_transformed = model_scenario2.predict(X_s2)
+                        # Apply inverse target transform if available
+                        if artifacts_dir_s2:
+                            transform_params = load_target_transform_params(artifacts_dir_s2, scenario=2)
+                            if transform_params:
+                                from .train import inverse_transform_target
+                                y_norm_pred = inverse_transform_target(y_norm_pred_transformed, transform_params)
+                            else:
+                                y_norm_pred = y_norm_pred_transformed
+                        else:
+                            y_norm_pred = y_norm_pred_transformed
+                        volume_pred = y_norm_pred * meta_s2['avg_vol_12m'].values
+                        pred_df = meta_s2[['country', 'brand_name', 'months_postgx']].copy()
+                        pred_df['volume'] = volume_pred
+                        predictions.append(pred_df)
+                        logger.info(f"Scenario 2: {len(pred_df)} predictions generated")
+                else:
+                    # Regular prediction
+                    X_s2, meta_s2 = get_feature_matrix_and_meta(s2_pred_rows)
+                    
+                    # Filter to training feature columns if specified
+                    if feature_cols_s2 is not None:
+                        X_s2 = X_s2[[c for c in feature_cols_s2 if c in X_s2.columns]]
+                    
+                    # Predict
+                    y_norm_pred_transformed = model_scenario2.predict(X_s2)
+                    
+                    # BONUS: B10 - Apply inverse target transform if model was trained with transform
+                    if artifacts_dir_s2:
+                        transform_params = load_target_transform_params(artifacts_dir_s2, scenario=2)
+                        if transform_params:
+                            from .train import inverse_transform_target
+                            y_norm_pred = inverse_transform_target(y_norm_pred_transformed, transform_params)
+                            logger.debug("Applied inverse target transform for Scenario 2")
+                        else:
+                            y_norm_pred = y_norm_pred_transformed
+                    else:
+                        y_norm_pred = y_norm_pred_transformed
+                    
+                    # Inverse transform (normalize to volume)
+                    volume_pred = y_norm_pred * meta_s2['avg_vol_12m'].values
+                    
+                    # Build prediction DataFrame
+                    pred_df = meta_s2[['country', 'brand_name', 'months_postgx']].copy()
+                    pred_df['volume'] = volume_pred
+                    predictions.append(pred_df)
+                    
+                    logger.info(f"Scenario 2: {len(pred_df)} predictions generated")
         
         # Combine all predictions
         if len(predictions) == 0:
@@ -544,6 +668,120 @@ def generate_submission(
         if n_negative > 0:
             logger.warning(f"Clipping {n_negative} negative predictions to 0")
             submission['volume'] = submission['volume'].clip(lower=0)
+        
+        # BONUS EXPERIMENTS: Apply post-processing corrections
+        if run_config is not None:
+            # BONUS: B3 - Apply calibration (per scenario)
+            calibration_config = run_config.get('calibration', {})
+            if calibration_config.get('enabled', False):
+                # Apply calibration separately for S1 and S2 predictions
+                for scenario_num in [1, 2]:
+                    artifacts_dir = artifacts_dir_s1 if scenario_num == 1 else artifacts_dir_s2
+                    if artifacts_dir:
+                        calibration_params = load_calibration_params(artifacts_dir)
+                        if calibration_params:
+                            # Filter to this scenario's predictions
+                            if scenario_num == 1:
+                                scenario_mask = submission['months_postgx'] >= 0
+                            else:
+                                scenario_mask = submission['months_postgx'] >= 6
+                            
+                            if scenario_mask.sum() > 0:
+                                submission_scenario = submission[scenario_mask].copy()
+                                # Add scenario and bucket columns for calibration
+                                # Handle case where bucket column doesn't exist in test_panel
+                                if 'bucket' in test_panel.columns:
+                                    # Get unique series with bucket info
+                                    bucket_info = test_panel[['country', 'brand_name', 'bucket']].drop_duplicates(subset=['country', 'brand_name'])
+                                    submission_with_meta = submission_scenario.merge(
+                                        bucket_info,
+                                        on=['country', 'brand_name'],
+                                        how='left'
+                                    )
+                                else:
+                                    # Bucket not available in test data - use default bucket 1
+                                    submission_with_meta = submission_scenario.copy()
+                                    submission_with_meta['bucket'] = 1
+                                    logger.warning("'bucket' column not found in test_panel, using default bucket=1 for calibration")
+                                
+                                submission_with_meta['scenario'] = scenario_num
+                                submission_calibrated = apply_calibration(
+                                    submission_with_meta,
+                                    calibration_params,
+                                    run_config
+                                )
+                                # Update submission
+                                submission.loc[scenario_mask, 'volume'] = submission_calibrated['volume'].values
+                                logger.info(f"Applied calibration corrections for Scenario {scenario_num}")
+            
+            # BONUS: B4 - Apply smoothing
+            smoothing_config = run_config.get('smoothing', {})
+            if smoothing_config.get('enabled', False):
+                submission = smooth_predictions(submission, run_config)
+                logger.info("Applied temporal smoothing")
+            
+            # BONUS: B5 - Apply residual model correction
+            residual_config = run_config.get('residual_model', {})
+            if residual_config.get('enabled', False):
+                # Try both artifact directories
+                residual_model_s1 = None
+                residual_model_s2 = None
+                if artifacts_dir_s1:
+                    residual_model_s1 = load_residual_model(artifacts_dir_s1, residual_config.get('model_type', 'catboost'))
+                if artifacts_dir_s2:
+                    residual_model_s2 = load_residual_model(artifacts_dir_s2, residual_config.get('model_type', 'catboost'))
+                
+                # Apply residual correction per scenario if models are available
+                # Note: Residual model requires full feature matrix, which we need to rebuild
+                # For now, we'll apply it if we can reconstruct the features
+                # In practice, residual model application is most useful when we have the full feature pipeline
+                if residual_model_s1 or residual_model_s2:
+                    logger.info("Residual model(s) loaded - application requires feature reconstruction")
+                    # TODO: Full residual model application would require:
+                    # 1. Rebuilding features for test data matching training feature set
+                    # 2. Ensuring feature order matches residual model expectations
+                    # 3. Applying correction only to target buckets/windows
+                    # This is complex and would require significant refactoring of the inference pipeline
+                    # The infrastructure is in place (apply_residual_correction function exists)
+                    # but full integration requires passing feature matrices through the pipeline
+                else:
+                    logger.debug("Residual model not found in artifacts directories")
+            
+            # BONUS: B6 - Apply bias corrections
+            bias_config = run_config.get('bias_correction', {})
+            if bias_config.get('enabled', False):
+                # Try both artifact directories
+                bias_corrections = None
+                if artifacts_dir_s1:
+                    bias_corrections = load_bias_corrections(artifacts_dir_s1)
+                if bias_corrections is None and artifacts_dir_s2:
+                    bias_corrections = load_bias_corrections(artifacts_dir_s2)
+                
+                if bias_corrections:
+                    # Merge with test panel to get group columns
+                    group_cols = bias_config.get('group_cols', ['ther_area', 'country'])
+                    # Get unique series with group columns, avoiding duplicate column names
+                    # First, ensure test_panel doesn't have duplicate columns
+                    test_panel_clean = test_panel.loc[:, ~test_panel.columns.duplicated()].copy()
+                    # Remove 'country' and 'brand_name' from group_cols since they're merge keys
+                    group_cols_present = [c for c in group_cols if c in test_panel_clean.columns and c not in ['country', 'brand_name']]
+                    # Build column list ensuring no duplicates
+                    cols_to_select = ['country', 'brand_name']
+                    for col in group_cols_present:
+                        if col not in cols_to_select:
+                            cols_to_select.append(col)
+                    group_info = test_panel_clean[cols_to_select].drop_duplicates(subset=['country', 'brand_name'])
+                    submission_with_groups = submission.merge(
+                        group_info,
+                        on=['country', 'brand_name'],
+                        how='left'
+                    )
+                    submission = apply_bias_corrections(
+                        submission_with_groups,
+                        bias_corrections,
+                        run_config
+                    )
+                    logger.info("Applied bias corrections")
         
         # Merge with template to ensure correct order and completeness
         submission = submission_template[['country', 'brand_name', 'months_postgx']].merge(
@@ -1229,6 +1467,566 @@ def save_submission_with_versioning(
     return paths
 
 
+# =============================================================================
+# BONUS EXPERIMENTS: B2 - Bucket Routing at Inference
+# =============================================================================
+
+def route_predictions_by_bucket(
+    test_panel: pd.DataFrame,
+    bucket_models: Dict[int, Any],
+    scenario: int,
+    artifacts_dir: Optional[Path] = None
+) -> pd.DataFrame:
+    """
+    Route predictions to bucket-specific models (B2: Bucket Specialization).
+    
+    Args:
+        test_panel: Test panel with bucket column (must be computed from pre-entry stats)
+        bucket_models: Dictionary mapping bucket -> model instance
+        scenario: 1 or 2
+        artifacts_dir: Optional directory for logging
+        
+    Returns:
+        DataFrame with predictions: country, brand_name, months_postgx, volume
+    """
+    if 'bucket' not in test_panel.columns:
+        # Try to compute bucket from pre-entry stats
+        logger.warning("'bucket' column not found, attempting to compute from pre-entry stats")
+        try:
+            from .data import compute_pre_entry_stats
+            test_panel = compute_pre_entry_stats(test_panel, is_train=False)
+            if 'bucket' not in test_panel.columns:
+                raise ValueError("Could not compute 'bucket' column from pre-entry stats")
+        except Exception as e:
+            raise ValueError(f"test_panel must contain 'bucket' column for bucket routing: {e}")
+    
+    all_predictions = []
+    
+    for bucket, model in bucket_models.items():
+        logger.info(f"Predicting with bucket {bucket} model...")
+        
+        # Filter test panel by bucket
+        bucket_mask = test_panel['bucket'] == bucket
+        bucket_panel = test_panel[bucket_mask].copy()
+        
+        if len(bucket_panel) == 0:
+            logger.warning(f"No test samples for bucket {bucket}")
+            continue
+        
+        # Build features
+        bucket_features = make_features(bucket_panel, scenario=scenario, mode='test')
+        
+        # Filter to prediction rows
+        if scenario == 1:
+            pred_rows = bucket_features[
+                (bucket_features['months_postgx'] >= 0) & 
+                (bucket_features['months_postgx'] <= 23)
+            ].copy()
+        else:
+            pred_rows = bucket_features[
+                (bucket_features['months_postgx'] >= 6) & 
+                (bucket_features['months_postgx'] <= 23)
+            ].copy()
+        
+        if len(pred_rows) == 0:
+            continue
+        
+        # Get feature matrix
+        X_bucket, meta_bucket = get_feature_matrix_and_meta(pred_rows)
+        
+        # Predict normalized volume
+        yhat_norm = model.predict(X_bucket)
+        
+        # Inverse transform to actual volume
+        avg_vol_bucket = meta_bucket['avg_vol_12m'].values
+        volume_pred = yhat_norm * avg_vol_bucket
+        
+        # Build prediction DataFrame
+        bucket_pred = meta_bucket[['country', 'brand_name', 'months_postgx']].copy()
+        bucket_pred['volume'] = volume_pred
+        
+        all_predictions.append(bucket_pred)
+        logger.info(f"Bucket {bucket}: {len(bucket_pred)} predictions")
+    
+    if not all_predictions:
+        raise ValueError("No predictions generated from bucket models")
+    
+    # Combine predictions
+    combined = pd.concat(all_predictions, ignore_index=True)
+    combined = combined.sort_values(['country', 'brand_name', 'months_postgx'])
+    
+    return combined
+
+
+# =============================================================================
+# BONUS EXPERIMENTS: B3 - Apply Calibration
+# =============================================================================
+
+def apply_calibration(
+    predictions_df: pd.DataFrame,
+    calibration_params: Dict[Tuple, Dict[str, float]],
+    config: dict
+) -> pd.DataFrame:
+    """
+    Apply calibration corrections to predictions (B3: Calibration).
+    
+    Args:
+        predictions_df: DataFrame with columns: country, brand_name, months_postgx, volume
+        calibration_params: Dictionary mapping (scenario, bucket, window_id) -> params
+        config: Calibration configuration
+        
+    Returns:
+        DataFrame with calibrated volume predictions
+    """
+    calibration_config = config.get('calibration', {})
+    time_windows_s1 = calibration_config.get('time_windows_s1', [[0, 5], [6, 11], [12, 23]])
+    time_windows_s2 = calibration_config.get('time_windows_s2', [[6, 11], [12, 17], [18, 23]])
+    
+    predictions_df = predictions_df.copy()
+    
+    # Detect scenario from months_postgx
+    predictions_df['scenario'] = 1
+    predictions_df.loc[predictions_df['months_postgx'] >= 6, 'scenario'] = 2
+    
+    # Assign time windows
+    predictions_df['time_window'] = None
+    
+    for scenario in [1, 2]:
+        windows = time_windows_s1 if scenario == 1 else time_windows_s2
+        mask = predictions_df['scenario'] == scenario
+        
+        for window_id, (start, end) in enumerate(windows):
+            window_mask = mask & (predictions_df['months_postgx'] >= start) & (predictions_df['months_postgx'] <= end)
+            predictions_df.loc[window_mask, 'time_window'] = window_id
+    
+    # Apply calibration per row
+    calibrated_volumes = []
+    
+    for idx, row in predictions_df.iterrows():
+        scenario = int(row['scenario'])
+        bucket = int(row.get('bucket', 1))  # Default to bucket 1 if not present
+        time_window = row['time_window']
+        volume_pred_raw = row['volume']
+        
+        # Look up calibration parameters
+        key = (scenario, bucket, time_window)
+        
+        if key in calibration_params:
+            params = calibration_params[key]
+            method = params.get('method', 'linear')
+            
+            if method == 'linear':
+                a = params['a']
+                b = params['b']
+                volume_calibrated = a * volume_pred_raw + b
+            elif method == 'isotonic':
+                # For isotonic, we'd need the model object (not implemented in JSON)
+                # Fall back to no calibration
+                volume_calibrated = volume_pred_raw
+            else:
+                volume_calibrated = volume_pred_raw
+        else:
+            # No calibration found for this group, use raw prediction
+            volume_calibrated = volume_pred_raw
+        
+        # Clip to non-negative
+        volume_calibrated = max(volume_calibrated, 0.0)
+        calibrated_volumes.append(volume_calibrated)
+    
+    predictions_df['volume'] = calibrated_volumes
+    
+    # Drop temporary columns
+    predictions_df = predictions_df.drop(columns=['scenario', 'time_window'], errors='ignore')
+    
+    logger.info(f"Applied calibration to {len(predictions_df)} predictions")
+    
+    return predictions_df
+
+
+# =============================================================================
+# BONUS EXPERIMENTS: B4 - Temporal Smoothing
+# =============================================================================
+
+def smooth_predictions(
+    predictions_df: pd.DataFrame,
+    config: dict
+) -> pd.DataFrame:
+    """
+    Apply temporal smoothing to volume predictions (B4: Smoothing).
+    
+    Args:
+        predictions_df: DataFrame with columns: country, brand_name, months_postgx, volume
+        config: Smoothing configuration
+        
+    Returns:
+        DataFrame with smoothed volume predictions
+    """
+    smoothing_config = config.get('smoothing', {})
+    method = smoothing_config.get('method', 'rolling_median')
+    window = smoothing_config.get('window', 3)
+    min_periods = smoothing_config.get('min_periods', 1)
+    clip_negative = smoothing_config.get('clip_negative', True)
+    
+    predictions_df = predictions_df.copy()
+    
+    # Group by series and sort by months_postgx
+    smoothed_volumes = []
+    
+    for (country, brand_name), group in predictions_df.groupby(['country', 'brand_name']):
+        group = group.sort_values('months_postgx').copy()
+        volumes = group['volume'].values
+        
+        volumes_series = pd.Series(volumes)
+        if method == 'rolling_median':
+            smoothed = volumes_series.rolling(
+                window=window, min_periods=min_periods, center=True
+            ).median().fillna(method='bfill').fillna(method='ffill').fillna(volumes_series.iloc[0] if len(volumes_series) > 0 else 0)
+        elif method == 'rolling_mean':
+            smoothed = volumes_series.rolling(
+                window=window, min_periods=min_periods, center=True
+            ).mean().fillna(method='bfill').fillna(method='ffill').fillna(volumes_series.iloc[0] if len(volumes_series) > 0 else 0)
+        else:
+            smoothed = volumes_series
+        
+        if clip_negative:
+            smoothed = np.maximum(smoothed, 0.0)
+        
+        smoothed_volumes.extend(smoothed.values)
+    
+    predictions_df['volume'] = smoothed_volumes
+    
+    logger.info(f"Applied {method} smoothing (window={window}) to predictions")
+    
+    return predictions_df
+
+
+# =============================================================================
+# BONUS EXPERIMENTS: B6 - Apply Bias Corrections
+# =============================================================================
+
+def apply_bias_corrections(
+    predictions_df: pd.DataFrame,
+    bias_corrections: Dict[Tuple, float],
+    config: dict
+) -> pd.DataFrame:
+    """
+    Apply group-level bias corrections (B6: Bias Correction).
+    
+    Args:
+        predictions_df: DataFrame with columns: country, brand_name, months_postgx, volume
+            and group columns (e.g., ther_area, country)
+        bias_corrections: Dictionary mapping group tuple -> bias value
+        config: Bias correction configuration
+        
+    Returns:
+        DataFrame with bias-corrected volume predictions
+    """
+    bias_config = config.get('bias_correction', {})
+    group_cols = bias_config.get('group_cols', ['ther_area', 'country'])
+    
+    predictions_df = predictions_df.copy()
+    
+    # Apply bias correction per row
+    corrected_volumes = []
+    
+    for idx, row in predictions_df.iterrows():
+        # Build group key
+        group_key = tuple(row[col] for col in group_cols if col in row)
+        
+        # Look up bias
+        if group_key in bias_corrections:
+            bias = bias_corrections[group_key]
+            volume_corrected = row['volume'] + bias
+        else:
+            # No bias found for this group
+            volume_corrected = row['volume']
+        
+        # Clip to non-negative
+        volume_corrected = max(volume_corrected, 0.0)
+        corrected_volumes.append(volume_corrected)
+    
+    predictions_df['volume'] = corrected_volumes
+    
+    logger.info(f"Applied bias corrections to {len(predictions_df)} predictions")
+    
+    return predictions_df
+
+
+# =============================================================================
+# BONUS EXPERIMENTS: B5 - Apply Residual Model
+# =============================================================================
+
+def apply_residual_correction(
+    predictions_df: pd.DataFrame,
+    residual_model: Any,
+    test_features: pd.DataFrame,
+    config: dict
+) -> pd.DataFrame:
+    """
+    Apply residual model correction to high-risk segments (B5: Residual Model).
+    
+    Args:
+        predictions_df: DataFrame with columns: country, brand_name, months_postgx, volume
+        residual_model: Trained residual model
+        test_features: Feature matrix for test data (must match training features)
+        config: Residual model configuration
+        
+    Returns:
+        DataFrame with residual-corrected volume predictions
+    """
+    residual_config = config.get('residual_model', {})
+    target_buckets = residual_config.get('target_buckets', [1])
+    target_windows_s1 = residual_config.get('target_windows_s1', [[0, 5], [6, 11]])
+    target_windows_s2 = residual_config.get('target_windows_s2', [[6, 11]])
+    
+    predictions_df = predictions_df.copy()
+    
+    # Detect scenario
+    predictions_df['scenario'] = 1
+    predictions_df.loc[predictions_df['months_postgx'] >= 6, 'scenario'] = 2
+    
+    # Identify target rows
+    mask = predictions_df.get('bucket', pd.Series([1] * len(predictions_df))).isin(target_buckets)
+    
+    window_mask = pd.Series(False, index=predictions_df.index)
+    for scenario in [1, 2]:
+        windows = target_windows_s1 if scenario == 1 else target_windows_s2
+        scenario_mask = predictions_df['scenario'] == scenario
+        
+        for start, end in windows:
+            window_mask |= scenario_mask & (predictions_df['months_postgx'] >= start) & (predictions_df['months_postgx'] <= end)
+    
+    target_mask = mask & window_mask
+    
+    if target_mask.sum() == 0:
+        logger.warning("No rows match residual model criteria, returning original predictions")
+        return predictions_df
+    
+    # Predict residual for target rows
+    X_target = test_features[target_mask]
+    residual_pred = residual_model.predict(X_target)
+    
+    # Apply residual correction
+    corrected_volumes = predictions_df['volume'].copy()
+    corrected_volumes.loc[target_mask] += residual_pred
+    corrected_volumes = np.maximum(corrected_volumes, 0.0)  # Clip to non-negative
+    
+    predictions_df['volume'] = corrected_volumes
+    
+    logger.info(f"Applied residual correction to {target_mask.sum()} high-risk predictions")
+    
+    # Drop temporary column
+    predictions_df = predictions_df.drop(columns=['scenario'], errors='ignore')
+    
+    return predictions_df
+
+
+# =============================================================================
+# BONUS EXPERIMENTS: B8 - Seed Ensemble
+# =============================================================================
+
+# =============================================================================
+# BONUS EXPERIMENTS: Helper Functions to Load Saved Artifacts
+# =============================================================================
+
+def load_calibration_params(artifacts_dir: Union[str, Path]) -> Optional[Dict[Tuple, Dict[str, float]]]:
+    """
+    Load calibration parameters from artifacts directory.
+    
+    Args:
+        artifacts_dir: Path to artifacts directory
+        
+    Returns:
+        Dictionary mapping (scenario, bucket, window_id) -> params, or None if not found
+    """
+    from pathlib import Path
+    artifacts_dir = Path(artifacts_dir)
+    calib_path = artifacts_dir / 'calibration_params.json'
+    
+    if not calib_path.exists():
+        return None
+    
+    import json
+    with open(calib_path, 'r') as f:
+        calib_json = json.load(f)
+    
+    # Convert string keys back to tuples
+    calibration_params = {}
+    for key_str, params in calib_json.items():
+        # Parse key like "(1, 1, 0)" back to tuple
+        try:
+            key = eval(key_str)  # Safe for tuple strings
+            calibration_params[key] = params
+        except:
+            logger.warning(f"Could not parse calibration key: {key_str}")
+    
+    return calibration_params
+
+
+def load_bias_corrections(artifacts_dir: Union[str, Path]) -> Optional[Dict[Tuple, float]]:
+    """
+    Load bias corrections from artifacts directory.
+    
+    Args:
+        artifacts_dir: Path to artifacts directory
+        
+    Returns:
+        Dictionary mapping group tuple -> bias value, or None if not found
+    """
+    from pathlib import Path
+    artifacts_dir = Path(artifacts_dir)
+    bias_path = artifacts_dir / 'bias_corrections.json'
+    
+    if not bias_path.exists():
+        return None
+    
+    import json
+    with open(bias_path, 'r') as f:
+        bias_json = json.load(f)
+    
+    # Convert string keys back to tuples
+    bias_corrections = {}
+    for key_str, bias in bias_json.items():
+        try:
+            key = eval(key_str)  # Safe for tuple strings
+            bias_corrections[key] = float(bias)
+        except:
+            logger.warning(f"Could not parse bias key: {key_str}")
+    
+    return bias_corrections
+
+
+def load_bucket_models(artifacts_dir: Union[str, Path], buckets: List[int], model_type: str = 'catboost') -> Optional[Dict[int, Any]]:
+    """
+    Load bucket-specific models from artifacts directory.
+    
+    Args:
+        artifacts_dir: Path to artifacts directory
+        buckets: List of bucket IDs to load
+        model_type: Model type (for loading)
+        
+    Returns:
+        Dictionary mapping bucket -> model instance, or None if not found
+    """
+    from pathlib import Path
+    artifacts_dir = Path(artifacts_dir)
+    
+    bucket_models = {}
+    for bucket in buckets:
+        bucket_dir = artifacts_dir / f'bucket{bucket}_{model_type}'
+        model_path = bucket_dir / 'model.bin'
+        
+        if not model_path.exists():
+            logger.warning(f"Bucket {bucket} model not found at {model_path}")
+            continue
+        
+        # Load model based on type
+        if model_type == 'catboost':
+            from .models.cat_model import CatBoostModel
+            model = CatBoostModel({})
+            model.load(str(model_path))
+        else:
+            import joblib
+            model = joblib.load(str(model_path))
+        
+        bucket_models[bucket] = model
+    
+    return bucket_models if bucket_models else None
+
+
+def load_residual_model(artifacts_dir: Union[str, Path], model_type: str = 'catboost') -> Optional[Any]:
+    """
+    Load residual model from artifacts directory.
+    
+    Args:
+        artifacts_dir: Path to artifacts directory
+        model_type: Model type
+        
+    Returns:
+        Model instance or None if not found
+    """
+    from pathlib import Path
+    artifacts_dir = Path(artifacts_dir)
+    residual_path = artifacts_dir / 'residual_model' / 'residual_model.bin'
+    
+    if not residual_path.exists():
+        return None
+    
+    if model_type == 'catboost':
+        from .models.cat_model import CatBoostModel
+        model = CatBoostModel({})
+        model.load(str(residual_path))
+    else:
+        import joblib
+        model = joblib.load(str(residual_path))
+    
+    return model
+
+
+def load_target_transform_params(artifacts_dir: Union[str, Path], scenario: int) -> Optional[dict]:
+    """
+    Load target transform parameters from artifacts directory.
+    
+    Args:
+        artifacts_dir: Path to artifacts directory
+        scenario: Scenario number (1 or 2)
+        
+    Returns:
+        Transform parameters dict or None if not found
+    """
+    from pathlib import Path
+    import json
+    artifacts_dir = Path(artifacts_dir)
+    transform_path = artifacts_dir / f'target_transform_params_{scenario}.json'
+    
+    if not transform_path.exists():
+        return None
+    
+    with open(transform_path, 'r') as f:
+        return json.load(f)
+
+
+def ensemble_seed_predictions(
+    seed_models: List[Any],
+    X_test: pd.DataFrame,
+    method: str = 'mean'
+) -> np.ndarray:
+    """
+    Ensemble predictions from multiple seed models (B8: Seed Ensemble).
+    
+    Args:
+        seed_models: List of trained models (one per seed)
+        X_test: Test feature matrix
+        method: Ensemble method ('mean' or 'median')
+        
+    Returns:
+        Ensemble predictions array
+    """
+    if len(seed_models) == 0:
+        raise ValueError("At least one seed model is required")
+    
+    # Collect predictions from all models
+    all_preds = []
+    for i, model in enumerate(seed_models):
+        preds = model.predict(X_test)
+        all_preds.append(preds)
+        logger.debug(f"Seed model {i+1}: predictions shape {preds.shape}")
+    
+    all_preds = np.array(all_preds)  # Shape: (n_models, n_samples)
+    
+    # Ensemble
+    if method == 'mean':
+        ensemble_preds = np.mean(all_preds, axis=0)
+    elif method == 'median':
+        ensemble_preds = np.median(all_preds, axis=0)
+    else:
+        raise ValueError(f"Unknown ensemble method: {method}")
+    
+    logger.info(f"Ensembled {len(seed_models)} seed models using {method}")
+    
+    return ensemble_preds
+
+
 def main():
     """CLI entry point for generating submissions."""
     parser = argparse.ArgumentParser(description="Generate submission for Novartis Datathon 2025")
@@ -1320,12 +2118,41 @@ def main():
         'model_s2_type': type(model_s2).__name__
     }
     
+    # Load run config if available (for bonus experiments)
+    run_config = None
+    try:
+        run_config = load_config('configs/run_defaults.yaml')
+    except:
+        pass
+    
+    # Try to infer artifacts directories from model paths
+    artifacts_dir_s1 = None
+    artifacts_dir_s2 = None
+    if args.model_s1:
+        from pathlib import Path
+        model_path_s1 = Path(args.model_s1)
+        if model_path_s1.parent.name.startswith('seed_') or 'bucket' in model_path_s1.parent.name:
+            artifacts_dir_s1 = model_path_s1.parent.parent
+        else:
+            artifacts_dir_s1 = model_path_s1.parent
+    
+    if args.model_s2:
+        from pathlib import Path
+        model_path_s2 = Path(args.model_s2)
+        if model_path_s2.parent.name.startswith('seed_') or 'bucket' in model_path_s2.parent.name:
+            artifacts_dir_s2 = model_path_s2.parent.parent
+        else:
+            artifacts_dir_s2 = model_path_s2.parent
+    
     # Generate submission
     submission = generate_submission(
         model_scenario1=model_s1,
         model_scenario2=model_s2,
         test_panel=test_panel,
-        submission_template=template
+        submission_template=template,
+        run_config=run_config,
+        artifacts_dir_s1=str(artifacts_dir_s1) if artifacts_dir_s1 else None,
+        artifacts_dir_s2=str(artifacts_dir_s2) if artifacts_dir_s2 else None
     )
     
     # Handle edge cases in predictions

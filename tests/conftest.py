@@ -29,3 +29,23 @@ def pytest_configure(config):
         "filterwarnings",
         "ignore::UserWarning"
     )
+    # Statsmodels FutureWarning about index support
+    config.addinivalue_line(
+        "filterwarnings",
+        "ignore:No supported index is available.*:FutureWarning"
+    )
+    # Pandas FutureWarning for Series.__getitem__
+    config.addinivalue_line(
+        "filterwarnings",
+        "ignore:Series.__getitem__ treating keys as positions is deprecated.*:FutureWarning"
+    )
+    # Ignore all FutureWarnings from statsmodels
+    config.addinivalue_line(
+        "filterwarnings",
+        "ignore::FutureWarning:statsmodels.*"
+    )
+    # Ignore DeprecationWarnings from external packages
+    config.addinivalue_line(
+        "filterwarnings",
+        "ignore::DeprecationWarning"
+    )

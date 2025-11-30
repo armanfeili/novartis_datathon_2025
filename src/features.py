@@ -3,6 +3,23 @@ Feature engineering for Novartis Datathon 2025.
 
 Scenario-aware feature construction with strict leakage prevention.
 Features are organized into categories with clear cutoff rules.
+
+SCENARIO DEFINITIONS (from official metric):
+-------------------------------------------
+Scenario 1 (Full Prediction):
+    - Feature cutoff: month 0 (only pre-entry data available for features)
+    - Target months: 0-23 (predict full 24-month post-entry erosion curve)
+    - Use case: Brand with no post-entry sales data yet
+
+Scenario 2 (Partial Observation):  
+    - Feature cutoff: month 6 (pre-entry + first 6 months of post-entry data)
+    - Target months: 6-23 (predict remaining 18 months)
+    - Use case: Brand with 6 months of post-entry sales history
+
+LEAKAGE PREVENTION:
+- Features must only use data from months_postgx < cutoff
+- FORBIDDEN_FEATURES must never appear in model input
+- months_postgx may be used as a feature (it's the prediction horizon, not target)
 """
 
 import logging
@@ -16,18 +33,25 @@ from .utils import timer
 
 logger = logging.getLogger(__name__)
 
-# Cutoff configuration per scenario
-# Keys are integers (1 or 2) to align with CLI --scenario flag
+# =============================================================================
+# SCENARIO CONFIGURATION
+# =============================================================================
+# This is the SINGLE SOURCE OF TRUTH for scenario cutoffs.
+# Keys are integers (1 or 2) to align with CLI --scenario flag.
+# String aliases ('scenario1', 'scenario2') are kept for backward compatibility.
+
 SCENARIO_CONFIG = {
     1: {
-        'feature_cutoff': 0,    # Only months_postgx < 0 for features
-        'target_start': 0,
-        'target_end': 23,
+        'feature_cutoff': 0,    # Only months_postgx < 0 for features (pre-entry only)
+        'target_start': 0,      # Predict starting from month 0
+        'target_end': 23,       # Predict until month 23 (full 24 months)
+        'description': 'Full prediction - no post-entry data available'
     },
     2: {
-        'feature_cutoff': 6,    # months_postgx < 6 allowed
-        'target_start': 6,
-        'target_end': 23,
+        'feature_cutoff': 6,    # months_postgx < 6 allowed for features
+        'target_start': 6,      # Predict starting from month 6
+        'target_end': 23,       # Predict until month 23 (18 months)
+        'description': 'Partial observation - 6 months of post-entry data available'
     }
 }
 
@@ -35,11 +59,26 @@ SCENARIO_CONFIG = {
 SCENARIO_CONFIG['scenario1'] = SCENARIO_CONFIG[1]
 SCENARIO_CONFIG['scenario2'] = SCENARIO_CONFIG[2]
 
-# Forbidden feature columns (leakage prevention)
+# =============================================================================
+# FORBIDDEN / META COLUMNS
+# =============================================================================
+# These columns must NEVER appear in the feature matrix X.
+# They are either targets, identifiers, or derived from targets.
+
 FORBIDDEN_FEATURES = frozenset([
     'bucket', 'y_norm', 'volume', 'mean_erosion',
     'country', 'brand_name'
 ])
+
+# Canonical list of meta columns that are excluded from features.
+# This list is used consistently across all feature extraction functions.
+# - FORBIDDEN_FEATURES: Target-related columns
+# - month: Calendar month (used for seasonality calculation but not as feature)
+# - avg_vol_12m, avg_vol_0_5: Volume normalization denominators
+# - vol_month_0: Used for computing erosion features
+META_COLS = list(FORBIDDEN_FEATURES) + [
+    'month', 'avg_vol_12m', 'avg_vol_0_5', 'vol_month_0'
+]
 
 
 def _normalize_scenario(scenario) -> int:
@@ -129,6 +168,12 @@ def _load_feature_config(config: Optional[dict]) -> dict:
             'analyze_correlations': False,
             'correlation_threshold': 0.95,
             'compute_importance': False,
+        },
+        # NEW: Frequency encoding for categorical columns
+        'frequency_encoding': {
+            'enabled': False,  # Disabled by default
+            'columns': None,  # If None, auto-detect categorical columns
+            'normalize': True,  # Normalize frequencies to [0, 1]
         },
         # NEW: Visibility features (Ghannem et al., 2023)
         'visibility': {
@@ -239,26 +284,46 @@ def make_features(
                 df['y_norm'] = df['volume'] / df['avg_vol_12m']
             df = add_target_encoding_features(df, target_enc_config, scenario)
         
-        # 8. Create y_norm for training (ONLY if mode="train")
+        # 8. Frequency encoding features (if enabled)
+        freq_enc_config = feat_config.get('frequency_encoding', {})
+        if freq_enc_config.get('enabled', False):
+            df = add_frequency_encoding_features(
+                df,
+                categorical_cols=freq_enc_config.get('columns', None),
+                normalize=freq_enc_config.get('normalize', True)
+            )
+        
+        # 9. Create y_norm for training (ONLY if mode="train")
         if mode == "train":
             if 'y_norm' not in df.columns:
                 df['y_norm'] = df['volume'] / df['avg_vol_12m']
         
-        # 9. Visibility features (Ghannem et al., 2023) - if enabled
+        # 10. Visibility features (Ghannem et al., 2023) - if enabled
         vis_config = feat_config.get('visibility', {})
         if vis_config.get('enabled', False):
             visibility_data = vis_config.get('visibility_data', None)
             df = add_visibility_features(df, visibility_data, vis_config)
         
-        # 10. Collaboration features (Ghannem et al., 2023) - if enabled
+        # 11. Collaboration features (Ghannem et al., 2023) - if enabled
         collab_config = feat_config.get('collaboration', {})
         if collab_config.get('enabled', False) and mode == "train":
             df = add_collaboration_features(df, collab_config)
         
-        # 11. Sequence features (Li et al., 2024) - if enabled
+        # 12. Sequence features (Li et al., 2024) - if enabled
         seq_config = feat_config.get('sequence', {})
         if seq_config.get('enabled', False):
             df = add_sequence_features(df, seq_config)
+        
+        # 13. Safety check: Drop any early erosion features that shouldn't be in Scenario 1
+        if scenario == 1:
+            early_erosion_cols = [c for c in df.columns if any(p in c for p in [
+                'avg_vol_0_5', 'erosion_0_5', 'trend_0_5', 'drop_month_0',
+                'avg_vol_0_2', 'avg_vol_3_5', 'month_0_to_3', 'month_3_to_5',
+                'recovery_', 'competition_response', 'erosion_per_generic'
+            ])]
+            if early_erosion_cols:
+                logger.warning(f"Dropping early erosion features from Scenario 1: {early_erosion_cols}")
+                df = df.drop(columns=early_erosion_cols, errors='ignore')
         
         # Log feature count
         n_features = len([c for c in df.columns if c not in FORBIDDEN_FEATURES 
@@ -297,6 +362,116 @@ def select_training_rows(panel_df: pd.DataFrame, scenario) -> pd.DataFrame:
     
     logger.info(f"Selected {len(filtered):,} rows for {scenario} (months {start}-{end})")
     return filtered
+
+
+# =============================================================================
+# BONUS EXPERIMENTS: B7 - Feature Pruning
+# =============================================================================
+
+def prune_features_by_importance(
+    X: pd.DataFrame,
+    feature_importance: Dict[str, float],
+    config: dict,
+    artifacts_dir: Optional[Any] = None
+) -> Tuple[pd.DataFrame, List[str]]:
+    """
+    Prune features based on importance (B7: Feature Pruning).
+    
+    Args:
+        X: Feature matrix
+        feature_importance: Dictionary mapping feature name -> importance value
+        config: Feature pruning configuration
+        artifacts_dir: Optional directory to save pruning info
+        
+    Returns:
+        (pruned_X, dropped_features_list)
+    """
+    pruning_config = config.get('feature_pruning', {})
+    
+    if not pruning_config.get('enabled', False):
+        return X.copy(), []
+    
+    drop_fraction = pruning_config.get('drop_bottom_fraction', 0.2)
+    min_keep = pruning_config.get('min_keep', 50)
+    importance_threshold = pruning_config.get('importance_threshold', None)
+    
+    # Get importance for features present in X
+    feature_imp_list = []
+    for feat in X.columns:
+        if feat in feature_importance:
+            feature_imp_list.append((feat, feature_importance[feat]))
+        else:
+            # If feature not in importance dict, assign low importance
+            feature_imp_list.append((feat, 0.0))
+    
+    # Sort by importance (ascending)
+    feature_imp_list.sort(key=lambda x: x[1])
+    
+    # Determine features to drop
+    n_features = len(feature_imp_list)
+    n_to_drop = max(0, int(n_features * drop_fraction))
+    
+    # Ensure we keep at least min_keep features
+    n_to_drop = min(n_to_drop, n_features - min_keep)
+    
+    # Apply threshold if specified
+    if importance_threshold is not None:
+        dropped_features = [feat for feat, imp in feature_imp_list if imp < importance_threshold]
+    else:
+        dropped_features = [feat for feat, _ in feature_imp_list[:n_to_drop]]
+    
+    # Keep features
+    kept_features = [feat for feat in X.columns if feat not in dropped_features]
+    
+    # Prune X
+    X_pruned = X[kept_features].copy()
+    
+    logger.info(f"Feature pruning: {len(dropped_features)} dropped, {len(kept_features)} kept")
+    
+    # Save pruning info
+    if artifacts_dir:
+        from pathlib import Path
+        artifacts_dir = Path(artifacts_dir)
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        
+        pruning_info = {
+            'dropped_features': dropped_features,
+            'kept_features': kept_features,
+            'n_dropped': len(dropped_features),
+            'n_kept': len(kept_features),
+            'drop_fraction': drop_fraction,
+            'min_keep': min_keep
+        }
+        
+        import json
+        pruning_path = artifacts_dir / 'feature_pruning.json'
+        with open(pruning_path, 'w') as f:
+            json.dump(pruning_info, f, indent=2)
+        logger.info(f"Saved feature pruning info to {pruning_path}")
+    
+    return X_pruned, dropped_features
+
+
+def load_feature_pruning_info(artifacts_dir: Any) -> Optional[Dict[str, Any]]:
+    """
+    Load feature pruning information from artifacts directory.
+    
+    Args:
+        artifacts_dir: Path to artifacts directory
+        
+    Returns:
+        Dictionary with pruning info or None if not found
+    """
+    from pathlib import Path
+    artifacts_dir = Path(artifacts_dir)
+    pruning_path = artifacts_dir / 'feature_pruning.json'
+    
+    if not pruning_path.exists():
+        return None
+    
+    import json
+    with open(pruning_path, 'r') as f:
+        return json.load(f)
 
 
 def add_pre_entry_features(df: pd.DataFrame, config: Optional[dict] = None) -> pd.DataFrame:
@@ -343,15 +518,39 @@ def add_pre_entry_features(df: pd.DataFrame, config: Optional[dict] = None) -> p
         pre_entry_data = df[df['months_postgx'] < 0][series_keys + ['months_postgx', 'volume']].copy()
         
         def compute_slope(group):
+            """Compute slope handling edge cases safely."""
             if len(group) < 2:
                 return np.nan
-            slope, _, _, _, _ = stats.linregress(group['months_postgx'], group['volume'])
-            return slope
+            x = group['months_postgx'].values
+            y = group['volume'].values
+            # Handle constant series or all-NaN
+            if np.isnan(y).all() or np.std(y) == 0:
+                return 0.0
+            # Drop NaN values
+            valid_mask = ~np.isnan(y)
+            if valid_mask.sum() < 2:
+                return np.nan
+            try:
+                slope, _, _, _, _ = stats.linregress(x[valid_mask], y[valid_mask])
+                return slope if np.isfinite(slope) else 0.0
+            except Exception:
+                return 0.0
         
         trends = pre_entry_data.groupby(series_keys, group_keys=False, observed=False).apply(
             compute_slope, include_groups=False
         ).reset_index()
-        trends.columns = series_keys + ['pre_entry_trend']
+        # Ensure column names match the actual number of columns
+        expected_cols = series_keys + ['pre_entry_trend']
+        if len(trends.columns) != len(expected_cols):
+            # If mismatch, create new DataFrame with correct columns
+            trends_df = pd.DataFrame(index=trends.index)
+            for i, col in enumerate(series_keys):
+                if i < len(trends.columns):
+                    trends_df[col] = trends.iloc[:, i]
+            trends_df['pre_entry_trend'] = trends.iloc[:, -1] if len(trends.columns) > 0 else 0.0
+            trends = trends_df
+        else:
+            trends.columns = expected_cols
         df = df.merge(trends, on=series_keys, how='left')
         df['pre_entry_trend'] = df['pre_entry_trend'].fillna(0)
         
@@ -969,10 +1168,23 @@ def add_early_erosion_features(df: pd.DataFrame, config: Optional[dict] = None) 
         early_data = df[early_mask][series_keys + ['months_postgx', 'volume']].copy()
         
         def compute_early_slope(group):
+            """Compute slope handling edge cases safely."""
             if len(group) < 2:
                 return np.nan
-            slope, _, _, _, _ = stats.linregress(group['months_postgx'], group['volume'])
-            return slope
+            x = group['months_postgx'].values
+            y = group['volume'].values
+            # Handle constant series or all-NaN
+            if np.isnan(y).all() or np.std(y) == 0:
+                return 0.0
+            # Drop NaN values
+            valid_mask = ~np.isnan(y)
+            if valid_mask.sum() < 2:
+                return np.nan
+            try:
+                slope, _, _, _, _ = stats.linregress(x[valid_mask], y[valid_mask])
+                return slope if np.isfinite(slope) else 0.0
+            except Exception:
+                return 0.0
         
         early_trends = early_data.groupby(series_keys, observed=False).apply(
             compute_early_slope, include_groups=False
@@ -1067,14 +1279,12 @@ def get_feature_columns(df: pd.DataFrame, exclude_meta: bool = True) -> List[str
     Returns:
         List of feature column names
     """
-    # Full list of meta columns that should not be treated as features
-    meta_cols = list(FORBIDDEN_FEATURES) + [
-        'month', 'months_postgx', 'avg_vol_12m', 'avg_vol_0_5',
-        'avg_vol_0_2', 'avg_vol_3_5', 'vol_month_0'
-    ]
+    # Use canonical META_COLS list plus additional columns that may be used for computation
+    # but should not be treated as features
+    all_meta_cols = set(META_COLS) | {'months_postgx', 'avg_vol_0_2', 'avg_vol_3_5'}
     
     if exclude_meta:
-        return [c for c in df.columns if c not in meta_cols]
+        return [c for c in df.columns if c not in all_meta_cols]
     return list(df.columns)
 
 
@@ -1241,18 +1451,28 @@ def add_target_encoding_features(
                 / (category_means['cat_count'] + smoothing)
             )
             
-            # Map to validation series
+            # Map to validation series using vectorized merge (much faster than row-wise apply)
             cat_to_mean = dict(zip(category_means[col], category_means['smoothed_mean']))
             
-            # Get indices for validation series in original df
-            val_series_set = set(zip(val_series['country'], val_series['brand_name']))
-            val_idx = df.apply(
-                lambda row: (row['country'], row['brand_name']) in val_series_set,
-                axis=1
-            )
+            # Create a temporary key column for efficient lookup
+            # Use vectorized merge instead of slow row-wise apply
+            val_series = val_series.copy()
+            val_series['_is_val_series'] = True
             
-            # Assign encoded values
+            # Merge to identify validation rows
+            df = df.merge(
+                val_series[series_keys + ['_is_val_series']],
+                on=series_keys,
+                how='left'
+            )
+            # Handle FutureWarning: use pd.isna() and convert properly
+            val_idx = ~pd.isna(df['_is_val_series'])
+            
+            # Assign encoded values only to validation rows
             df.loc[val_idx, encoded_col] = df.loc[val_idx, col].map(cat_to_mean).fillna(global_mean)
+            
+            # Drop temporary column
+            df = df.drop(columns=['_is_val_series'])
         
         # Fill any remaining NaN with global mean
         df[encoded_col] = df[encoded_col].fillna(global_mean)
@@ -1279,7 +1499,8 @@ def add_target_encoding_features(
 def validate_feature_leakage(
     df: pd.DataFrame,
     scenario: int,
-    mode: str = "train"
+    mode: str = "train",
+    strict: bool = False
 ) -> Tuple[bool, List[str]]:
     """
     Validate that feature DataFrame doesn't contain leakage.
@@ -1288,14 +1509,19 @@ def validate_feature_leakage(
     1. No forbidden columns (bucket, y_norm, volume, mean_erosion, etc.)
     2. For Scenario 1, no early-erosion features (avg_vol_0_5, etc.)
     3. For mode="test", no target column
+    4. No columns with suspicious naming patterns suggesting future data
     
     Args:
         df: Feature DataFrame
         scenario: 1 or 2
         mode: "train" or "test"
+        strict: If True, raises ValueError on leakage detection
         
     Returns:
         Tuple of (is_valid, list of violations)
+        
+    Raises:
+        ValueError: If strict=True and leakage is detected
     """
     scenario = _normalize_scenario(scenario)
     violations = []
@@ -1303,7 +1529,7 @@ def validate_feature_leakage(
     # Check forbidden features
     for col in FORBIDDEN_FEATURES:
         if col in df.columns:
-            violations.append(f"Forbidden column present: {col}")
+            violations.append(f"LEAKAGE: Forbidden column present: {col}")
     
     # Check Scenario 1 doesn't have early erosion features
     if scenario == 1:
@@ -1311,18 +1537,35 @@ def validate_feature_leakage(
             'avg_vol_0_5', 'erosion_0_5', 'trend_0_5', 'drop_month_0',
             'avg_vol_0_2', 'avg_vol_3_5', 'month_0_to_3_change', 'month_3_to_5_change',
             'recovery_signal', 'recovery_magnitude', 'competition_response',
-            'erosion_0_2', 'erosion_3_5', 'erosion_per_generic'
+            'erosion_0_2', 'erosion_3_5', 'erosion_per_generic', 'trend_0_5_norm',
+            'vol_month_0'
         ]
-        for col in early_erosion_features:
-            if col in df.columns:
-                violations.append(f"Scenario 1 should not have early erosion feature: {col}")
+        for col in df.columns:
+            # Check exact matches
+            if col in early_erosion_features:
+                violations.append(f"LEAKAGE: Scenario 1 should not have early erosion feature: {col}")
+            # Check pattern matches (for derived features)
+            elif any(p in col.lower() for p in ['_0_5', '_0_2', '_3_5', 'month_0', 'erosion_0']):
+                violations.append(f"LEAKAGE: Scenario 1 has suspicious early erosion pattern in: {col}")
     
     # Check test mode doesn't have target
     if mode == "test":
         if 'y_norm' in df.columns:
-            violations.append("Test mode should not have y_norm column")
+            violations.append("LEAKAGE: Test mode should not have y_norm column")
     
-    is_valid = len(violations) == 0
+    # Check for suspicious column names suggesting future/target data
+    suspicious_patterns = ['_future_', '_target_', '_label_', '_test_target']
+    for col in df.columns:
+        col_lower = col.lower()
+        for pattern in suspicious_patterns:
+            if pattern in col_lower:
+                violations.append(f"WARNING: Column name suggests potential leakage: {col}")
+    
+    is_valid = len([v for v in violations if v.startswith('LEAKAGE')]) == 0
+    
+    if strict and not is_valid:
+        raise ValueError(f"Feature leakage detected:\n" + "\n".join(violations))
+    
     return is_valid, violations
 
 
@@ -1440,7 +1683,8 @@ def validate_feature_matrix(
 
 def split_features_target_meta(
     df: pd.DataFrame,
-    meta_cols: Optional[List[str]] = None
+    meta_cols: Optional[List[str]] = None,
+    include_months_postgx_in_features: bool = True
 ) -> Tuple[pd.DataFrame, Optional[pd.Series], pd.DataFrame]:
     """
     Split DataFrame into features (X), target (y), and metadata.
@@ -1449,25 +1693,39 @@ def split_features_target_meta(
         df: Full feature DataFrame
         meta_cols: List of meta columns to exclude from features.
                    If None, uses default FORBIDDEN_FEATURES + common meta.
+        include_months_postgx_in_features: If True, months_postgx stays in X as a feature.
+                   Tree models (CatBoost, XGBoost) can use it as "which month to predict".
+                   Set to False if you want it only in meta.
         
     Returns:
         Tuple of (X, y, meta_df)
         - X: Feature DataFrame (numeric features only)
         - y: Target Series (y_norm) if present, else None
         - meta_df: Metadata DataFrame with keys and meta columns
+        
+    Note on months_postgx:
+        This is the prediction horizon (which month are we predicting), not a target.
+        By default, it's INCLUDED in features because tree models benefit from knowing
+        the prediction month. It's ALSO included in meta for row identification.
     """
     if meta_cols is None:
-        meta_cols = list(FORBIDDEN_FEATURES) + ['month', 'avg_vol_12m', 'avg_vol_0_5', 
-                                                 'avg_vol_0_2', 'avg_vol_3_5', 'vol_month_0']
+        # Use canonical META_COLS list - these columns are excluded from features
+        # Note: months_postgx is handled separately via include_months_postgx_in_features
+        meta_cols = list(META_COLS) + ['avg_vol_0_2', 'avg_vol_3_5']
+    
+    # Add months_postgx to meta_cols if we don't want it as a feature
+    if not include_months_postgx_in_features and 'months_postgx' not in meta_cols:
+        meta_cols = list(meta_cols) + ['months_postgx']
     
     # Extract target
     y = df['y_norm'] if 'y_norm' in df.columns else None
     
-    # Extract meta columns that exist
-    existing_meta_cols = [c for c in meta_cols if c in df.columns]
+    # Extract meta columns that exist (always include months_postgx in meta for identification)
+    meta_to_extract = list(set(meta_cols) | {'months_postgx'})
+    existing_meta_cols = [c for c in meta_to_extract if c in df.columns]
     meta_df = df[existing_meta_cols].copy() if existing_meta_cols else pd.DataFrame(index=df.index)
     
-    # Feature columns: everything except meta, target, and non-numeric
+    # Feature columns: everything except meta
     feature_cols = [c for c in df.columns if c not in meta_cols]
     
     # Filter to numeric features only (exclude categorical string columns)
@@ -1523,11 +1781,12 @@ def get_numeric_feature_names(df: pd.DataFrame, exclude_categorical: bool = True
         List of numeric column names
     """
     categorical = get_categorical_feature_names(df) if exclude_categorical else []
-    meta_cols = list(FORBIDDEN_FEATURES) + ['month']
+    # Use canonical META_COLS constant
+    all_meta_cols = set(META_COLS)
     
     numeric_cols = []
     for col in df.columns:
-        if col in meta_cols or col in categorical:
+        if col in all_meta_cols or col in categorical:
             continue
         if pd.api.types.is_numeric_dtype(df[col]):
             numeric_cols.append(col)
@@ -1653,12 +1912,40 @@ def get_features(
     # Get panel
     panel = get_panel(split=split, config=data_config, use_cache=use_cache, force_rebuild=force_rebuild)
     
+    # BONUS: G6 - Apply data augmentation if enabled (only for training split)
+    # Note: Augmentation is applied here to avoid breaking caching in get_panel
+    # We check features_config for augmentation settings
+    if split == 'train' and features_config is not None:
+        augmentation_config = features_config.get('augmentation', {})
+        if not augmentation_config:
+            # Also check run_config if passed via features_config
+            augmentation_config = features_config.get('run_config', {}).get('augmentation', {})
+        
+        if augmentation_config.get('enabled', False):
+            from .data import augment_panel
+            logger.info("Applying data augmentation to training panel")
+            # Create a combined config dict for augment_panel
+            aug_config = {'augmentation': augmentation_config}
+            panel = augment_panel(panel, aug_config)
+    
     # Build features
     features_df = make_features(panel, scenario=scenario, mode=mode, config=features_config)
     
     # Select training rows (only for mode="train")
     if mode == "train":
         features_df = select_training_rows(features_df, scenario=scenario)
+    
+    # Validate leakage BEFORE splitting (on the full feature DataFrame)
+    is_valid, leakage_violations = validate_feature_leakage(features_df, scenario=scenario, mode=mode)
+    if not is_valid:
+        for violation in leakage_violations:
+            logger.warning(f"Feature leakage detected: {violation}")
+    
+    # Validate cutoffs
+    is_cutoff_valid, cutoff_warnings = validate_feature_cutoffs(features_df, scenario=scenario)
+    if not is_cutoff_valid:
+        for warning in cutoff_warnings:
+            logger.warning(f"Feature cutoff warning: {warning}")
     
     # Split into X, y, meta
     X, y, meta_df = split_features_target_meta(features_df)
@@ -1678,6 +1965,18 @@ def get_features(
     # Validate shapes
     if mode == "train" and y is not None:
         assert X.shape[0] == len(y), f"X rows ({X.shape[0]}) != y length ({len(y)})"
+    
+    # Load feature config for feature_selection options
+    feat_config = _load_feature_config(features_config)
+    feat_selection = feat_config.get('feature_selection', {})
+    
+    # Analyze correlations if enabled
+    if feat_selection.get('analyze_correlations', False):
+        corr_threshold = feat_selection.get('correlation_threshold', 0.95)
+        logger.info(f"Analyzing feature correlations (threshold={corr_threshold})...")
+        _, redundant_cols = analyze_feature_correlations(X, threshold=corr_threshold)
+        if redundant_cols:
+            logger.info(f"Found {len(redundant_cols)} redundant features (not auto-removing)")
     
     logger.info(f"Built features: X={X.shape}, y={len(y) if y is not None else 'None'}, meta={meta_df.shape}")
     
@@ -2402,8 +2701,18 @@ class FeatureScaler:
     - RobustScaler: Scale using median and IQR (robust to outliers)
     - None: No scaling (for tree-based models)
     
-    Note: Tree-based models (CatBoost, LightGBM, XGBoost) typically don't
-    need feature scaling, but linear models and neural networks do.
+    IMPORTANT: Tree-based models (CatBoost, LightGBM, XGBoost) typically do NOT
+    need feature scaling. Use method='none' for these models. Only linear models,
+    neural networks, and distance-based algorithms require scaling.
+    
+    When using exclude_cols, you should typically include:
+    - Categorical encoded ID columns
+    - Time indices like months_postgx
+    - Binary flags that should remain 0/1
+    
+    Behavior notes:
+    - Calling fit() twice will re-fit and overwrite previous state (no warning)
+    - inverse_transform() is safe even if some numeric cols are missing from X
     
     Example usage:
         scaler = FeatureScaler(method='standard')
@@ -2417,7 +2726,7 @@ class FeatureScaler:
         
         Args:
             method: 'standard', 'minmax', 'robust', or 'none'
-            exclude_cols: Columns to exclude from scaling (e.g., categorical)
+            exclude_cols: Columns to exclude from scaling (e.g., categorical IDs, binary flags)
         """
         self.method = method.lower()
         self.exclude_cols = exclude_cols or []
@@ -2439,7 +2748,11 @@ class FeatureScaler:
             self.scaler = RobustScaler()
     
     def fit(self, X: pd.DataFrame) -> 'FeatureScaler':
-        """Fit the scaler on training data."""
+        """
+        Fit the scaler on training data.
+        
+        Note: Calling fit() multiple times will re-fit and overwrite previous state.
+        """
         if self.method == 'none':
             self.fitted = True
             return self

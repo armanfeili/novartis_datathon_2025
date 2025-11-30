@@ -16,6 +16,7 @@ from sklearn.model_selection import train_test_split
 from .utils import timer
 from .features import _normalize_scenario
 from .evaluate import make_metric_record, save_metric_records
+from .data import ID_COLS, TIME_COL, META_COLS  # Import centralized constants
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ def create_validation_split(
         (train_df, val_df) - both contain full series
     """
     with timer("Create validation split"):
-        series_keys = ['country', 'brand_name']
+        series_keys = ID_COLS  # Use centralized constant
         
         # Handle stratify_by as string or list
         if isinstance(stratify_by, str):
@@ -55,6 +56,14 @@ def create_validation_split(
         required_cols = series_keys + stratify_cols
         available_cols = [c for c in required_cols if c in panel_df.columns]
         series_info = panel_df[available_cols].drop_duplicates()
+        
+        # W1.1: Log warning if requested stratify columns are missing
+        missing_stratify = [c for c in stratify_cols if c not in panel_df.columns]
+        if missing_stratify:
+            logger.warning(
+                f"Requested stratify columns not found in data: {missing_stratify}. "
+                f"Using available columns only: {[c for c in stratify_cols if c in panel_df.columns]}"
+            )
         
         # Check for series with multiple values for stratification columns (shouldn't happen)
         for col in stratify_cols:
@@ -80,18 +89,30 @@ def create_validation_split(
                 for group, count in combined_dist.head(10).items():
                     logger.info(f"  {group}: {count} series")
             
-            # Handle rare classes by grouping them
+            # W1.2: Handle rare classes robustly with minimum absolute threshold
+            # Minimum class size must allow at least 2-3 samples for train and 1 for val
+            # to enable stratified splitting
             value_counts = stratify_values.value_counts()
-            min_class_size = max(2, int(len(series_info) * val_fraction * 0.5))
+            # Absolute minimum: at least 3 series per class for proper stratification
+            min_absolute = 3
+            # Also consider relative minimum based on val_fraction
+            min_relative = max(2, int(len(series_info) * val_fraction * 0.5))
+            min_class_size = max(min_absolute, min_relative)
             
             rare_classes = value_counts[value_counts < min_class_size].index
             if len(rare_classes) > 0:
+                n_rare_series = value_counts[value_counts < min_class_size].sum()
                 logger.warning(
                     f"Grouping {len(rare_classes)} rare stratification classes "
-                    f"(< {min_class_size} series) into 'OTHER'"
+                    f"(< {min_class_size} series each, {n_rare_series} series total) into 'OTHER'"
                 )
                 stratify_values = stratify_values.copy()
                 stratify_values[stratify_values.isin(rare_classes)] = 'OTHER'
+                
+                # Check if 'OTHER' class itself is now very large or small
+                other_count = (stratify_values == 'OTHER').sum()
+                if other_count > 0:
+                    logger.info(f"'OTHER' class now contains {other_count} series")
             
             train_series, val_series = train_test_split(
                 series_info,
@@ -132,8 +153,56 @@ def create_validation_split(
             val_dist = val_series[col].value_counts(normalize=True)
             logger.info(f"Train {col} distribution:\n{train_dist.to_string()}")
             logger.info(f"Val {col} distribution:\n{val_dist.to_string()}")
+        
+        # Explicit output validation (W1.3)
+        _validate_split_output(panel_df, train_df, val_df, series_keys)
     
     return train_df, val_df
+
+
+def _validate_split_output(
+    original_df: pd.DataFrame,
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    series_keys: List[str]
+) -> None:
+    """
+    Validate that train/val splits are correct.
+    
+    Checks:
+    1. Train and val are disjoint at series level
+    2. Together they cover all series in the original DataFrame
+    
+    Args:
+        original_df: Original panel DataFrame
+        train_df: Training split
+        val_df: Validation split
+        series_keys: Column names for series identification
+        
+    Raises:
+        ValueError: If validation fails
+    """
+    # Get series sets
+    original_series = set(original_df[series_keys].drop_duplicates().itertuples(index=False, name=None))
+    train_series = set(train_df[series_keys].drop_duplicates().itertuples(index=False, name=None))
+    val_series = set(val_df[series_keys].drop_duplicates().itertuples(index=False, name=None))
+    
+    # Check disjoint
+    overlap = train_series & val_series
+    if overlap:
+        raise ValueError(f"Train/val series overlap: {len(overlap)} series appear in both splits")
+    
+    # Check coverage
+    combined = train_series | val_series
+    missing = original_series - combined
+    extra = combined - original_series
+    
+    if missing:
+        logger.warning(f"Split missing {len(missing)} series from original data")
+    if extra:
+        logger.warning(f"Split has {len(extra)} extra series not in original data")
+    
+    logger.debug(f"Split validation passed: {len(train_series)} train, {len(val_series)} val series")
 
 
 def create_temporal_cv_split(
@@ -164,7 +233,7 @@ def create_temporal_cv_split(
     Returns:
         List of (train_df, val_df) tuples
     """
-    series_keys = ['country', 'brand_name']
+    series_keys = ID_COLS  # Use centralized constant
     
     # Get the range of months_postgx
     min_month = panel_df['months_postgx'].min()
@@ -326,7 +395,10 @@ def adversarial_validation(
     n_folds: int = 5,
     random_state: int = 42,
     run_id: Optional[str] = None,
-    metrics_dir: Optional[Path] = None
+    metrics_dir: Optional[Path] = None,
+    n_estimators: int = 100,
+    max_depth: int = 5,
+    min_samples_per_fold: int = 50
 ) -> Dict:
     """
     Detect train/test distribution shift.
@@ -341,12 +413,16 @@ def adversarial_validation(
         random_state: For reproducibility
         run_id: Optional run ID for metrics logging
         metrics_dir: Optional directory to save unified metric records
+        n_estimators: Number of trees in RandomForest
+        max_depth: Max tree depth
+        min_samples_per_fold: Minimum samples per fold; skips CV if dataset too small
         
     Returns:
         {
             'mean_auc': float,  # ~0.5 = good, >0.7 = shift detected
             'auc_scores': list,
-            'top_shift_features': DataFrame with feature importances
+            'top_shift_features': DataFrame with feature importances,
+            'skipped': bool  # True if skipped due to small dataset
         }
     
     If AUC > 0.7:
@@ -359,9 +435,18 @@ def adversarial_validation(
         from sklearn.model_selection import cross_val_score
     except ImportError:
         logger.warning("sklearn not available for adversarial validation")
-        return {'mean_auc': np.nan, 'auc_scores': [], 'top_shift_features': pd.DataFrame()}
+        return {'mean_auc': np.nan, 'auc_scores': [], 'top_shift_features': pd.DataFrame(), 'skipped': True}
     
     with timer("Adversarial validation"):
+        # Check for very small datasets (X.1)
+        total_samples = len(train_features) + len(test_features)
+        if total_samples < min_samples_per_fold * n_folds:
+            logger.warning(
+                f"Dataset too small for adversarial validation "
+                f"({total_samples} samples < {min_samples_per_fold * n_folds} required for {n_folds} folds)"
+            )
+            return {'mean_auc': np.nan, 'auc_scores': [], 'top_shift_features': pd.DataFrame(), 'skipped': True}
+        
         # Prepare features
         if feature_cols is None:
             # Use all numeric columns
@@ -387,10 +472,10 @@ def adversarial_validation(
         X = pd.concat([X_train, X_test], axis=0, ignore_index=True)
         y = np.concatenate([y_train, y_test])
         
-        # Train classifier with CV
+        # Train classifier with CV using configurable hyperparameters
         clf = RandomForestClassifier(
-            n_estimators=100,
-            max_depth=5,
+            n_estimators=n_estimators,
+            max_depth=max_depth,
             random_state=random_state,
             n_jobs=-1
         )
@@ -460,7 +545,7 @@ def get_fold_series(
     Args:
         panel_df: Full panel data
         n_folds: Number of folds
-        stratify_by: Column to stratify by
+        stratify_by: Column to stratify by (gracefully falls back to KFold if missing)
         random_state: For reproducibility
         save_indices: Whether to save fold indices for reproducibility
         output_path: Path to save fold indices (JSON file)
@@ -468,23 +553,59 @@ def get_fold_series(
     Returns:
         List of (train_df, val_df) tuples
     """
-    from sklearn.model_selection import StratifiedKFold
+    from sklearn.model_selection import StratifiedKFold, KFold
     import json
     
-    series_keys = ['country', 'brand_name']
-    series_info = panel_df[series_keys + [stratify_by]].drop_duplicates()
+    series_keys = ID_COLS  # Use centralized constant
     
-    skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=random_state)
+    # W3.1: Handle missing stratify_by column gracefully
+    if stratify_by not in panel_df.columns:
+        logger.warning(
+            f"Stratify column '{stratify_by}' not found in data. "
+            f"Falling back to simple KFold without stratification."
+        )
+        series_info = panel_df[series_keys].drop_duplicates()
+        kf = KFold(n_splits=n_folds, shuffle=True, random_state=random_state)
+        split_iterator = kf.split(series_info)
+        use_stratification = False
+    else:
+        series_info = panel_df[series_keys + [stratify_by]].drop_duplicates()
+        
+        # Log stratification class distribution
+        class_dist = series_info[stratify_by].value_counts()
+        logger.info(f"Stratification by '{stratify_by}' class distribution:")
+        for cls, count in class_dist.items():
+            logger.info(f"  {cls}: {count} series ({count/len(series_info)*100:.1f}%)")
+        
+        # Check for imbalanced classes
+        min_count = class_dist.min()
+        if min_count < n_folds:
+            logger.warning(
+                f"Smallest class has only {min_count} series, "
+                f"which is less than n_folds={n_folds}. "
+                f"Some folds may have empty validation for this class."
+            )
+        
+        skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=random_state)
+        split_iterator = skf.split(series_info, series_info[stratify_by])
+        use_stratification = True
     
     folds = []
     fold_indices = []
     
-    for fold_idx, (train_idx, val_idx) in enumerate(skf.split(series_info, series_info[stratify_by])):
+    for fold_idx, (train_idx, val_idx) in enumerate(split_iterator):
         train_series = series_info.iloc[train_idx][series_keys]
         val_series = series_info.iloc[val_idx][series_keys]
         
         train_df = panel_df.merge(train_series, on=series_keys, how='inner')
         val_df = panel_df.merge(val_series, on=series_keys, how='inner')
+        
+        # Log per-fold statistics
+        logger.info(
+            f"Fold {fold_idx + 1}/{n_folds}: "
+            f"train {len(train_series)} series ({len(train_df):,} rows), "
+            f"val {len(val_series)} series ({len(val_df):,} rows)"
+        )
         
         folds.append((train_df, val_df))
         
@@ -503,7 +624,7 @@ def get_fold_series(
         with open(output_path, 'w') as f:
             json.dump({
                 'n_folds': n_folds,
-                'stratify_by': stratify_by,
+                'stratify_by': stratify_by if use_stratification else None,
                 'random_state': random_state,
                 'folds': fold_indices
             }, f, indent=2)
@@ -536,20 +657,38 @@ def get_grouped_kfold_series(
     """
     from sklearn.model_selection import GroupKFold
     
-    series_keys = ['country', 'brand_name']
+    series_keys = ID_COLS  # Use centralized constant
+    
+    # W3.2: Handle missing group_by column
+    if group_by not in panel_df.columns:
+        logger.warning(
+            f"Group column '{group_by}' not found in data. "
+            f"Falling back to regular get_fold_series."
+        )
+        return get_fold_series(panel_df, n_folds=n_folds, random_state=random_state)
+    
     series_info = panel_df[series_keys + [group_by]].drop_duplicates()
     
     # GroupKFold doesn't shuffle, so we need to shuffle groups first
     np.random.seed(random_state)
     unique_groups = series_info[group_by].unique()
+    
+    # W3.2: Check if n_folds exceeds number of unique groups
+    if len(unique_groups) < n_folds:
+        logger.warning(
+            f"Only {len(unique_groups)} unique groups for '{group_by}', "
+            f"reducing n_folds from {n_folds} to {len(unique_groups)}"
+        )
+    actual_n_folds = min(n_folds, len(unique_groups))
+    
     shuffled_groups = np.random.permutation(unique_groups)
     group_map = {g: i for i, g in enumerate(shuffled_groups)}
     series_info['_group_idx'] = series_info[group_by].map(group_map)
     
-    gkf = GroupKFold(n_splits=min(n_folds, len(unique_groups)))
+    gkf = GroupKFold(n_splits=actual_n_folds)
     
     folds = []
-    for train_idx, val_idx in gkf.split(series_info, groups=series_info['_group_idx']):
+    for fold_idx, (train_idx, val_idx) in enumerate(gkf.split(series_info, groups=series_info['_group_idx'])):
         train_series = series_info.iloc[train_idx][series_keys]
         val_series = series_info.iloc[val_idx][series_keys]
         
@@ -558,10 +697,14 @@ def get_grouped_kfold_series(
         
         folds.append((train_df, val_df))
         
-        # Log group distribution
+        # W3.2: Log group distribution for each fold
         train_groups = series_info.iloc[train_idx][group_by].unique()
         val_groups = series_info.iloc[val_idx][group_by].unique()
-        logger.debug(f"Fold: train groups={len(train_groups)}, val groups={len(val_groups)}")
+        logger.info(
+            f"Fold {fold_idx + 1}/{actual_n_folds}: "
+            f"train {len(train_series)} series ({len(train_groups)} {group_by} values), "
+            f"val {len(val_series)} series ({len(val_groups)} {group_by} values)"
+        )
     
     return folds
 
@@ -572,7 +715,9 @@ def create_purged_cv_split(
     gap_months: int = 3,
     min_train_months: int = -6,
     stratify_by: Optional[str] = 'bucket',
-    random_state: int = 42
+    random_state: int = 42,
+    min_train_rows: int = 100,
+    min_val_rows: int = 50
 ) -> List[Tuple[pd.DataFrame, pd.DataFrame]]:
     """
     Create purged cross-validation splits with a time gap between train and val.
@@ -580,18 +725,28 @@ def create_purged_cv_split(
     This helps prevent data leakage from temporal proximity. The gap ensures
     that recent training data doesn't overlap with validation data.
     
+    W4.1: Enhanced with explicit checks for non-empty folds.
+    
     Args:
         panel_df: Full panel data
         n_folds: Number of folds
-        gap_months: Number of months gap between train and val
-        min_train_months: Minimum months_postgx to include in training
+        gap_months: Number of months gap between train and val (recommended: 0-3 for S1, 3-6 for S2)
+        min_train_months: Minimum months_postgx to include in training (S1: -12, S2: -6 typical)
         stratify_by: Column to stratify by (if any)
         random_state: For reproducibility
+        min_train_rows: Minimum rows required for training data per fold
+        min_val_rows: Minimum rows required for validation data per fold
         
     Returns:
         List of (train_df, val_df) tuples
     """
-    series_keys = ['country', 'brand_name']
+    series_keys = ID_COLS  # Use centralized constant
+    
+    # Log configuration for clarity
+    logger.info(
+        f"Creating purged CV: {n_folds} folds, gap={gap_months} months, "
+        f"min_train_months={min_train_months}, stratify_by={stratify_by}"
+    )
     
     # First, create series-level folds
     if stratify_by and stratify_by in panel_df.columns:
@@ -606,6 +761,8 @@ def create_purged_cv_split(
         split_iter = kf.split(series_info)
     
     folds = []
+    skipped_folds = []
+    
     for fold_idx, (train_idx, val_idx) in enumerate(split_iter):
         train_series = series_info.iloc[train_idx][series_keys]
         val_series = series_info.iloc[val_idx][series_keys]
@@ -626,14 +783,40 @@ def create_purged_cv_split(
         # Validation data stays as is
         val_df = val_panel.copy()
         
-        if len(train_df) > 0 and len(val_df) > 0:
-            folds.append((train_df, val_df))
-            logger.info(
-                f"Fold {fold_idx + 1}: train months [{min_train_months}, {train_cutoff}], "
-                f"val starts at {val_min_month}, gap={gap_months}"
+        # W4.1: Explicit checks for non-empty folds
+        if len(train_df) < min_train_rows:
+            logger.warning(
+                f"Fold {fold_idx + 1}: train has only {len(train_df)} rows "
+                f"(< min_train_rows={min_train_rows}). Consider reducing gap_months or adjusting min_train_months."
             )
-        else:
-            logger.warning(f"Fold {fold_idx + 1}: skipped (empty train or val)")
+            skipped_folds.append((fold_idx + 1, 'train too small', len(train_df)))
+            continue
+            
+        if len(val_df) < min_val_rows:
+            logger.warning(
+                f"Fold {fold_idx + 1}: val has only {len(val_df)} rows "
+                f"(< min_val_rows={min_val_rows})"
+            )
+            skipped_folds.append((fold_idx + 1, 'val too small', len(val_df)))
+            continue
+        
+        folds.append((train_df, val_df))
+        logger.info(
+            f"Fold {fold_idx + 1}: train months [{min_train_months}, {train_cutoff}] "
+            f"({len(train_df):,} rows), val starts at {val_min_month} ({len(val_df):,} rows)"
+        )
+    
+    # Log summary of skipped folds
+    if skipped_folds:
+        logger.warning(f"Skipped {len(skipped_folds)}/{n_folds} folds due to insufficient data:")
+        for fold_num, reason, count in skipped_folds:
+            logger.warning(f"  Fold {fold_num}: {reason} ({count} rows)")
+    
+    if len(folds) == 0:
+        logger.error(
+            "All folds were skipped! Check your gap_months and min_train_months settings. "
+            f"Recommended: gap_months=0-3 for S1, min_train_months=-12; gap_months=3-6 for S2, min_train_months=-6"
+        )
     
     return folds
 
@@ -664,7 +847,7 @@ def create_nested_cv(
             - 'outer_val': DataFrame for outer validation (held out)
             - 'inner_folds': List of (inner_train_df, inner_val_df) tuples
     """
-    series_keys = ['country', 'brand_name']
+    series_keys = ID_COLS  # Use centralized constant
     series_info = panel_df[series_keys + [stratify_by]].drop_duplicates()
     
     from sklearn.model_selection import StratifiedKFold
@@ -696,15 +879,25 @@ def create_nested_cv(
         nested_folds.append({
             'outer_train': outer_train_df,
             'outer_val': outer_val_df,
-            'inner_folds': inner_folds_list
+            'inner_folds': inner_folds_list,
+            'outer_fold_idx': outer_idx  # W4.2: Add fold index for tracking
         })
         
         logger.info(
-            f"Outer fold {outer_idx + 1}: "
-            f"train={len(outer_train_df[series_keys].drop_duplicates())} series, "
-            f"val={len(outer_val_df[series_keys].drop_duplicates())} series, "
+            f"Outer fold {outer_idx + 1}/{outer_folds}: "
+            f"train={len(outer_train_df[series_keys].drop_duplicates())} series ({len(outer_train_df):,} rows), "
+            f"val={len(outer_val_df[series_keys].drop_duplicates())} series ({len(outer_val_df):,} rows), "
             f"inner folds={len(inner_folds_list)}"
         )
+    
+    # W4.2: Log usage documentation
+    logger.info(
+        "Nested CV structure ready. Usage:\n"
+        "  - Use inner_folds for hyperparameter search within each outer fold\n"
+        "  - Train final model on outer_train with best hyperparameters\n"
+        "  - Evaluate on outer_val for unbiased performance estimate\n"
+        "  - Aggregate outer_val scores across all outer folds for final metric"
+    )
     
     return nested_folds
 
@@ -712,20 +905,26 @@ def create_nested_cv(
 def validate_cv_respects_scenario_constraints(
     train_df: pd.DataFrame,
     val_df: pd.DataFrame,
-    scenario: int
+    scenario: int,
+    allow_series_overlap: bool = False
 ) -> Tuple[bool, List[str]]:
     """
     Verify that CV split respects scenario constraints.
     
+    W5.1: Enhanced with configurable series overlap behavior.
+    
     Checks:
-    1. No post-forecast-window information leaks into feature computation
-    2. Respects the same history/horizon separation as competition scenarios
-    3. Series integrity is maintained (no mixing months across splits)
+    1. Series overlap (configurable - some CV strategies like temporal CV may allow it)
+    2. Scenario-specific cutoff validation (months_postgx ranges)
+    3. Series integrity - if not allowing overlap, months shouldn't be split
+    4. Training has sufficient history (optional check for S2)
     
     Args:
         train_df: Training DataFrame
         val_df: Validation DataFrame  
         scenario: 1 or 2
+        allow_series_overlap: If True, allows same series in train and val
+            (useful for temporal CV strategies). Default False for series-level CV.
         
     Returns:
         (is_valid, list of violation messages)
@@ -734,32 +933,48 @@ def validate_cv_respects_scenario_constraints(
     scenario = _normalize_scenario(scenario)
     
     violations = []
-    series_keys = ['country', 'brand_name']
+    series_keys = ID_COLS  # Use centralized constant
     
-    # Check 1: No series overlap
+    # Check 1: Series overlap (configurable)
     train_series = set(train_df[series_keys].drop_duplicates().itertuples(index=False, name=None))
     val_series = set(val_df[series_keys].drop_duplicates().itertuples(index=False, name=None))
     overlap = train_series & val_series
+    
     if overlap:
-        violations.append(f"Series overlap between train and val: {len(overlap)} series")
+        if allow_series_overlap:
+            logger.info(
+                f"{len(overlap)} series appear in both train and val "
+                f"(allowed for temporal CV strategy)"
+            )
+        else:
+            violations.append(
+                f"Series overlap between train and val: {len(overlap)} series. "
+                f"Set allow_series_overlap=True for temporal CV strategies."
+            )
     
     # Check 2: Scenario-specific cutoff validation
     if scenario == 1:
-        # For S1, validation should only have months_postgx >= 0
+        # For S1, validation should only have months_postgx in [0, 23]
         if 'months_postgx' in val_df.columns:
             val_min = val_df['months_postgx'].min()
+            val_max = val_df['months_postgx'].max()
             if val_min < 0:
                 violations.append(f"S1 validation has pre-entry data (min month={val_min})")
+            if val_max > 23:
+                violations.append(f"S1 validation has months > 23 (max month={val_max})")
     elif scenario == 2:
-        # For S2, validation should only have months_postgx >= 6
+        # For S2, validation should only have months_postgx in [6, 23]
         if 'months_postgx' in val_df.columns:
             val_min = val_df['months_postgx'].min()
+            val_max = val_df['months_postgx'].max()
             if val_min < 6:
                 violations.append(f"S2 validation has months < 6 (min month={val_min})")
+            if val_max > 23:
+                violations.append(f"S2 validation has months > 23 (max month={val_max})")
     
-    # Check 3: Each series has all its months in one split
-    if 'months_postgx' in train_df.columns:
-        for country, brand in train_series:
+    # Check 3: If not allowing overlap, months shouldn't be split for same series
+    if not allow_series_overlap and 'months_postgx' in train_df.columns:
+        for country, brand in list(train_series)[:10]:  # Check first 10 for performance
             train_months = set(train_df[
                 (train_df['country'] == country) & (train_df['brand_name'] == brand)
             ]['months_postgx'])
@@ -773,6 +988,16 @@ def validate_cv_respects_scenario_constraints(
                     f"train={sorted(train_months)[:5]}..., val={sorted(val_months)[:5]}..."
                 )
                 break  # Just report first violation
+    
+    # Check 4 (optional): For S2, train should include months < 6 if we want early erosion features
+    if scenario == 2 and 'months_postgx' in train_df.columns:
+        train_min = train_df['months_postgx'].min()
+        train_max = train_df['months_postgx'].max()
+        if train_min >= 6:
+            logger.warning(
+                f"S2 training has no early erosion data (min month={train_min}). "
+                f"Consider including months 0-5 for early_erosion features."
+            )
     
     is_valid = len(violations) == 0
     if not is_valid:
@@ -797,21 +1022,62 @@ def aggregate_cv_scores(
         
     Returns:
         Dict mapping metric names to {mean, std, ci_lower, ci_upper, min, max, n_folds}
+        
+    Note:
+        X.2: Enhanced robustness - handles missing metrics and all-NaN gracefully.
     """
     from scipy import stats
     
     if not cv_scores:
+        logger.warning("aggregate_cv_scores called with empty cv_scores list")
         return {}
     
     if metric_names is None:
-        metric_names = list(cv_scores[0].keys())
+        # Collect all unique metric names from all folds
+        all_metrics = set()
+        for score in cv_scores:
+            all_metrics.update(score.keys())
+        metric_names = list(all_metrics)
     
     results = {}
     for metric in metric_names:
-        values = [score[metric] for score in cv_scores if metric in score and not np.isnan(score[metric])]
+        # X.2: Handle missing metrics for some folds
+        values = []
+        missing_count = 0
+        nan_count = 0
         
+        for fold_idx, score in enumerate(cv_scores):
+            if metric not in score:
+                missing_count += 1
+                continue
+            val = score[metric]
+            if val is None or (isinstance(val, float) and np.isnan(val)):
+                nan_count += 1
+                continue
+            values.append(val)
+        
+        # Log warnings for missing/NaN values
+        if missing_count > 0:
+            logger.warning(
+                f"Metric '{metric}': missing from {missing_count}/{len(cv_scores)} folds"
+            )
+        if nan_count > 0:
+            logger.warning(
+                f"Metric '{metric}': NaN in {nan_count}/{len(cv_scores)} folds"
+            )
+        
+        # X.2: Handle all-NaN gracefully
         if not values:
-            results[metric] = {'mean': np.nan, 'std': np.nan, 'n_folds': 0}
+            logger.warning(f"Metric '{metric}': all values are NaN or missing")
+            results[metric] = {
+                'mean': np.nan, 
+                'std': np.nan, 
+                'ci_lower': np.nan,
+                'ci_upper': np.nan,
+                'min': np.nan,
+                'max': np.nan,
+                'n_folds': 0
+            }
             continue
         
         mean = np.mean(values)
@@ -820,8 +1086,12 @@ def aggregate_cv_scores(
         
         # 95% confidence interval
         if n_folds > 1:
-            ci = stats.t.interval(0.95, df=n_folds-1, loc=mean, scale=std/np.sqrt(n_folds))
-            ci_lower, ci_upper = ci
+            try:
+                ci = stats.t.interval(0.95, df=n_folds-1, loc=mean, scale=std/np.sqrt(n_folds))
+                ci_lower, ci_upper = ci
+            except Exception as e:
+                logger.warning(f"Could not compute CI for '{metric}': {e}")
+                ci_lower, ci_upper = mean, mean
         else:
             ci_lower, ci_upper = mean, mean
         
@@ -840,26 +1110,41 @@ def aggregate_cv_scores(
 
 def create_cv_comparison_table(
     cv_results: Dict[str, List[Dict[str, float]]],
-    primary_metric: str = 'metric1_official'
+    primary_metric: str = 'metric1_official',
+    additional_metrics: Optional[List[str]] = None,
+    ascending: bool = True
 ) -> pd.DataFrame:
     """
     Create a comparison table for different models across CV folds.
     
+    X.3: Enhanced with configurable sort order and additional metrics.
+    
     Args:
         cv_results: Dict mapping model names to list of fold scores
         primary_metric: Primary metric for ranking
+        additional_metrics: Optional list of additional metrics to include in table
+        ascending: If True, sort ascending (lower is better, e.g. for error metrics).
+            If False, sort descending (higher is better, e.g. for accuracy).
         
     Returns:
         DataFrame with model comparison statistics
     """
     rows = []
+    
+    # Determine all metrics to include
+    metrics_to_include = [primary_metric]
+    if additional_metrics:
+        metrics_to_include.extend(additional_metrics)
+    
     for model_name, fold_scores in cv_results.items():
-        agg = aggregate_cv_scores(fold_scores, [primary_metric])
+        agg = aggregate_cv_scores(fold_scores, metrics_to_include)
         
+        row = {'model': model_name}
+        
+        # Add primary metric stats
         if primary_metric in agg:
             stats = agg[primary_metric]
-            rows.append({
-                'model': model_name,
+            row.update({
                 'mean': stats['mean'],
                 'std': stats['std'],
                 'ci_lower': stats['ci_lower'],
@@ -868,62 +1153,148 @@ def create_cv_comparison_table(
                 'max': stats['max'],
                 'n_folds': stats['n_folds']
             })
+        else:
+            row.update({
+                'mean': np.nan, 'std': np.nan, 'ci_lower': np.nan,
+                'ci_upper': np.nan, 'min': np.nan, 'max': np.nan, 'n_folds': 0
+            })
+        
+        # X.3: Add additional metrics if requested
+        if additional_metrics:
+            for metric in additional_metrics:
+                if metric in agg:
+                    row[f'{metric}_mean'] = agg[metric]['mean']
+                    row[f'{metric}_std'] = agg[metric]['std']
+                else:
+                    row[f'{metric}_mean'] = np.nan
+                    row[f'{metric}_std'] = np.nan
+        
+        rows.append(row)
     
     df = pd.DataFrame(rows)
     if len(df) > 0:
-        df = df.sort_values('mean', ascending=True)  # Lower is better for error metrics
+        # X.3: Configurable sort order
+        df = df.sort_values('mean', ascending=ascending)
         df['rank'] = range(1, len(df) + 1)
+        
+        # Add visual indicator for best model
+        if not df['mean'].isna().all():
+            best_idx = df['mean'].idxmin() if ascending else df['mean'].idxmax()
+            df['is_best'] = df.index == best_idx
     
     return df
 
 
 def paired_t_test(
     scores_a: List[float],
-    scores_b: List[float]
+    scores_b: List[float],
+    alpha: float = 0.05
 ) -> Dict[str, float]:
     """
     Perform paired t-test to compare two models.
     
+    X.4: Enhanced with explicit safeguards for NaN and edge cases.
+    
     Args:
         scores_a: CV scores for model A
         scores_b: CV scores for model B (same folds)
+        alpha: Significance level (default 0.05)
         
     Returns:
-        Dict with t_statistic, p_value, mean_diff, ci_diff_lower, ci_diff_upper
+        Dict with t_statistic, p_value, mean_diff, ci_diff_lower, ci_diff_upper, is_significant
+        
+    Raises:
+        ValueError: If score lists have different lengths
     """
     from scipy import stats
     
     if len(scores_a) != len(scores_b):
-        raise ValueError("Score lists must have same length (same number of folds)")
+        raise ValueError(
+            f"Score lists must have same length (same number of folds). "
+            f"Got {len(scores_a)} and {len(scores_b)}"
+        )
     
+    # X.4: Check for minimum number of folds
     if len(scores_a) < 2:
+        logger.warning(
+            f"paired_t_test requires at least 2 folds, got {len(scores_a)}. "
+            f"Returning NaN values."
+        )
         return {
             't_statistic': np.nan,
             'p_value': np.nan,
             'mean_diff': np.nan,
-            'is_significant': False
+            'ci_diff_lower': np.nan,
+            'ci_diff_upper': np.nan,
+            'is_significant': False,
+            'n_valid_pairs': 0
         }
     
-    scores_a = np.array(scores_a)
-    scores_b = np.array(scores_b)
+    scores_a = np.array(scores_a, dtype=float)
+    scores_b = np.array(scores_b, dtype=float)
+    
+    # X.4: Filter out NaN values (only use pairs where both are valid)
+    valid_mask = ~(np.isnan(scores_a) | np.isnan(scores_b))
+    n_valid = valid_mask.sum()
+    
+    if n_valid < 2:
+        logger.warning(
+            f"paired_t_test: only {n_valid} valid (non-NaN) pairs. "
+            f"Need at least 2 for t-test."
+        )
+        return {
+            't_statistic': np.nan,
+            'p_value': np.nan,
+            'mean_diff': np.nan,
+            'ci_diff_lower': np.nan,
+            'ci_diff_upper': np.nan,
+            'is_significant': False,
+            'n_valid_pairs': n_valid
+        }
+    
+    if n_valid < len(scores_a):
+        logger.warning(
+            f"paired_t_test: {len(scores_a) - n_valid} pairs excluded due to NaN values"
+        )
+    
+    scores_a_valid = scores_a[valid_mask]
+    scores_b_valid = scores_b[valid_mask]
     
     # Paired t-test
-    t_stat, p_value = stats.ttest_rel(scores_a, scores_b)
+    try:
+        t_stat, p_value = stats.ttest_rel(scores_a_valid, scores_b_valid)
+    except Exception as e:
+        logger.error(f"paired_t_test failed: {e}")
+        return {
+            't_statistic': np.nan,
+            'p_value': np.nan,
+            'mean_diff': np.nan,
+            'ci_diff_lower': np.nan,
+            'ci_diff_upper': np.nan,
+            'is_significant': False,
+            'n_valid_pairs': n_valid
+        }
     
     # Mean difference
-    diff = scores_a - scores_b
+    diff = scores_a_valid - scores_b_valid
     mean_diff = np.mean(diff)
     std_diff = np.std(diff, ddof=1)
     n = len(diff)
     
-    # 95% CI for difference
-    ci = stats.t.interval(0.95, df=n-1, loc=mean_diff, scale=std_diff/np.sqrt(n))
+    # Confidence interval for difference
+    try:
+        ci = stats.t.interval(1 - alpha, df=n-1, loc=mean_diff, scale=std_diff/np.sqrt(n))
+        ci_lower, ci_upper = ci
+    except Exception as e:
+        logger.warning(f"Could not compute CI: {e}")
+        ci_lower, ci_upper = np.nan, np.nan
     
     return {
         't_statistic': t_stat,
         'p_value': p_value,
         'mean_diff': mean_diff,
-        'ci_diff_lower': ci[0],
-        'ci_diff_upper': ci[1],
-        'is_significant': p_value < 0.05
+        'ci_diff_lower': ci_lower,
+        'ci_diff_upper': ci_upper,
+        'is_significant': p_value < alpha,
+        'n_valid_pairs': n_valid
     }

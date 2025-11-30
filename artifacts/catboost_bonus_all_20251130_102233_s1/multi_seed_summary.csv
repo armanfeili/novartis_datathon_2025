@@ -1,0 +1,4 @@
+seed,official_metric,rmse_norm,mae_norm,model_path
+42,0.7007,0.1942791314944429,0.15234156998248388,/Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_102233_s1/seed_42/model.bin
+2025,0.7354,0.18809406862260677,0.1465594619394835,/Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_102233_s1/seed_2025/model.bin
+1337,0.7106,0.19821978042930366,0.1557834469574222,/Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_102233_s1/seed_1337/model.bin

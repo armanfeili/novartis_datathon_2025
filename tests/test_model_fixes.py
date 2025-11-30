@@ -464,9 +464,11 @@ class TestHybridPhysicsMLWrapper:
         
         sample_weight = pd.Series(np.ones(n_samples))
         
+        # Use CatBoost which is available (LightGBM may have libomp issues on macOS)
         config = {
             'decay_type': 'exponential',
-            'ml_model': 'ridge',
+            'ml_model_type': 'catboost',
+            'ml_params': {'iterations': 10, 'verbose': False, 'random_seed': 42}
         }
         
         model = HybridPhysicsMLWrapper(config)
@@ -499,7 +501,12 @@ class TestHybridPhysicsMLWrapper:
             'avg_vol_12m': [1000.0] * 24,
         })
         
-        config = {'decay_type': 'linear'}
+        # Use CatBoost which is available (LightGBM may have libomp issues on macOS)
+        config = {
+            'decay_type': 'linear',
+            'ml_model_type': 'catboost',
+            'ml_params': {'iterations': 10, 'verbose': False, 'random_seed': 42}
+        }
         model = HybridPhysicsMLWrapper(config)
         model.fit(X, y, X_val, None, None)
         

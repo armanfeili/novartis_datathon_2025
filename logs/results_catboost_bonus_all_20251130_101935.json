@@ -1,0 +1,172 @@
+{
+  "run_name": "catboost_bonus_all_20251130_101935",
+  "timestamp": "20251130_101935",
+  "config_file": "configs/run_bonus_all.yaml",
+  "config_summary": {
+    "timestamp": "2025-11-30T10:19:35.663608",
+    "bonus_features": {
+      "B2_Bucket_Specialization": true,
+      "B3_Calibration": true,
+      "B4_Smoothing": true,
+      "B5_Residual_Model": false,
+      "B6_Bias_Correction": true,
+      "B7_Feature_Pruning": false,
+      "B8_Multi_Seed": true,
+      "B9_Monotonicity": false,
+      "B10_Target_Transform": true,
+      "G6_Data_Augmentation": true
+    },
+    "validation": {
+      "val_fraction": 0.2,
+      "stratify_by": "bucket",
+      "split_level": "series"
+    },
+    "scenarios": {
+      "scenario1": {
+        "name": "Scenario 1 - No Post-Entry Actuals",
+        "forecast_start": 0,
+        "forecast_end": 23,
+        "feature_cutoff": 0,
+        "target_months": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23
+        ]
+      },
+      "scenario2": {
+        "name": "Scenario 2 - First 6 Months Available",
+        "forecast_start": 6,
+        "forecast_end": 23,
+        "feature_cutoff": 6,
+        "target_months": [
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23
+        ]
+      }
+    },
+    "official_metric": {
+      "bucket_threshold": 0.25,
+      "bucket_weights": {
+        "bucket1": 2.0,
+        "bucket2": 1.0
+      },
+      "metric1": {
+        "monthly_weight": 0.2,
+        "accumulated_0_5_weight": 0.5,
+        "accumulated_6_11_weight": 0.2,
+        "accumulated_12_23_weight": 0.1,
+        "monthly_range": [
+          0,
+          23
+        ]
+      },
+      "metric2": {
+        "monthly_weight": 0.2,
+        "accumulated_6_11_weight": 0.5,
+        "accumulated_12_17_weight": 0.2,
+        "accumulated_18_23_weight": 0.1,
+        "monthly_range": [
+          6,
+          23
+        ]
+      }
+    }
+  },
+  "scenario1": {
+    "scenario": 1,
+    "status": "success",
+    "start_time": "2025-11-30T10:19:35.668596",
+    "end_time": "2025-11-30T10:20:25.379303",
+    "metrics": {
+      "official_metric": 0.7007,
+      "rmse_norm": 0.1942791314944429,
+      "mae_norm": 0.15234156998248388,
+      "r2_norm": -0.05915431110015912,
+      "scenario": 1,
+      "model_type": "catboost",
+      "train_time_seconds": 10.433952808380127,
+      "n_train_samples": 35636,
+      "n_val_samples": 8863,
+      "n_features": 75
+    },
+    "artifacts_dir": "/Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_101935_s1",
+    "error": null,
+    "config_file": "configs/run_bonus_all.yaml",
+    "official_metric": 0.7007,
+    "rmse_norm": 0.1942791314944429,
+    "mae_norm": 0.15234156998248388
+  },
+  "scenario2": {
+    "scenario": 2,
+    "status": "success",
+    "start_time": "2025-11-30T10:20:25.382832",
+    "end_time": "2025-11-30T10:21:16.116383",
+    "metrics": {
+      "official_metric": 0.2646,
+      "rmse_norm": 0.18433065993040146,
+      "mae_norm": 0.14573043883091033,
+      "r2_norm": 0.0640499333292085,
+      "scenario": 2,
+      "model_type": "catboost",
+      "train_time_seconds": 8.45093297958374,
+      "n_train_samples": 26726,
+      "n_val_samples": 6628,
+      "n_features": 91
+    },
+    "artifacts_dir": "/Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_101935_s2",
+    "error": null,
+    "config_file": "configs/run_bonus_all.yaml",
+    "official_metric": 0.2646,
+    "rmse_norm": 0.18433065993040146,
+    "mae_norm": 0.14573043883091033
+  },
+  "submission": {
+    "status": "failed",
+    "start_time": "2025-11-30T10:21:16.117720",
+    "end_time": "2025-11-30T10:21:17.759192",
+    "submission_path": null,
+    "rows": null,
+    "columns": null,
+    "error": "Invalid type for cat_feature[non-default value idx=0,feature_idx=64]=0.0 : cat_features must be integer or string, real number values and NaN values should be converted to string.",
+    "traceback": "Traceback (most recent call last):\n  File \"_catboost.pyx\", line 2613, in _catboost.get_cat_factor_bytes_representation\n  File \"_catboost.pyx\", line 2128, in _catboost.get_id_object_bytes_string_representation\n_catboost.CatBoostError: bad object for id: 0.0\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/Users/armanfeili/code/New Projects/novartis_datathon_2025/train_catboost_bonus_complete.py\", line 225, in generate_submission_with_logging\n    submission = generate_submission(\n                 ^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/inference.py\", line 515, in generate_submission\n    y_norm_pred_transformed = model_scenario1.predict(X_s1)\n                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/models/cat_model.py\", line 224, in predict\n    return self.model.predict(X_proc)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/armanfeili/anaconda3/lib/python3.11/site-packages/catboost/core.py\", line 5924, in predict\n    return self._predict(data, prediction_type, ntree_start, ntree_end, thread_count, verbose, 'predict', task_type)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/armanfeili/anaconda3/lib/python3.11/site-packages/catboost/core.py\", line 2620, in _predict\n    data, data_is_single_object = self._process_predict_input_data(data, parent_method_name, thread_count)\n                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/armanfeili/anaconda3/lib/python3.11/site-packages/catboost/core.py\", line 2600, in _process_predict_input_data\n    data = Pool(\n           ^^^^^\n  File \"/Users/armanfeili/anaconda3/lib/python3.11/site-packages/catboost/core.py\", line 855, in __init__\n    self._init(data, label, cat_features, text_features, embedding_features, embedding_features_data, pairs, graph, weight,\n  File \"/Users/armanfeili/anaconda3/lib/python3.11/site-packages/catboost/core.py\", line 1491, in _init\n    self._init_pool(data, label, cat_features, text_features, embedding_features, embedding_features_data, pairs, graph, weight,\n  File \"_catboost.pyx\", line 4339, in _catboost._PoolBase._init_pool\n  File \"_catboost.pyx\", line 4391, in _catboost._PoolBase._init_pool\n  File \"_catboost.pyx\", line 4200, in _catboost._PoolBase._init_features_order_layout_pool\n  File \"_catboost.pyx\", line 3100, in _catboost._set_features_order_data_pd_data_frame\n  File \"_catboost.pyx\", line 2620, in _catboost.get_cat_factor_bytes_representation\n_catboost.CatBoostError: Invalid type for cat_feature[non-default value idx=0,feature_idx=64]=0.0 : cat_features must be integer or string, real number values and NaN values should be converted to string.\n"
+  },
+  "overall_status": "partial_success",
+  "failure_reason": "submission_generation_failed"
+}

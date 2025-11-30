@@ -1,0 +1,6 @@
+bcc22caf
+Generated: 2025-11-30T10:12:25.854523
+Files:
+  run_config: configs/run_bonus_all.yaml
+  data_config: configs/data.yaml
+  features_config: configs/features.yaml

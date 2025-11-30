@@ -1,0 +1,326 @@
+2025-11-30 09:46:31,334 - __main__ - INFO - Starting experiment: catboost_bonus_all_s1
+2025-11-30 09:46:31,399 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_s1/configs (hash: bcc22caf)
+2025-11-30 09:46:31,400 - __main__ - INFO - Config hash: bcc22caf
+2025-11-30 09:46:31,427 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-30 09:46:31,429 - src.features - INFO - Building features for train S1 train...
+2025-11-30 09:46:31,429 - src.data - INFO - Building train panel from raw data...
+2025-11-30 09:46:31,430 - src.utils - INFO - [Load train data] starting...
+2025-11-30 09:46:31,430 - src.data - INFO - Loading volume from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/raw/TRAIN/df_volume_train.csv
+2025-11-30 09:46:31,532 - src.data - INFO - === train/volume Statistics ===
+2025-11-30 09:46:31,532 - src.data - INFO -   Shape: 93,744 rows × 5 columns
+2025-11-30 09:46:31,553 - src.data - INFO -   No missing values
+2025-11-30 09:46:31,577 - src.data - INFO -   Unique series: 1,953
+2025-11-30 09:46:31,578 - src.data - INFO -   months_postgx range: [-24, 23]
+2025-11-30 09:46:31,580 - src.data - INFO - Loading generics from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/raw/TRAIN/df_generics_train.csv
+2025-11-30 09:46:31,617 - src.data - INFO - === train/generics Statistics ===
+2025-11-30 09:46:31,617 - src.data - INFO -   Shape: 46,872 rows × 4 columns
+2025-11-30 09:46:31,625 - src.data - INFO -   Missing values:
+2025-11-30 09:46:31,625 - src.data - INFO -     n_gxs: 26.3%
+2025-11-30 09:46:31,638 - src.data - INFO -   Unique series: 1,953
+2025-11-30 09:46:31,639 - src.data - INFO -   months_postgx range: [0, 23]
+2025-11-30 09:46:31,641 - src.data - INFO - Loading medicine_info from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/raw/TRAIN/df_medicine_info_train.csv
+2025-11-30 09:46:31,649 - src.data - INFO - === train/medicine_info Statistics ===
+2025-11-30 09:46:31,650 - src.data - INFO -   Shape: 1,953 rows × 7 columns
+2025-11-30 09:46:31,651 - src.data - INFO -   Missing values:
+2025-11-30 09:46:31,652 - src.data - INFO -     hospital_rate: 3.3%
+2025-11-30 09:46:31,654 - src.data - INFO -   Unique series: 1,953
+2025-11-30 09:46:31,655 - src.utils - INFO - [Load train data] done in 0.225s
+2025-11-30 09:46:31,655 - src.utils - INFO - [Build base panel] starting...
+2025-11-30 09:46:31,655 - src.data - INFO - Input shapes: volume=(93744, 5), generics=(46872, 4), medicine_info=(1953, 7)
+2025-11-30 09:46:31,719 - src.data - INFO - After volume-generics merge: 93,744 rows
+2025-11-30 09:46:31,765 - src.data - INFO - After medicine_info merge: 93,744 rows
+2025-11-30 09:46:31,856 - src.data - INFO - === Base Panel Statistics ===
+2025-11-30 09:46:31,856 - src.data - INFO -   Shape: 93,744 rows × 11 columns
+2025-11-30 09:46:31,889 - src.data - INFO -   Missing values:
+2025-11-30 09:46:31,889 - src.data - INFO -     n_gxs: 63.2%
+2025-11-30 09:46:31,889 - src.data - INFO -     hospital_rate: 3.3%
+2025-11-30 09:46:31,912 - src.data - INFO -   Unique series: 1,953
+2025-11-30 09:46:31,913 - src.data - INFO -   months_postgx range: [-24, 23]
+2025-11-30 09:46:31,918 - src.utils - INFO - [Build base panel] done in 0.263s
+2025-11-30 09:46:31,918 - src.utils - INFO - [Handle missing values] starting...
+2025-11-30 09:46:31,948 - src.data - INFO - n_gxs: filled 59208 missing values
+2025-11-30 09:46:31,967 - src.data - INFO - hospital_rate: filled with ther_area medians, flag added
+2025-11-30 09:46:32,030 - src.data - INFO - No missing values remaining
+2025-11-30 09:46:32,030 - src.utils - INFO - [Handle missing values] done in 0.112s
+2025-11-30 09:46:32,032 - src.utils - INFO - [Compute pre-entry stats] starting...
+2025-11-30 09:46:32,123 - src.data - INFO - avg_vol_12m distribution:
+2025-11-30 09:46:32,125 - src.data - INFO -   Range: [37.72, 371038791.09]
+2025-11-30 09:46:32,127 - src.data - INFO -   Median: 131382.32
+2025-11-30 09:46:32,127 - src.data - INFO -   Mean: 2439028.31
+2025-11-30 09:46:32,157 - src.data - INFO - Bucket classification using threshold=0.25
+2025-11-30 09:46:32,252 - src.data - INFO - Bucket distribution (train):
+2025-11-30 09:46:32,253 - src.data - INFO -   Bucket 1: 130 series (6.7%)
+2025-11-30 09:46:32,253 - src.data - INFO -   Bucket 2: 1,823 series (93.3%)
+2025-11-30 09:46:32,253 - src.data - INFO - y_norm distribution (train):
+2025-11-30 09:46:32,254 - src.data - INFO -   Range: [0.000, 43.792]
+2025-11-30 09:46:32,256 - src.data - INFO -   Median: 0.871
+2025-11-30 09:46:32,257 - src.data - INFO -   Mean: 0.800
+2025-11-30 09:46:32,260 - src.data - WARNING - y_norm.y_norm: 18 values above 5
+2025-11-30 09:46:32,261 - src.utils - INFO - [Compute pre-entry stats] done in 0.228s
+2025-11-30 09:46:32,290 - src.data - INFO - Panel schema validation passed for train (93,744 rows)
+2025-11-30 09:46:32,294 - src.features - INFO - Applying data augmentation to training panel
+2025-11-30 09:46:38,940 - src.data - INFO - Augmentation applied: jitter=5.00%, drop_prob=5.00%
+2025-11-30 09:46:38,965 - src.utils - INFO - [Feature engineering - Scenario 1] starting...
+2025-11-30 09:46:39,027 - src.utils - INFO - [Feature engineering - Scenario 1] done in 0.062s
+2025-11-30 09:46:39,027 - src.utils - INFO - [Load features (cached)] done in 7.600s
+2025-11-30 09:46:55,710 - __main__ - INFO - Starting experiment: catboost_bonus_all_s1
+2025-11-30 09:46:55,775 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_s1/configs (hash: bcc22caf)
+2025-11-30 09:46:55,776 - __main__ - INFO - Config hash: bcc22caf
+2025-11-30 09:46:55,813 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-30 09:46:55,814 - src.features - INFO - Building features for train S1 train...
+2025-11-30 09:46:55,814 - src.data - INFO - Building train panel from raw data...
+2025-11-30 09:46:55,814 - src.utils - INFO - [Load train data] starting...
+2025-11-30 09:46:55,815 - src.data - INFO - Loading volume from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/raw/TRAIN/df_volume_train.csv
+2025-11-30 09:46:55,929 - src.data - INFO - === train/volume Statistics ===
+2025-11-30 09:46:55,930 - src.data - INFO -   Shape: 93,744 rows × 5 columns
+2025-11-30 09:46:55,948 - src.data - INFO -   No missing values
+2025-11-30 09:46:55,975 - src.data - INFO -   Unique series: 1,953
+2025-11-30 09:46:55,976 - src.data - INFO -   months_postgx range: [-24, 23]
+2025-11-30 09:46:55,979 - src.data - INFO - Loading generics from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/raw/TRAIN/df_generics_train.csv
+2025-11-30 09:46:56,010 - src.data - INFO - === train/generics Statistics ===
+2025-11-30 09:46:56,011 - src.data - INFO -   Shape: 46,872 rows × 4 columns
+2025-11-30 09:46:56,021 - src.data - INFO -   Missing values:
+2025-11-30 09:46:56,021 - src.data - INFO -     n_gxs: 26.3%
+2025-11-30 09:46:56,037 - src.data - INFO -   Unique series: 1,953
+2025-11-30 09:46:56,038 - src.data - INFO -   months_postgx range: [0, 23]
+2025-11-30 09:46:56,040 - src.data - INFO - Loading medicine_info from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/raw/TRAIN/df_medicine_info_train.csv
+2025-11-30 09:46:56,047 - src.data - INFO - === train/medicine_info Statistics ===
+2025-11-30 09:46:56,047 - src.data - INFO -   Shape: 1,953 rows × 7 columns
+2025-11-30 09:46:56,049 - src.data - INFO -   Missing values:
+2025-11-30 09:46:56,049 - src.data - INFO -     hospital_rate: 3.3%
+2025-11-30 09:46:56,051 - src.data - INFO -   Unique series: 1,953
+2025-11-30 09:46:56,052 - src.utils - INFO - [Load train data] done in 0.238s
+2025-11-30 09:46:56,053 - src.utils - INFO - [Build base panel] starting...
+2025-11-30 09:46:56,053 - src.data - INFO - Input shapes: volume=(93744, 5), generics=(46872, 4), medicine_info=(1953, 7)
+2025-11-30 09:46:56,118 - src.data - INFO - After volume-generics merge: 93,744 rows
+2025-11-30 09:46:56,160 - src.data - INFO - After medicine_info merge: 93,744 rows
+2025-11-30 09:46:56,253 - src.data - INFO - === Base Panel Statistics ===
+2025-11-30 09:46:56,253 - src.data - INFO -   Shape: 93,744 rows × 11 columns
+2025-11-30 09:46:56,284 - src.data - INFO -   Missing values:
+2025-11-30 09:46:56,284 - src.data - INFO -     n_gxs: 63.2%
+2025-11-30 09:46:56,284 - src.data - INFO -     hospital_rate: 3.3%
+2025-11-30 09:46:56,307 - src.data - INFO -   Unique series: 1,953
+2025-11-30 09:46:56,308 - src.data - INFO -   months_postgx range: [-24, 23]
+2025-11-30 09:46:56,313 - src.utils - INFO - [Build base panel] done in 0.260s
+2025-11-30 09:46:56,313 - src.utils - INFO - [Handle missing values] starting...
+2025-11-30 09:46:56,341 - src.data - INFO - n_gxs: filled 59208 missing values
+2025-11-30 09:46:56,364 - src.data - INFO - hospital_rate: filled with ther_area medians, flag added
+2025-11-30 09:46:56,432 - src.data - INFO - No missing values remaining
+2025-11-30 09:46:56,432 - src.utils - INFO - [Handle missing values] done in 0.118s
+2025-11-30 09:46:56,433 - src.utils - INFO - [Compute pre-entry stats] starting...
+2025-11-30 09:46:56,523 - src.data - INFO - avg_vol_12m distribution:
+2025-11-30 09:46:56,524 - src.data - INFO -   Range: [37.72, 371038791.09]
+2025-11-30 09:46:56,526 - src.data - INFO -   Median: 131382.32
+2025-11-30 09:46:56,528 - src.data - INFO -   Mean: 2439028.31
+2025-11-30 09:46:56,563 - src.data - INFO - Bucket classification using threshold=0.25
+2025-11-30 09:46:56,660 - src.data - INFO - Bucket distribution (train):
+2025-11-30 09:46:56,664 - src.data - INFO -   Bucket 1: 130 series (6.7%)
+2025-11-30 09:46:56,665 - src.data - INFO -   Bucket 2: 1,823 series (93.3%)
+2025-11-30 09:46:56,665 - src.data - INFO - y_norm distribution (train):
+2025-11-30 09:46:56,666 - src.data - INFO -   Range: [0.000, 43.792]
+2025-11-30 09:46:56,669 - src.data - INFO -   Median: 0.871
+2025-11-30 09:46:56,670 - src.data - INFO -   Mean: 0.800
+2025-11-30 09:46:56,680 - src.data - WARNING - y_norm.y_norm: 18 values above 5
+2025-11-30 09:46:56,681 - src.utils - INFO - [Compute pre-entry stats] done in 0.248s
+2025-11-30 09:46:56,716 - src.data - INFO - Panel schema validation passed for train (93,744 rows)
+2025-11-30 09:46:56,721 - src.features - INFO - Applying data augmentation to training panel
+2025-11-30 09:47:02,876 - src.data - INFO - Augmentation applied: jitter=5.00%, drop_prob=5.00%
+2025-11-30 09:47:02,906 - src.utils - INFO - [Feature engineering - Scenario 1] starting...
+2025-11-30 09:47:03,045 - src.features - WARNING - No pre-entry data for seasonal features, skipping
+2025-11-30 09:47:03,798 - src.features - INFO - Total features created: 79
+2025-11-30 09:47:03,798 - src.utils - INFO - [Feature engineering - Scenario 1] done in 0.893s
+2025-11-30 09:47:03,906 - src.features - INFO - Selected 44,499 rows for 1 (months 0-23)
+2025-11-30 09:47:03,914 - src.features - WARNING - Feature leakage detected: LEAKAGE: Forbidden column present: volume
+2025-11-30 09:47:03,915 - src.features - WARNING - Feature leakage detected: LEAKAGE: Forbidden column present: brand_name
+2025-11-30 09:47:03,915 - src.features - WARNING - Feature leakage detected: LEAKAGE: Forbidden column present: mean_erosion
+2025-11-30 09:47:03,915 - src.features - WARNING - Feature leakage detected: LEAKAGE: Forbidden column present: bucket
+2025-11-30 09:47:03,915 - src.features - WARNING - Feature leakage detected: LEAKAGE: Forbidden column present: y_norm
+2025-11-30 09:47:03,915 - src.features - WARNING - Feature leakage detected: LEAKAGE: Forbidden column present: country
+2025-11-30 09:47:03,975 - src.data - INFO - Data leakage audit passed for scenario 1, mode train
+2025-11-30 09:47:03,988 - src.features - ERROR - Feature matrix validation failed: Feature matrix has all-NaN columns: ['first_generic_month']...
+2025-11-30 09:47:03,988 - src.features - INFO - Built features: X=(44499, 76), y=44499, meta=(44499, 9)
+2025-11-30 09:47:04,024 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-30 09:47:04,024 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-30 09:47:04,130 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-30 09:47:04,131 - src.utils - INFO - [Load cached train panel] done in 0.106s
+2025-11-30 09:47:04,131 - src.utils - INFO - [Load features (cached)] done in 8.318s
+2025-11-30 09:47:04,131 - src.utils - INFO - [Create validation split] starting...
+2025-11-30 09:47:04,151 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series each, 130 series total) into 'OTHER'
+2025-11-30 09:47:04,155 - src.validation - INFO - 'OTHER' class now contains 130 series
+2025-11-30 09:47:04,323 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-30 09:47:04,323 - src.validation - INFO - Train rows: 35,636, Val rows: 8,863
+2025-11-30 09:47:04,325 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-30 09:47:04,326 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-30 09:47:04,366 - src.utils - INFO - [Create validation split] done in 0.235s
+2025-11-30 09:47:04,423 - __main__ - INFO - Features: 75 columns
+2025-11-30 09:47:04,423 - __main__ - INFO - Meta: 9 columns: ['country', 'brand_name', 'months_postgx', 'bucket', 'avg_vol_12m', 'y_norm', 'volume', 'mean_erosion', 'month']
+2025-11-30 09:47:04,442 - __main__ - INFO - Features: 75 columns
+2025-11-30 09:47:04,442 - __main__ - INFO - Meta: 9 columns: ['country', 'brand_name', 'months_postgx', 'bucket', 'avg_vol_12m', 'y_norm', 'volume', 'mean_erosion', 'month']
+2025-11-30 09:47:20,650 - __main__ - INFO - Starting experiment: catboost_bonus_all_s1
+2025-11-30 09:47:20,693 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_s1/configs (hash: bcc22caf)
+2025-11-30 09:47:20,693 - __main__ - INFO - Config hash: bcc22caf
+2025-11-30 09:47:20,714 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-30 09:47:20,714 - src.features - INFO - Building features for train S1 train...
+2025-11-30 09:47:20,714 - src.data - INFO - Building train panel from raw data...
+2025-11-30 09:47:20,715 - src.utils - INFO - [Load train data] starting...
+2025-11-30 09:47:20,715 - src.data - INFO - Loading volume from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/raw/TRAIN/df_volume_train.csv
+2025-11-30 09:47:20,809 - src.data - INFO - === train/volume Statistics ===
+2025-11-30 09:47:20,809 - src.data - INFO -   Shape: 93,744 rows × 5 columns
+2025-11-30 09:47:20,828 - src.data - INFO -   No missing values
+2025-11-30 09:47:20,851 - src.data - INFO -   Unique series: 1,953
+2025-11-30 09:47:20,852 - src.data - INFO -   months_postgx range: [-24, 23]
+2025-11-30 09:47:20,854 - src.data - INFO - Loading generics from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/raw/TRAIN/df_generics_train.csv
+2025-11-30 09:47:20,884 - src.data - INFO - === train/generics Statistics ===
+2025-11-30 09:47:20,884 - src.data - INFO -   Shape: 46,872 rows × 4 columns
+2025-11-30 09:47:20,892 - src.data - INFO -   Missing values:
+2025-11-30 09:47:20,892 - src.data - INFO -     n_gxs: 26.3%
+2025-11-30 09:47:20,907 - src.data - INFO -   Unique series: 1,953
+2025-11-30 09:47:20,908 - src.data - INFO -   months_postgx range: [0, 23]
+2025-11-30 09:47:20,909 - src.data - INFO - Loading medicine_info from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/raw/TRAIN/df_medicine_info_train.csv
+2025-11-30 09:47:20,919 - src.data - INFO - === train/medicine_info Statistics ===
+2025-11-30 09:47:20,919 - src.data - INFO -   Shape: 1,953 rows × 7 columns
+2025-11-30 09:47:20,921 - src.data - INFO -   Missing values:
+2025-11-30 09:47:20,921 - src.data - INFO -     hospital_rate: 3.3%
+2025-11-30 09:47:20,925 - src.data - INFO -   Unique series: 1,953
+2025-11-30 09:47:20,926 - src.utils - INFO - [Load train data] done in 0.211s
+2025-11-30 09:47:20,926 - src.utils - INFO - [Build base panel] starting...
+2025-11-30 09:47:20,926 - src.data - INFO - Input shapes: volume=(93744, 5), generics=(46872, 4), medicine_info=(1953, 7)
+2025-11-30 09:47:21,009 - src.data - INFO - After volume-generics merge: 93,744 rows
+2025-11-30 09:47:21,061 - src.data - INFO - After medicine_info merge: 93,744 rows
+2025-11-30 09:47:21,163 - src.data - INFO - === Base Panel Statistics ===
+2025-11-30 09:47:21,163 - src.data - INFO -   Shape: 93,744 rows × 11 columns
+2025-11-30 09:47:21,192 - src.data - INFO -   Missing values:
+2025-11-30 09:47:21,192 - src.data - INFO -     n_gxs: 63.2%
+2025-11-30 09:47:21,193 - src.data - INFO -     hospital_rate: 3.3%
+2025-11-30 09:47:21,213 - src.data - INFO -   Unique series: 1,953
+2025-11-30 09:47:21,214 - src.data - INFO -   months_postgx range: [-24, 23]
+2025-11-30 09:47:21,219 - src.utils - INFO - [Build base panel] done in 0.293s
+2025-11-30 09:47:21,219 - src.utils - INFO - [Handle missing values] starting...
+2025-11-30 09:47:21,245 - src.data - INFO - n_gxs: filled 59208 missing values
+2025-11-30 09:47:21,260 - src.data - INFO - hospital_rate: filled with ther_area medians, flag added
+2025-11-30 09:47:21,313 - src.data - INFO - No missing values remaining
+2025-11-30 09:47:21,313 - src.utils - INFO - [Handle missing values] done in 0.095s
+2025-11-30 09:47:21,315 - src.utils - INFO - [Compute pre-entry stats] starting...
+2025-11-30 09:47:21,397 - src.data - INFO - avg_vol_12m distribution:
+2025-11-30 09:47:21,398 - src.data - INFO -   Range: [37.72, 371038791.09]
+2025-11-30 09:47:21,399 - src.data - INFO -   Median: 131382.32
+2025-11-30 09:47:21,400 - src.data - INFO -   Mean: 2439028.31
+2025-11-30 09:47:21,430 - src.data - INFO - Bucket classification using threshold=0.25
+2025-11-30 09:47:21,504 - src.data - INFO - Bucket distribution (train):
+2025-11-30 09:47:21,504 - src.data - INFO -   Bucket 1: 130 series (6.7%)
+2025-11-30 09:47:21,504 - src.data - INFO -   Bucket 2: 1,823 series (93.3%)
+2025-11-30 09:47:21,504 - src.data - INFO - y_norm distribution (train):
+2025-11-30 09:47:21,505 - src.data - INFO -   Range: [0.000, 43.792]
+2025-11-30 09:47:21,507 - src.data - INFO -   Median: 0.871
+2025-11-30 09:47:21,508 - src.data - INFO -   Mean: 0.800
+2025-11-30 09:47:21,511 - src.data - WARNING - y_norm.y_norm: 18 values above 5
+2025-11-30 09:47:21,511 - src.utils - INFO - [Compute pre-entry stats] done in 0.197s
+2025-11-30 09:47:21,536 - src.data - INFO - Panel schema validation passed for train (93,744 rows)
+2025-11-30 09:47:21,539 - src.features - INFO - Applying data augmentation to training panel
+2025-11-30 09:47:27,559 - src.data - INFO - Augmentation applied: jitter=5.00%, drop_prob=5.00%
+2025-11-30 09:47:27,581 - src.utils - INFO - [Feature engineering - Scenario 1] starting...
+2025-11-30 09:47:27,700 - src.features - WARNING - No pre-entry data for seasonal features, skipping
+2025-11-30 09:47:28,502 - src.features - INFO - Total features created: 79
+2025-11-30 09:47:28,502 - src.utils - INFO - [Feature engineering - Scenario 1] done in 0.921s
+2025-11-30 09:47:28,646 - src.features - INFO - Selected 44,499 rows for 1 (months 0-23)
+2025-11-30 09:47:28,654 - src.features - WARNING - Feature leakage detected: LEAKAGE: Forbidden column present: volume
+2025-11-30 09:47:28,654 - src.features - WARNING - Feature leakage detected: LEAKAGE: Forbidden column present: brand_name
+2025-11-30 09:47:28,655 - src.features - WARNING - Feature leakage detected: LEAKAGE: Forbidden column present: country
+2025-11-30 09:47:28,655 - src.features - WARNING - Feature leakage detected: LEAKAGE: Forbidden column present: y_norm
+2025-11-30 09:47:28,655 - src.features - WARNING - Feature leakage detected: LEAKAGE: Forbidden column present: mean_erosion
+2025-11-30 09:47:28,655 - src.features - WARNING - Feature leakage detected: LEAKAGE: Forbidden column present: bucket
+2025-11-30 09:47:28,711 - src.data - INFO - Data leakage audit passed for scenario 1, mode train
+2025-11-30 09:47:28,724 - src.features - ERROR - Feature matrix validation failed: Feature matrix has all-NaN columns: ['first_generic_month']...
+2025-11-30 09:47:28,724 - src.features - INFO - Built features: X=(44499, 76), y=44499, meta=(44499, 9)
+2025-11-30 09:47:28,755 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-30 09:47:28,755 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-30 09:47:28,834 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-30 09:47:28,834 - src.utils - INFO - [Load cached train panel] done in 0.079s
+2025-11-30 09:47:28,834 - src.utils - INFO - [Load features (cached)] done in 8.120s
+2025-11-30 09:47:28,835 - src.utils - INFO - [Create validation split] starting...
+2025-11-30 09:47:28,854 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series each, 130 series total) into 'OTHER'
+2025-11-30 09:47:28,856 - src.validation - INFO - 'OTHER' class now contains 130 series
+2025-11-30 09:47:29,007 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-30 09:47:29,007 - src.validation - INFO - Train rows: 35,636, Val rows: 8,863
+2025-11-30 09:47:29,009 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-30 09:47:29,010 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-30 09:47:29,051 - src.utils - INFO - [Create validation split] done in 0.216s
+2025-11-30 09:47:29,098 - __main__ - INFO - Features: 75 columns
+2025-11-30 09:47:29,098 - __main__ - INFO - Meta: 9 columns: ['country', 'brand_name', 'months_postgx', 'bucket', 'avg_vol_12m', 'y_norm', 'volume', 'mean_erosion', 'month']
+2025-11-30 09:47:29,112 - __main__ - INFO - Features: 75 columns
+2025-11-30 09:47:29,112 - __main__ - INFO - Meta: 9 columns: ['country', 'brand_name', 'months_postgx', 'bucket', 'avg_vol_12m', 'y_norm', 'volume', 'mean_erosion', 'month']
+2025-11-30 09:47:29,172 - __main__ - INFO - Multi-seed experiment enabled
+2025-11-30 09:47:29,173 - __main__ - INFO - Training with seed 42...
+2025-11-30 09:48:15,970 - __main__ - INFO - Starting experiment: catboost_bonus_all_s1
+2025-11-30 09:48:16,043 - __main__ - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_s1/configs (hash: bcc22caf)
+2025-11-30 09:48:16,043 - __main__ - INFO - Config hash: bcc22caf
+2025-11-30 09:48:16,086 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-30 09:48:16,086 - src.features - INFO - Building features for train S1 train...
+2025-11-30 09:48:16,087 - src.data - INFO - Building train panel from raw data...
+2025-11-30 09:48:16,087 - src.utils - INFO - [Load train data] starting...
+2025-11-30 09:48:16,087 - src.data - INFO - Loading volume from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/raw/TRAIN/df_volume_train.csv
+2025-11-30 09:48:16,206 - src.data - INFO - === train/volume Statistics ===
+2025-11-30 09:48:16,206 - src.data - INFO -   Shape: 93,744 rows × 5 columns
+2025-11-30 09:48:16,227 - src.data - INFO -   No missing values
+2025-11-30 09:48:16,248 - src.data - INFO -   Unique series: 1,953
+2025-11-30 09:48:16,249 - src.data - INFO -   months_postgx range: [-24, 23]
+2025-11-30 09:48:16,251 - src.data - INFO - Loading generics from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/raw/TRAIN/df_generics_train.csv
+2025-11-30 09:48:16,287 - src.data - INFO - === train/generics Statistics ===
+2025-11-30 09:48:16,287 - src.data - INFO -   Shape: 46,872 rows × 4 columns
+2025-11-30 09:48:16,295 - src.data - INFO -   Missing values:
+2025-11-30 09:48:16,295 - src.data - INFO -     n_gxs: 26.3%
+2025-11-30 09:48:16,312 - src.data - INFO -   Unique series: 1,953
+2025-11-30 09:48:16,312 - src.data - INFO -   months_postgx range: [0, 23]
+2025-11-30 09:48:16,314 - src.data - INFO - Loading medicine_info from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/raw/TRAIN/df_medicine_info_train.csv
+2025-11-30 09:48:16,321 - src.data - INFO - === train/medicine_info Statistics ===
+2025-11-30 09:48:16,321 - src.data - INFO -   Shape: 1,953 rows × 7 columns
+2025-11-30 09:48:16,323 - src.data - INFO -   Missing values:
+2025-11-30 09:48:16,323 - src.data - INFO -     hospital_rate: 3.3%
+2025-11-30 09:48:16,325 - src.data - INFO -   Unique series: 1,953
+2025-11-30 09:48:16,326 - src.utils - INFO - [Load train data] done in 0.239s
+2025-11-30 09:48:16,326 - src.utils - INFO - [Build base panel] starting...
+2025-11-30 09:48:16,328 - src.data - INFO - Input shapes: volume=(93744, 5), generics=(46872, 4), medicine_info=(1953, 7)
+2025-11-30 09:48:16,385 - src.data - INFO - After volume-generics merge: 93,744 rows
+2025-11-30 09:48:16,451 - src.data - INFO - After medicine_info merge: 93,744 rows
+2025-11-30 09:48:16,563 - src.data - INFO - === Base Panel Statistics ===
+2025-11-30 09:48:16,563 - src.data - INFO -   Shape: 93,744 rows × 11 columns
+2025-11-30 09:48:16,597 - src.data - INFO -   Missing values:
+2025-11-30 09:48:16,597 - src.data - INFO -     n_gxs: 63.2%
+2025-11-30 09:48:16,598 - src.data - INFO -     hospital_rate: 3.3%
+2025-11-30 09:48:16,621 - src.data - INFO -   Unique series: 1,953
+2025-11-30 09:48:16,621 - src.data - INFO -   months_postgx range: [-24, 23]
+2025-11-30 09:48:16,625 - src.utils - INFO - [Build base panel] done in 0.299s
+2025-11-30 09:48:16,626 - src.utils - INFO - [Handle missing values] starting...
+2025-11-30 09:48:16,658 - src.data - INFO - n_gxs: filled 59208 missing values
+2025-11-30 09:48:16,681 - src.data - INFO - hospital_rate: filled with ther_area medians, flag added
+2025-11-30 09:48:16,764 - src.data - INFO - No missing values remaining
+2025-11-30 09:48:16,765 - src.utils - INFO - [Handle missing values] done in 0.138s
+2025-11-30 09:48:16,767 - src.utils - INFO - [Compute pre-entry stats] starting...
+2025-11-30 09:48:16,862 - src.data - INFO - avg_vol_12m distribution:
+2025-11-30 09:48:16,862 - src.data - INFO -   Range: [37.72, 371038791.09]
+2025-11-30 09:48:16,864 - src.data - INFO -   Median: 131382.32
+2025-11-30 09:48:16,865 - src.data - INFO -   Mean: 2439028.31
+2025-11-30 09:48:16,889 - src.data - INFO - Bucket classification using threshold=0.25
+2025-11-30 09:48:16,954 - src.data - INFO - Bucket distribution (train):
+2025-11-30 09:48:16,954 - src.data - INFO -   Bucket 1: 130 series (6.7%)
+2025-11-30 09:48:16,955 - src.data - INFO -   Bucket 2: 1,823 series (93.3%)
+2025-11-30 09:48:16,955 - src.data - INFO - y_norm distribution (train):
+2025-11-30 09:48:16,955 - src.data - INFO -   Range: [0.000, 43.792]
+2025-11-30 09:48:16,958 - src.data - INFO -   Median: 0.871
+2025-11-30 09:48:16,959 - src.data - INFO -   Mean: 0.800
+2025-11-30 09:48:16,961 - src.data - WARNING - y_norm.y_norm: 18 values above 5
+2025-11-30 09:48:16,961 - src.utils - INFO - [Compute pre-entry stats] done in 0.195s
+2025-11-30 09:48:16,983 - src.data - INFO - Panel schema validation passed for train (93,744 rows)
+2025-11-30 09:48:16,985 - src.features - INFO - Applying data augmentation to training panel

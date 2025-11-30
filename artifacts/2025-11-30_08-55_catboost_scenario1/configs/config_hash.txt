@@ -1,0 +1,7 @@
+cde2160f
+Generated: 2025-11-30T08:55:32.402296
+Files:
+  run_config: configs/run_defaults.yaml
+  data_config: configs/data.yaml
+  features_config: configs/features.yaml
+  model_config: configs/model_cat.yaml

@@ -1,0 +1,4 @@
+{
+  "type": "log1p",
+  "epsilon": 1e-06
+}

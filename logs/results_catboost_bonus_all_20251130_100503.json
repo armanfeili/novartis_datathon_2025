@@ -1,0 +1,127 @@
+{
+  "run_name": "catboost_bonus_all_20251130_100503",
+  "timestamp": "20251130_100503",
+  "config_file": "configs/run_bonus_all.yaml",
+  "config_summary": {
+    "timestamp": "2025-11-30T10:05:03.383157",
+    "bonus_features": {
+      "B2_Bucket_Specialization": true,
+      "B3_Calibration": true,
+      "B4_Smoothing": true,
+      "B5_Residual_Model": false,
+      "B6_Bias_Correction": true,
+      "B7_Feature_Pruning": false,
+      "B8_Multi_Seed": true,
+      "B9_Monotonicity": false,
+      "B10_Target_Transform": true,
+      "G6_Data_Augmentation": true
+    },
+    "validation": {
+      "val_fraction": 0.2,
+      "stratify_by": "bucket",
+      "split_level": "series"
+    },
+    "scenarios": {
+      "scenario1": {
+        "name": "Scenario 1 - No Post-Entry Actuals",
+        "forecast_start": 0,
+        "forecast_end": 23,
+        "feature_cutoff": 0,
+        "target_months": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23
+        ]
+      },
+      "scenario2": {
+        "name": "Scenario 2 - First 6 Months Available",
+        "forecast_start": 6,
+        "forecast_end": 23,
+        "feature_cutoff": 6,
+        "target_months": [
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23
+        ]
+      }
+    },
+    "official_metric": {
+      "bucket_threshold": 0.25,
+      "bucket_weights": {
+        "bucket1": 2.0,
+        "bucket2": 1.0
+      },
+      "metric1": {
+        "monthly_weight": 0.2,
+        "accumulated_0_5_weight": 0.5,
+        "accumulated_6_11_weight": 0.2,
+        "accumulated_12_23_weight": 0.1,
+        "monthly_range": [
+          0,
+          23
+        ]
+      },
+      "metric2": {
+        "monthly_weight": 0.2,
+        "accumulated_6_11_weight": 0.5,
+        "accumulated_12_17_weight": 0.2,
+        "accumulated_18_23_weight": 0.1,
+        "monthly_range": [
+          6,
+          23
+        ]
+      }
+    }
+  },
+  "scenario1": {
+    "scenario": 1,
+    "status": "failed",
+    "start_time": "2025-11-30T10:05:03.387100",
+    "end_time": "2025-11-30T10:06:01.345311",
+    "metrics": null,
+    "artifacts_dir": null,
+    "error": "'ther_area'",
+    "config_file": "configs/run_bonus_all.yaml",
+    "traceback": "Traceback (most recent call last):\n  File \"/Users/armanfeili/code/New Projects/novartis_datathon_2025/train_catboost_bonus_complete.py\", line 115, in train_scenario_with_logging\n    model, metrics = run_experiment(\n                     ^^^^^^^^^^^^^^^\n  File \"/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py\", line 3637, in run_experiment\n    bias_corrections = fit_bias_corrections(\n                       ^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/armanfeili/code/New Projects/novartis_datathon_2025/src/train.py\", line 6017, in fit_bias_corrections\n    for group_key, group_df in df_val.groupby(group_cols):\n                               ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/armanfeili/anaconda3/lib/python3.11/site-packages/pandas/core/frame.py\", line 9210, in groupby\n    return DataFrameGroupBy(\n           ^^^^^^^^^^^^^^^^^\n  File \"/Users/armanfeili/anaconda3/lib/python3.11/site-packages/pandas/core/groupby/groupby.py\", line 1331, in __init__\n    grouper, exclusions, obj = get_grouper(\n                               ^^^^^^^^^^^^\n  File \"/Users/armanfeili/anaconda3/lib/python3.11/site-packages/pandas/core/groupby/grouper.py\", line 1043, in get_grouper\n    raise KeyError(gpr)\nKeyError: 'ther_area'\n"
+  },
+  "scenario2": null,
+  "submission": null,
+  "overall_status": "failed",
+  "failure_reason": "scenario1_training_failed"
+}

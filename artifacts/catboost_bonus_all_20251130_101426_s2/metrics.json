@@ -1,0 +1,12 @@
+{
+  "official_metric": 0.2651,
+  "rmse_norm": 0.18454669546119953,
+  "mae_norm": 0.14563350272466014,
+  "r2_norm": 0.06185478079374018,
+  "scenario": 2,
+  "model_type": "catboost",
+  "train_time_seconds": 7.981726884841919,
+  "n_train_samples": 26726,
+  "n_val_samples": 6628,
+  "n_features": 91
+}

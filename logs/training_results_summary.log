@@ -1,0 +1,54 @@
+================================================================================
+CatBoost Hero Model Training Results Summary
+================================================================================
+Date: 2025-11-30
+
+CONFIGURATION:
+- Model: CatBoost (Hero Model)
+- Config file: configs/model_cat.yaml
+- Active config ID: default (depth=6, learning_rate=0.03, l2_leaf_reg=3.0)
+- Loss function: RMSE
+- Early stopping rounds: 100
+
+================================================================================
+SCENARIO 1 RESULTS (Months 0-23 Prediction)
+================================================================================
+- Run ID: 2025-11-30_09-00_catboost_scenario1
+- Training rows: 37,488
+- Validation rows: 9,384
+- Features: 86 columns
+- Iterations: 772 (early stopped)
+- Training time: 23.09 seconds
+
+Validation Metrics:
+  - Official Metric (metric1): 0.7692
+  - RMSE: 0.2488
+  - MAE: 0.1795
+
+Model saved to: artifacts/2025-11-30_09-00_catboost_scenario1/model_1.bin.cbm
+
+================================================================================
+SCENARIO 2 RESULTS (Months 6-23 Prediction)
+================================================================================
+- Run ID: 2025-11-30_09-01_catboost_scenario2
+- Training rows: 28,116
+- Validation rows: 7,038
+- Features: 101 columns
+- Iterations: 498 (early stopped)
+- Training time: 15.18 seconds
+
+Validation Metrics:
+  - Official Metric (metric2): 0.2742
+  - RMSE: 0.2055
+  - MAE: 0.1265
+
+Model saved to: artifacts/2025-11-30_09-01_catboost_scenario2/model_2.bin.cbm
+
+================================================================================
+NOTES
+================================================================================
+- Sample weights applied based on official metric formula
+- Bucket distribution: ~93.3% bucket 2, ~6.7% bucket 1
+- Train/Val split: 80/20, stratified by bucket
+- Both models used early stopping with 100 patience rounds
+================================================================================

@@ -1,0 +1,224 @@
+2025-11-30 10:26:49,257 - src.train - INFO - Starting experiment: catboost_bonus_all_20251130_102556_s2
+2025-11-30 10:26:49,301 - src.train - INFO - Config snapshot saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_102556_s2/configs (hash: bcc22caf)
+2025-11-30 10:26:49,301 - src.train - INFO - Config hash: bcc22caf
+2025-11-30 10:26:49,321 - src.utils - INFO - [Load features (cached)] starting...
+2025-11-30 10:26:49,321 - src.features - INFO - Building features for train S2 train...
+2025-11-30 10:26:49,321 - src.data - INFO - Building train panel from raw data...
+2025-11-30 10:26:49,321 - src.utils - INFO - [Load train data] starting...
+2025-11-30 10:26:49,322 - src.data - INFO - Loading volume from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/raw/TRAIN/df_volume_train.csv
+2025-11-30 10:26:49,411 - src.data - INFO - === train/volume Statistics ===
+2025-11-30 10:26:49,412 - src.data - INFO -   Shape: 93,744 rows × 5 columns
+2025-11-30 10:26:49,429 - src.data - INFO -   No missing values
+2025-11-30 10:26:49,446 - src.data - INFO -   Unique series: 1,953
+2025-11-30 10:26:49,446 - src.data - INFO -   months_postgx range: [-24, 23]
+2025-11-30 10:26:49,449 - src.data - INFO - Loading generics from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/raw/TRAIN/df_generics_train.csv
+2025-11-30 10:26:49,481 - src.data - INFO - === train/generics Statistics ===
+2025-11-30 10:26:49,481 - src.data - INFO -   Shape: 46,872 rows × 4 columns
+2025-11-30 10:26:49,488 - src.data - INFO -   Missing values:
+2025-11-30 10:26:49,488 - src.data - INFO -     n_gxs: 26.3%
+2025-11-30 10:26:49,499 - src.data - INFO -   Unique series: 1,953
+2025-11-30 10:26:49,499 - src.data - INFO -   months_postgx range: [0, 23]
+2025-11-30 10:26:49,500 - src.data - INFO - Loading medicine_info from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/raw/TRAIN/df_medicine_info_train.csv
+2025-11-30 10:26:49,508 - src.data - INFO - === train/medicine_info Statistics ===
+2025-11-30 10:26:49,509 - src.data - INFO -   Shape: 1,953 rows × 7 columns
+2025-11-30 10:26:49,512 - src.data - INFO -   Missing values:
+2025-11-30 10:26:49,513 - src.data - INFO -     hospital_rate: 3.3%
+2025-11-30 10:26:49,515 - src.data - INFO -   Unique series: 1,953
+2025-11-30 10:26:49,516 - src.utils - INFO - [Load train data] done in 0.194s
+2025-11-30 10:26:49,516 - src.utils - INFO - [Build base panel] starting...
+2025-11-30 10:26:49,516 - src.data - INFO - Input shapes: volume=(93744, 5), generics=(46872, 4), medicine_info=(1953, 7)
+2025-11-30 10:26:49,571 - src.data - INFO - After volume-generics merge: 93,744 rows
+2025-11-30 10:26:49,609 - src.data - INFO - After medicine_info merge: 93,744 rows
+2025-11-30 10:26:49,680 - src.data - INFO - === Base Panel Statistics ===
+2025-11-30 10:26:49,680 - src.data - INFO -   Shape: 93,744 rows × 11 columns
+2025-11-30 10:26:49,705 - src.data - INFO -   Missing values:
+2025-11-30 10:26:49,706 - src.data - INFO -     n_gxs: 63.2%
+2025-11-30 10:26:49,706 - src.data - INFO -     hospital_rate: 3.3%
+2025-11-30 10:26:49,724 - src.data - INFO -   Unique series: 1,953
+2025-11-30 10:26:49,725 - src.data - INFO -   months_postgx range: [-24, 23]
+2025-11-30 10:26:49,730 - src.utils - INFO - [Build base panel] done in 0.214s
+2025-11-30 10:26:49,730 - src.utils - INFO - [Handle missing values] starting...
+2025-11-30 10:26:49,750 - src.data - INFO - n_gxs: filled 59208 missing values
+2025-11-30 10:26:49,767 - src.data - INFO - hospital_rate: filled with ther_area medians, flag added
+2025-11-30 10:26:49,819 - src.data - INFO - No missing values remaining
+2025-11-30 10:26:49,819 - src.utils - INFO - [Handle missing values] done in 0.089s
+2025-11-30 10:26:49,821 - src.utils - INFO - [Compute pre-entry stats] starting...
+2025-11-30 10:26:49,900 - src.data - INFO - avg_vol_12m distribution:
+2025-11-30 10:26:49,901 - src.data - INFO -   Range: [37.72, 371038791.09]
+2025-11-30 10:26:49,901 - src.data - INFO -   Median: 131382.32
+2025-11-30 10:26:49,902 - src.data - INFO -   Mean: 2439028.31
+2025-11-30 10:26:49,930 - src.data - INFO - Bucket classification using threshold=0.25
+2025-11-30 10:26:50,008 - src.data - INFO - Bucket distribution (train):
+2025-11-30 10:26:50,009 - src.data - INFO -   Bucket 1: 130 series (6.7%)
+2025-11-30 10:26:50,009 - src.data - INFO -   Bucket 2: 1,823 series (93.3%)
+2025-11-30 10:26:50,009 - src.data - INFO - y_norm distribution (train):
+2025-11-30 10:26:50,012 - src.data - INFO -   Range: [0.000, 43.792]
+2025-11-30 10:26:50,014 - src.data - INFO -   Median: 0.871
+2025-11-30 10:26:50,014 - src.data - INFO -   Mean: 0.800
+2025-11-30 10:26:50,017 - src.data - WARNING - y_norm.y_norm: 18 values above 5
+2025-11-30 10:26:50,017 - src.utils - INFO - [Compute pre-entry stats] done in 0.196s
+2025-11-30 10:26:50,045 - src.data - INFO - Panel schema validation passed for train (93,744 rows)
+2025-11-30 10:26:50,048 - src.features - INFO - Applying data augmentation to training panel
+2025-11-30 10:26:55,606 - src.data - INFO - Augmentation applied: jitter=5.00%, drop_prob=5.00%
+2025-11-30 10:26:55,630 - src.utils - INFO - [Feature engineering - Scenario 2] starting...
+2025-11-30 10:26:55,765 - src.features - WARNING - No pre-entry data for seasonal features, skipping
+2025-11-30 10:27:01,104 - src.features - INFO - Total features created: 94
+2025-11-30 10:27:01,106 - src.utils - INFO - [Feature engineering - Scenario 2] done in 5.477s
+2025-11-30 10:27:01,200 - src.features - INFO - Selected 33,354 rows for 2 (months 6-23)
+2025-11-30 10:27:01,211 - src.features - WARNING - Feature leakage detected: LEAKAGE: Forbidden column present: country
+2025-11-30 10:27:01,211 - src.features - WARNING - Feature leakage detected: LEAKAGE: Forbidden column present: mean_erosion
+2025-11-30 10:27:01,211 - src.features - WARNING - Feature leakage detected: LEAKAGE: Forbidden column present: y_norm
+2025-11-30 10:27:01,211 - src.features - WARNING - Feature leakage detected: LEAKAGE: Forbidden column present: volume
+2025-11-30 10:27:01,211 - src.features - WARNING - Feature leakage detected: LEAKAGE: Forbidden column present: bucket
+2025-11-30 10:27:01,211 - src.features - WARNING - Feature leakage detected: LEAKAGE: Forbidden column present: brand_name
+2025-11-30 10:27:01,247 - src.data - INFO - Data leakage audit passed for scenario 2, mode train
+2025-11-30 10:27:01,260 - src.features - INFO - Feature matrix validation passed: X=(33354, 89), y=33354, meta=(33354, 12)
+2025-11-30 10:27:01,262 - src.features - INFO - Built features: X=(33354, 89), y=33354, meta=(33354, 12)
+2025-11-30 10:27:01,318 - src.utils - INFO - [Load cached train panel] starting...
+2025-11-30 10:27:01,319 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_train.parquet
+2025-11-30 10:27:01,352 - src.data - INFO - Loaded 93,744 rows, 19 columns
+2025-11-30 10:27:01,352 - src.utils - INFO - [Load cached train panel] done in 0.034s
+2025-11-30 10:27:01,352 - src.utils - INFO - [Load features (cached)] done in 12.032s
+2025-11-30 10:27:01,352 - src.utils - INFO - [Create validation split] starting...
+2025-11-30 10:27:01,403 - src.validation - WARNING - Grouping 1 rare stratification classes (< 195 series each, 130 series total) into 'OTHER'
+2025-11-30 10:27:01,407 - src.validation - INFO - 'OTHER' class now contains 130 series
+2025-11-30 10:27:01,584 - src.validation - INFO - Train series: 1562, Val series: 391
+2025-11-30 10:27:01,584 - src.validation - INFO - Train rows: 26,726, Val rows: 6,628
+2025-11-30 10:27:01,586 - src.validation - INFO - Train bucket distribution:
+bucket
+2    0.933419
+1    0.066581
+2025-11-30 10:27:01,587 - src.validation - INFO - Val bucket distribution:
+bucket
+2    0.933504
+1    0.066496
+2025-11-30 10:27:01,620 - src.utils - INFO - [Create validation split] done in 0.268s
+2025-11-30 10:27:01,692 - src.train - INFO - Features: 91 columns
+2025-11-30 10:27:01,692 - src.train - INFO - Meta: 9 columns: ['country', 'brand_name', 'months_postgx', 'bucket', 'avg_vol_12m', 'y_norm', 'volume', 'mean_erosion', 'month']
+2025-11-30 10:27:01,720 - src.train - INFO - Features: 91 columns
+2025-11-30 10:27:01,720 - src.train - INFO - Meta: 9 columns: ['country', 'brand_name', 'months_postgx', 'bucket', 'avg_vol_12m', 'y_norm', 'volume', 'mean_erosion', 'month']
+2025-11-30 10:27:01,800 - src.train - INFO - Multi-seed experiment enabled
+2025-11-30 10:27:01,801 - src.train - INFO - Training with seed 42...
+2025-11-30 10:27:01,807 - src.train - INFO - Applied target transform: log1p
+2025-11-30 10:27:01,822 - src.train - INFO - Sample weights - min: 0.63, max: 3.13, mean: 1.00
+2025-11-30 10:27:01,847 - src.utils - INFO - [Train catboost for scenario 2] starting...
+2025-11-30 10:27:01,856 - src.models.cat_model - INFO - Auto-detected 2 categorical features
+2025-11-30 10:27:13,266 - src.models.cat_model - INFO - CatBoost trained for 338 iterations
+2025-11-30 10:27:13,266 - src.utils - INFO - [Train catboost for scenario 2] done in 11.419s
+2025-11-30 10:27:13,344 - src.models.cat_model - WARNING - Pool prediction failed, using direct prediction: catboost/libs/data/model_dataset_compatibility.cpp:53: Feature ther_area_encoded is Float in model but marked different in the dataset
+2025-11-30 10:27:15,267 - src.train - INFO - Validation metrics: Official=0.2711, RMSE=0.1837, MAE=0.1446
+2025-11-30 10:27:15,267 - src.train - INFO - Training time: 11.44 seconds
+2025-11-30 10:27:15,273 - src.models.cat_model - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_102556_s2/seed_42/model.bin.cbm with metadata
+2025-11-30 10:27:15,273 - src.train - INFO - Seed 42: Official=0.2711
+2025-11-30 10:27:15,273 - src.train - INFO - Training with seed 2025...
+2025-11-30 10:27:15,275 - src.train - INFO - Applied target transform: log1p
+2025-11-30 10:27:15,283 - src.train - INFO - Sample weights - min: 0.63, max: 3.13, mean: 1.00
+2025-11-30 10:27:15,304 - src.utils - INFO - [Train catboost for scenario 2] starting...
+2025-11-30 10:27:15,317 - src.models.cat_model - INFO - Auto-detected 2 categorical features
+2025-11-30 10:27:25,228 - src.models.cat_model - INFO - CatBoost trained for 338 iterations
+2025-11-30 10:27:25,228 - src.utils - INFO - [Train catboost for scenario 2] done in 9.924s
+2025-11-30 10:27:25,312 - src.models.cat_model - WARNING - Pool prediction failed, using direct prediction: catboost/libs/data/model_dataset_compatibility.cpp:53: Feature ther_area_encoded is Float in model but marked different in the dataset
+2025-11-30 10:27:26,273 - src.train - INFO - Validation metrics: Official=0.2676, RMSE=0.1822, MAE=0.1441
+2025-11-30 10:27:26,273 - src.train - INFO - Training time: 9.95 seconds
+2025-11-30 10:27:26,278 - src.models.cat_model - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_102556_s2/seed_2025/model.bin.cbm with metadata
+2025-11-30 10:27:26,279 - src.train - INFO - Seed 2025: Official=0.2676
+2025-11-30 10:27:26,279 - src.train - INFO - Training with seed 1337...
+2025-11-30 10:27:26,280 - src.train - INFO - Applied target transform: log1p
+2025-11-30 10:27:26,287 - src.train - INFO - Sample weights - min: 0.63, max: 3.13, mean: 1.00
+2025-11-30 10:27:26,300 - src.utils - INFO - [Train catboost for scenario 2] starting...
+2025-11-30 10:27:26,306 - src.models.cat_model - INFO - Auto-detected 2 categorical features
+2025-11-30 10:27:31,890 - src.models.cat_model - INFO - CatBoost trained for 247 iterations
+2025-11-30 10:27:31,890 - src.utils - INFO - [Train catboost for scenario 2] done in 5.590s
+2025-11-30 10:27:31,968 - src.models.cat_model - WARNING - Pool prediction failed, using direct prediction: catboost/libs/data/model_dataset_compatibility.cpp:53: Feature ther_area_encoded is Float in model but marked different in the dataset
+2025-11-30 10:27:32,803 - src.train - INFO - Validation metrics: Official=0.2670, RMSE=0.1823, MAE=0.1438
+2025-11-30 10:27:32,804 - src.train - INFO - Training time: 5.60 seconds
+2025-11-30 10:27:32,815 - src.models.cat_model - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_102556_s2/seed_1337/model.bin.cbm with metadata
+2025-11-30 10:27:32,815 - src.train - INFO - Seed 1337: Official=0.2670
+2025-11-30 10:27:32,844 - src.train - INFO - Saved multi-seed summary to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_102556_s2/multi_seed_summary.csv
+2025-11-30 10:27:32,844 - src.train - INFO - Multi-seed results:
+2025-11-30 10:27:32,844 - src.train - INFO -   Mean official metric: 0.2686
+2025-11-30 10:27:32,845 - src.train - INFO -   Std official metric: 0.0022
+2025-11-30 10:27:32,845 - src.train - INFO -   Best seed: 1337
+2025-11-30 10:27:32,845 - src.train - INFO - Best seed: 1337
+2025-11-30 10:27:32,847 - src.train - INFO - Applied target transform: log1p
+2025-11-30 10:27:32,856 - src.train - INFO - Sample weights - min: 0.63, max: 3.13, mean: 1.00
+2025-11-30 10:27:32,863 - src.utils - INFO - [Train catboost for scenario 2] starting...
+2025-11-30 10:27:32,869 - src.models.cat_model - INFO - Auto-detected 2 categorical features
+2025-11-30 10:27:39,555 - src.models.cat_model - INFO - CatBoost trained for 338 iterations
+2025-11-30 10:27:39,556 - src.utils - INFO - [Train catboost for scenario 2] done in 6.693s
+2025-11-30 10:27:39,632 - src.models.cat_model - WARNING - Pool prediction failed, using direct prediction: catboost/libs/data/model_dataset_compatibility.cpp:53: Feature ther_area_encoded is Float in model but marked different in the dataset
+2025-11-30 10:27:40,562 - src.train - INFO - Validation metrics: Official=0.2711, RMSE=0.1837, MAE=0.1446
+2025-11-30 10:27:40,562 - src.train - INFO - Training time: 6.70 seconds
+2025-11-30 10:27:40,566 - src.train - INFO - Fitting calibration parameters
+2025-11-30 10:27:40,639 - src.models.cat_model - WARNING - Pool prediction failed, using direct prediction: catboost/libs/data/model_dataset_compatibility.cpp:53: Feature ther_area_encoded is Float in model but marked different in the dataset
+2025-11-30 10:27:40,714 - src.train - INFO - Saved calibration parameters to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_102556_s2/calibration_params.json
+2025-11-30 10:27:40,716 - src.train - INFO - Calibration parameters fitted for 6 groups
+2025-11-30 10:27:40,716 - src.train - INFO - Fitting bias corrections
+2025-11-30 10:27:40,808 - src.models.cat_model - WARNING - Pool prediction failed, using direct prediction: catboost/libs/data/model_dataset_compatibility.cpp:53: Feature ther_area_encoded is Float in model but marked different in the dataset
+2025-11-30 10:27:40,850 - src.train - INFO - Merged group columns from panel: ['ther_area']
+2025-11-30 10:27:40,900 - src.train - INFO - Saved bias corrections to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_102556_s2/bias_corrections.json
+2025-11-30 10:27:40,901 - src.train - INFO - Bias corrections fitted for 241 groups
+2025-11-30 10:27:40,902 - src.models.cat_model - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_102556_s2/model_2.bin.cbm with metadata
+2025-11-30 10:27:40,902 - src.train - INFO - Model saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_102556_s2/model_2.bin
+2025-11-30 10:27:40,903 - src.train - INFO - Target transform parameters saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_102556_s2/target_transform_params_2.json
+2025-11-30 10:27:40,910 - src.train - INFO - Experiment catboost_bonus_all_20251130_102556_s2 completed. Artifacts saved to /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_102556_s2
+2025-11-30 10:27:40,961 - src.utils - INFO - [Scenario 2 Training] done in 51.747s
+2025-11-30 10:27:40,961 - __main__ - INFO - ================================================================================
+2025-11-30 10:27:40,961 - __main__ - INFO - ✅ Scenario 2 Training Complete
+2025-11-30 10:27:40,961 - __main__ - INFO -    Official Metric: 0.271100
+2025-11-30 10:27:40,961 - __main__ - INFO -    RMSE (norm): 0.183670
+2025-11-30 10:27:40,962 - __main__ - INFO -    MAE (norm): 0.144568
+2025-11-30 10:27:40,962 - __main__ - INFO -    Artifacts: /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_102556_s2
+2025-11-30 10:27:40,962 - __main__ - INFO - ================================================================================
+2025-11-30 10:27:40,962 - __main__ - INFO - 
+================================================================================
+2025-11-30 10:27:40,962 - __main__ - INFO - [3/3] Generating Submission
+2025-11-30 10:27:40,962 - __main__ - INFO - ================================================================================
+2025-11-30 10:27:40,963 - __main__ - INFO - ================================================================================
+2025-11-30 10:27:40,963 - __main__ - INFO - Generating Submission
+2025-11-30 10:27:40,963 - __main__ - INFO - ================================================================================
+2025-11-30 10:27:40,978 - src.utils - INFO - [Load cached test panel] starting...
+2025-11-30 10:27:40,979 - src.data - INFO - Loading cached panel from /Users/armanfeili/code/New Projects/novartis_datathon_2025/data/interim/panel_test.parquet
+2025-11-30 10:27:41,005 - src.data - INFO - Loaded 8,832 rows, 16 columns
+2025-11-30 10:27:41,005 - src.utils - INFO - [Load cached test panel] done in 0.026s
+2025-11-30 10:27:41,026 - __main__ - INFO - Loaded submission template from: /Users/armanfeili/code/New Projects/novartis_datathon_2025/docs/guide/submission_template.csv
+2025-11-30 10:27:41,026 - src.utils - INFO - [Submission Generation] starting...
+2025-11-30 10:27:41,026 - src.utils - INFO - [Generate submission] starting...
+2025-11-30 10:27:41,060 - src.inference - INFO - Detected 228 Scenario 1 series
+2025-11-30 10:27:41,062 - src.inference - INFO - Detected 112 Scenario 2 series
+2025-11-30 10:27:41,458 - src.inference - INFO - Expanded panel: 5472 -> 10944 rows (added months 0-23)
+2025-11-30 10:27:41,459 - src.utils - INFO - [Feature engineering - Scenario 1] starting...
+2025-11-30 10:27:42,678 - src.features - INFO - Total features created: 88
+2025-11-30 10:27:42,678 - src.utils - INFO - [Feature engineering - Scenario 1] done in 1.219s
+2025-11-30 10:27:42,694 - src.inference - WARNING - Bucket 1 model not found at /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_102556_s1/bucket1_catboost/model.bin
+2025-11-30 10:27:42,694 - src.inference - WARNING - Bucket 2 model not found at /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_102556_s1/bucket2_catboost/model.bin
+2025-11-30 10:27:42,764 - src.models.cat_model - WARNING - Pool prediction failed, using direct prediction: catboost/libs/data/model_dataset_compatibility.cpp:81: At position 55 should be feature with name n_gxs_at_month_12 (found n_gxs_at_month_23).
+2025-11-30 10:27:42,769 - src.utils - INFO - [Generate submission] done in 1.743s
+2025-11-30 10:27:42,769 - src.utils - INFO - [Submission Generation] done in 1.744s
+2025-11-30 10:27:42,776 - __main__ - ERROR - ================================================================================
+2025-11-30 10:27:42,776 - __main__ - ERROR - ❌ Submission Generation Failed
+2025-11-30 10:27:42,776 - __main__ - ERROR -    Error: catboost/libs/data/model_dataset_compatibility.cpp:81: At position 55 should be feature with name n_gxs_at_month_12 (found n_gxs_at_month_23).
+2025-11-30 10:27:42,776 - __main__ - ERROR - ================================================================================
+2025-11-30 10:27:42,782 - __main__ - INFO - 
+================================================================================
+2025-11-30 10:27:42,782 - __main__ - INFO - Training and Submission Pipeline Complete!
+2025-11-30 10:27:42,782 - __main__ - INFO - ================================================================================
+2025-11-30 10:27:42,783 - __main__ - INFO - 
+Results Summary:
+2025-11-30 10:27:42,783 - __main__ - INFO -   Scenario 1:
+2025-11-30 10:27:42,783 - __main__ - INFO -     Status: success
+2025-11-30 10:27:42,783 - __main__ - INFO -     Official Metric: 0.7007
+2025-11-30 10:27:42,783 - __main__ - INFO -     Artifacts: /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_102556_s1
+2025-11-30 10:27:42,783 - __main__ - INFO -   Scenario 2:
+2025-11-30 10:27:42,783 - __main__ - INFO -     Status: success
+2025-11-30 10:27:42,783 - __main__ - INFO -     Official Metric: 0.2711
+2025-11-30 10:27:42,783 - __main__ - INFO -     Artifacts: /Users/armanfeili/code/New Projects/novartis_datathon_2025/artifacts/catboost_bonus_all_20251130_102556_s2
+2025-11-30 10:27:42,783 - __main__ - INFO -   Submission:
+2025-11-30 10:27:42,783 - __main__ - INFO -     Status: failed
+2025-11-30 10:27:42,783 - __main__ - INFO -     File: None
+2025-11-30 10:27:42,783 - __main__ - INFO -     Rows: None
+2025-11-30 10:27:42,784 - __main__ - INFO - 
+Full Results: logs/results_catboost_bonus_all_20251130_102556.json
+2025-11-30 10:27:42,784 - __main__ - INFO - Config Summary: logs/config_summary_catboost_bonus_all_20251130_102556.yaml
+2025-11-30 10:27:42,784 - __main__ - INFO - Log File: logs/full_pipeline_catboost_bonus_all_20251130_102556.log
+2025-11-30 10:27:42,784 - __main__ - INFO - ================================================================================

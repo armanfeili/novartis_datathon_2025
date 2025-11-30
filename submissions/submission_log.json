@@ -16,5 +16,23 @@
       "model_s2_type": "CatBoostRegressor"
     },
     "notes": ""
+  },
+  {
+    "version": "20251130_090320_catboost_hero_best_d79bb3",
+    "timestamp": "2025-11-30T09:03:20.537620",
+    "n_rows": 7488,
+    "n_series": 340,
+    "volume_mean": 1951065.0745003019,
+    "volume_std": 7558608.735013639,
+    "volume_min": 45.40668136812911,
+    "volume_max": 112145338.71651737,
+    "validation_score": null,
+    "model_info": {
+      "model_s1_path": "artifacts/2025-11-30_09-00_catboost_scenario1/model_1.bin.cbm",
+      "model_s2_path": "artifacts/2025-11-30_09-01_catboost_scenario2/model_2.bin.cbm",
+      "model_s1_type": "CatBoostRegressor",
+      "model_s2_type": "CatBoostRegressor"
+    },
+    "notes": ""
   }
 ]

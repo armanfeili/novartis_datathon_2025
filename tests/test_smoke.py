@@ -1060,14 +1060,15 @@ def test_adversarial_validation():
     np.random.seed(42)
     
     # Create similar distributions (should have low AUC)
+    # Need enough samples for 5-fold CV (at least 50 per fold = 250 total)
     train_features = pd.DataFrame({
-        'feature1': np.random.randn(100),
-        'feature2': np.random.randn(100) + 1
+        'feature1': np.random.randn(200),
+        'feature2': np.random.randn(200) + 1
     })
     
     test_features = pd.DataFrame({
-        'feature1': np.random.randn(50),  # Same distribution
-        'feature2': np.random.randn(50) + 1  # Same distribution
+        'feature1': np.random.randn(100),  # Same distribution
+        'feature2': np.random.randn(100) + 1  # Same distribution
     })
     
     result = adversarial_validation(train_features, test_features)
@@ -7780,6 +7781,147 @@ class TestSection12GenerateFinalReport:
         
         assert output_path.exists()
         assert output_path.read_text() == report
+
+
+# =============================================================================
+# Section 24: Global Testing (Phase 4)
+# =============================================================================
+
+class TestSection24SampleWeights:
+    """Tests for compute_sample_weights function."""
+    
+    def test_compute_sample_weights_exists(self):
+        """Test that compute_sample_weights function exists."""
+        from src.train import compute_sample_weights
+        assert callable(compute_sample_weights)
+    
+    def test_compute_sample_weights_scenario1(self):
+        """Test sample weights for scenario 1."""
+        from src.train import compute_sample_weights
+        
+        # Create test data
+        meta_df = pd.DataFrame({
+            'bucket': [1, 1, 2, 2, 1, 2],
+            'months_postgx': [0, 6, 12, 0, 6, 12]
+        })
+        
+        config = {
+            'sample_weights': {
+                'bucket_weights': {'bucket1': 2.0, 'bucket2': 1.0},
+                'scenario1': {'months_0_5': 2.0, 'months_6_11': 1.0, 'months_12_23': 1.0}
+            }
+        }
+        
+        weights = compute_sample_weights(meta_df, scenario=1, config=config)
+        
+        assert len(weights) == len(meta_df)
+        assert all(w > 0 for w in weights)
+        # Bucket 1 should have higher weights than bucket 2
+        bucket1_mask = meta_df['bucket'] == 1
+        bucket2_mask = meta_df['bucket'] == 2
+        assert weights[bucket1_mask].mean() > weights[bucket2_mask].mean()
+    
+    def test_compute_sample_weights_scenario2(self):
+        """Test sample weights for scenario 2."""
+        from src.train import compute_sample_weights
+        
+        meta_df = pd.DataFrame({
+            'bucket': [1, 1, 2, 2],
+            'months_postgx': [6, 12, 6, 12]
+        })
+        
+        config = {
+            'sample_weights': {
+                'bucket_weights': {'bucket1': 2.0, 'bucket2': 1.0},
+                'scenario2': {'months_6_11': 1.5, 'months_12_23': 1.0}
+            }
+        }
+        
+        weights = compute_sample_weights(meta_df, scenario=2, config=config)
+        
+        assert len(weights) == len(meta_df)
+        assert all(w > 0 for w in weights)
+
+
+class TestSection24SplitFeaturesTargetMeta:
+    """Tests for split_features_target_meta function."""
+    
+    def test_split_features_target_meta_exists(self):
+        """Test that function exists and has correct signature."""
+        from src.features import split_features_target_meta
+        import inspect
+        sig = inspect.signature(split_features_target_meta)
+        params = list(sig.parameters.keys())
+        assert 'df' in params
+    
+    def test_split_features_target_meta_train_mode(self):
+        """Test split with y_norm present (train mode)."""
+        from src.features import split_features_target_meta
+        
+        df = pd.DataFrame({
+            'country': ['A', 'B', 'A', 'B'],
+            'brand_name': ['X', 'Y', 'X', 'Y'],
+            'months_postgx': [0, 1, 2, 3],
+            'bucket': [1, 1, 2, 2],
+            'y_norm': [0.9, 0.8, 0.7, 0.6],
+            'volume': [100, 200, 300, 400],
+            'feature_1': [1.0, 2.0, 3.0, 4.0],
+            'feature_2': [5.0, 6.0, 7.0, 8.0],
+            'avg_vol_12m': [100, 200, 300, 400]
+        })
+        
+        X, y, meta = split_features_target_meta(df)
+        
+        # Verify X doesn't contain meta/target columns
+        assert 'y_norm' not in X.columns
+        assert 'volume' not in X.columns
+        assert 'country' not in X.columns
+        assert 'brand_name' not in X.columns
+        assert 'bucket' not in X.columns
+        
+        # Verify y is extracted correctly
+        assert y is not None
+        assert len(y) == 4
+        
+        # Verify meta has expected columns
+        assert 'months_postgx' in meta.columns
+    
+    def test_split_features_target_meta_test_mode(self):
+        """Test split without y_norm (test mode)."""
+        from src.features import split_features_target_meta
+        
+        df = pd.DataFrame({
+            'country': ['A', 'B'],
+            'brand_name': ['X', 'Y'],
+            'months_postgx': [0, 1],
+            'feature_1': [1.0, 2.0],
+            'feature_2': [5.0, 6.0],
+        })
+        
+        X, y, meta = split_features_target_meta(df)
+        
+        # y should be None when y_norm is not present
+        assert y is None
+        assert 'country' not in X.columns
+        assert 'brand_name' not in X.columns
+
+
+class TestSection24RunExperiment:
+    """Tests for run_experiment function (smoke tests)."""
+    
+    def test_run_experiment_exists(self):
+        """Test that run_experiment function exists."""
+        from src.train import run_experiment
+        assert callable(run_experiment)
+
+
+class TestSection24RunSweepExperiments:
+    """Tests for run_sweep_experiments function (smoke tests)."""
+    
+    def test_run_sweep_experiments_exists(self):
+        """Test that run_sweep_experiments function exists."""
+        from src.train import run_sweep_experiments
+        assert callable(run_sweep_experiments)
 
 
 if __name__ == '__main__':

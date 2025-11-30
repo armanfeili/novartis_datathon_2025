@@ -1,11 +1,13 @@
 # =============================================================================
 # XGBoost Model Configuration - Novartis Datathon 2025
 # =============================================================================
-# PRIMARY MODEL - Best performance on official metric
+# SECONDARY MODEL - Good ensemble diversity, fast training
 #
 # Best configurations from sweeps:
 #   Scenario 1: max_depth=6, learning_rate=0.03 → official_metric: 0.7499
 #   Scenario 2: max_depth=4, learning_rate=0.05 → official_metric: 0.2659
+#
+# Note: CatBoost is now the hero model. XGBoost is kept for ensemble diversity.
 #
 # Usage:
 #   - Single run: Set sweep.enabled=false, use params directly
@@ -24,7 +26,7 @@
 model:
   name: "xgboost"
   task: "regression"
-  priority: 1  # Primary model - highest priority
+  priority: 2  # Secondary model - for ensemble diversity
 
 # =============================================================================
 # ACTIVE CONFIGURATION ID

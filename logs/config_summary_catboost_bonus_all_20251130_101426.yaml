@@ -1,0 +1,92 @@
+timestamp: '2025-11-30T10:14:26.075509'
+bonus_features:
+  B2_Bucket_Specialization: true
+  B3_Calibration: true
+  B4_Smoothing: true
+  B5_Residual_Model: false
+  B6_Bias_Correction: true
+  B7_Feature_Pruning: false
+  B8_Multi_Seed: true
+  B9_Monotonicity: false
+  B10_Target_Transform: true
+  G6_Data_Augmentation: true
+validation:
+  val_fraction: 0.2
+  stratify_by: bucket
+  split_level: series
+scenarios:
+  scenario1:
+    name: Scenario 1 - No Post-Entry Actuals
+    forecast_start: 0
+    forecast_end: 23
+    feature_cutoff: 0
+    target_months:
+    - 0
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+    - 6
+    - 7
+    - 8
+    - 9
+    - 10
+    - 11
+    - 12
+    - 13
+    - 14
+    - 15
+    - 16
+    - 17
+    - 18
+    - 19
+    - 20
+    - 21
+    - 22
+    - 23
+  scenario2:
+    name: Scenario 2 - First 6 Months Available
+    forecast_start: 6
+    forecast_end: 23
+    feature_cutoff: 6
+    target_months:
+    - 6
+    - 7
+    - 8
+    - 9
+    - 10
+    - 11
+    - 12
+    - 13
+    - 14
+    - 15
+    - 16
+    - 17
+    - 18
+    - 19
+    - 20
+    - 21
+    - 22
+    - 23
+official_metric:
+  bucket_threshold: 0.25
+  bucket_weights:
+    bucket1: 2.0
+    bucket2: 1.0
+  metric1:
+    monthly_weight: 0.2
+    accumulated_0_5_weight: 0.5
+    accumulated_6_11_weight: 0.2
+    accumulated_12_23_weight: 0.1
+    monthly_range:
+    - 0
+    - 23
+  metric2:
+    monthly_weight: 0.2
+    accumulated_6_11_weight: 0.5
+    accumulated_12_17_weight: 0.2
+    accumulated_18_23_weight: 0.1
+    monthly_range:
+    - 6
+    - 23
